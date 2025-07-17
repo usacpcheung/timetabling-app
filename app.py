@@ -118,7 +118,7 @@ def config():
     c.execute('SELECT * FROM students')
     students = c.fetchall()
     conn.close()
-    return render_template('config.html', config=cfg, teachers=teachers, students=students)
+    return render_template('config.html', config=cfg, teachers=teachers, students=students, json=json)
 
 
 def generate_schedule():
