@@ -2,3 +2,13 @@ body {
     font-family: Arial, sans-serif;
     margin: 2em;
 }
+
+table {
+    border-collapse: collapse;
+}
+
+td, th {
+    padding: 4px 8px;
+    border: 1px solid #999;
+    text-align: center;
+}
