@@ -1,16 +1,14 @@
 # Timetabling Optimization App
 
-A local-first, browser-based school timetabling application built with **Python (Flask)**, **SQLite**, and a simple HTML frontend. It allows users to define scheduling items (e.g., classes, teachers, rooms), specify rules and constraints, and automatically generate a valid timetable using constraint-solving algorithms.
+A local-first, browser-based school timetabling application built with **Python (Flask)** and **SQLite**. Users can configure teachers, students and scheduling parameters then generate an optimized timetable for a single day.
 
 ---
 
 ## 💡 Key Features
 
-- Add/edit/remove scheduling elements (teachers, rooms, subjects, times)
-- Define constraints (e.g., teacher availability, room clashes, subject limits)
+- Configure teachers, students and lesson constraints
 - Generate optimized, conflict-free timetables
-- Simple web-based interface, no browser extensions or installs needed
-- Local data storage using SQLite (no external database setup required)
+- Simple web interface, no external database setup
 
 ## 📦 Project Structure
 
@@ -20,11 +18,16 @@ static/
     style.css
 templates/
     index.html
+    config.html
+    timetable.html
 ```
 
-Run the development server with:
+## ▶️ Running
+
+Install Flask if needed and start the development server:
 
 ```bash
+pip install Flask
 python app.py
 ```
 

@@ -7,5 +7,10 @@
 </head>
 <body>
     <h1>Welcome to the Timetabling App</h1>
+    <ul>
+        <li><a href="{{ url_for('config') }}">Edit Configuration</a></li>
+        <li><a href="{{ url_for('generate') }}">Generate Timetable</a></li>
+        <li><a href="{{ url_for('timetable') }}">View Timetable</a></li>
+    </ul>
 </body>
 </html>
