@@ -11,3 +11,21 @@ A local-first, browser-based school timetabling application built with **Python 
 - Generate optimized, conflict-free timetables
 - Simple web-based interface, no browser extensions or installs needed
 - Local data storage using SQLite (no external database setup required)
+
+## 📦 Project Structure
+
+```
+app.py
+static/
+    style.css
+templates/
+    index.html
+```
+
+Run the development server with:
+
+```bash
+python app.py
+```
+
+The app will be available at `http://localhost:5000`.
