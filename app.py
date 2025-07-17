@@ -156,7 +156,12 @@ def config():
     row = c.fetchone()
     default_subjects = ', '.join(json.loads(row['subjects'])) if row and row['subjects'] else ''
     conn.close()
-    return render_template('config.html', config=cfg, teachers=teachers, students=students, default_subjects=default_subjects)
+    return render_template('config.html',
+                           config=cfg,
+                           teachers=teachers,
+                           students=students,
+                           default_subjects=default_subjects,
+                           json=json)
 
 
 def generate_schedule():
