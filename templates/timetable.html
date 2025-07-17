@@ -16,7 +16,7 @@
         </tr>
         {% for slot in slots %}
         <tr>
-            <td>{{ slot + 1 }}</td>
+            <td>{{ slot + 1 }}<br>{{ slot_times.get(slot, '') }}</td>
             {% for t in teachers %}
             <td>{{ grid[slot][t['id']] or '' }}</td>
             {% endfor %}

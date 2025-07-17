@@ -21,7 +21,9 @@
             {% for t in teachers %}
             <input type="hidden" name="teacher_id" value="{{ t['id'] }}">
             <label>Name: <input type="text" name="teacher_name" value="{{ t['name'] }}"></label>
-            <label>Subject: <input type="text" name="teacher_subject" value="{{ t['subject'] }}"></label><br>
+            <label>Subject: <input type="text" name="teacher_subject" value="{{ t['subject'] }}"></label>
+            <label>Can't teach students: <input type="text" name="teacher_restrict_{{ t['id'] }}" value="{{ teacher_restrict.get(t['id'], [])|join(',') }}"></label>
+            <label>Unavailable slots: <input type="text" name="teacher_unavail_{{ t['id'] }}" value="{{ teacher_unavail.get(t['id'], [])|join(',') }}"></label><br>
             {% endfor %}
         </fieldset>
         <fieldset>
@@ -29,7 +31,20 @@
             {% for s in students %}
             <input type="hidden" name="student_id" value="{{ s['id'] }}">
             <label>Name: <input type="text" name="student_name" value="{{ s['name'] }}"></label>
-            <label>Subjects: <input type="text" name="student_subjects" value="{{ ', '.join(json.loads(s['subjects'])) }}"></label><br>
+            <label>Subjects: <input type="text" name="student_subjects" value="{{ ', '.join(json.loads(s['subjects'])) }}"></label>
+            <label>Distribution: <input type="text" name="student_dist_{{ s['id'] }}" value="{{ student_dist.get(s['id'], [])|join(';') }}"></label>
+            <a href="{{ url_for('delete_student', student_id=s['id']) }}">Remove</a><br>
+            {% endfor %}
+        </fieldset>
+        <fieldset>
+            <legend>Add Student</legend>
+            <label>Name: <input type="text" name="new_student_name"></label>
+            <label>Subjects: <input type="text" name="new_student_subjects"></label>
+        </fieldset>
+        <fieldset>
+            <legend>Lesson Start Times</legend>
+            {% for slot in range(config['slots_per_day']) %}
+            <label>Slot {{ slot + 1 }}: <input type="text" name="slot_time_{{ slot }}" value="{{ slot_times.get(slot, '') }}"></label><br>
             {% endfor %}
         </fieldset>
         <button type="submit">Save</button>
