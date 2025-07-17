@@ -244,7 +244,6 @@ def generate_schedule():
     c.execute('SELECT * FROM config WHERE id=1')
     cfg = c.fetchone()
     slots = cfg['slots_per_day']
-    min_lessons = cfg['min_lessons']
     max_lessons = cfg['max_lessons']
 
     c.execute('SELECT * FROM teachers')
@@ -289,15 +288,12 @@ def generate_schedule():
     prev_subject = {s['id']: None for s in students}
 
     max_per_subject = {}
-    min_per_subject = {}
     for s in students:
         dist = global_dist.copy()
         dist.update(student_dist.get(s['id'], {}))
         max_per_subject[s['id']] = {}
-        min_per_subject[s['id']] = {}
         for subj in json.loads(s['subjects']):
             perc_min, perc_max = dist.get(subj, (0, 100))
-            min_per_subject[s['id']][subj] = int(perc_min * max_lessons / 100)
             max_per_subject[s['id']][subj] = int(perc_max * max_lessons / 100)
 
     for slot in range(slots):
