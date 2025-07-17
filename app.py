@@ -185,10 +185,11 @@ def generate_schedule():
     student_schedule = {s['id']: [None]*slots for s in students}
 
     # build lists of students per subject
+    from collections import deque
     subject_students = {}
     for s in students:
         for subj in json.loads(s['subjects']):
-            subject_students.setdefault(subj, []).append(s['id'])
+            subject_students.setdefault(subj, deque()).append(s['id'])
 
     # count lessons per student
     lesson_count = {s['id']: 0 for s in students}
@@ -200,16 +201,23 @@ def generate_schedule():
             for subj in subjects:
                 if scheduled:
                     break
-                candidates = subject_students.get(subj, [])
-                for sid in candidates:
+                queue = subject_students.get(subj)
+                if not queue:
+                    continue
+                # iterate through queue once to find an available student
+                for _ in range(len(queue)):
+                    sid = queue.popleft()
                     if student_schedule[sid][slot] is None and lesson_count[sid] < max_lessons:
                         teacher_schedule[t['id']][slot] = sid
                         student_schedule[sid][slot] = t['id']
                         lesson_count[sid] += 1
                         c.execute('INSERT INTO timetable (student_id, teacher_id, subject, slot) VALUES (?, ?, ?, ?)',
                                   (sid, t['id'], subj, slot))
+                        queue.append(sid)
                         scheduled = True
                         break
+                    else:
+                        queue.append(sid)
 
     conn.commit()
     conn.close()
