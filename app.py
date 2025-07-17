@@ -53,6 +53,13 @@ def init_db():
         percent_max REAL
     )''')
 
+    c.execute('''CREATE TABLE IF NOT EXISTS subject_distribution_global (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        subject TEXT,
+        percent_min REAL,
+        percent_max REAL
+    )''')
+
     c.execute('''CREATE TABLE IF NOT EXISTS slot_times (
         slot INTEGER PRIMARY KEY,
         start_time TEXT
@@ -95,8 +102,14 @@ def init_db():
         c.executemany('INSERT INTO students (name, subjects) VALUES (?, ?)', students)
     c.execute('SELECT COUNT(*) FROM slot_times')
     if c.fetchone()[0] == 0:
+        start_minutes = 8 * 60 + 30
+        duration = 30
         for s in range(8):
-            c.execute('INSERT INTO slot_times (slot, start_time) VALUES (?, ?)', (s, f"08:{30 + s*30:02d}"))
+            mins = start_minutes + duration * s
+            hour = mins // 60
+            minute = mins % 60
+            c.execute('INSERT INTO slot_times (slot, start_time) VALUES (?, ?)',
+                      (s, f"{hour:02d}:{minute:02d}"))
     conn.commit()
     conn.close()
 
@@ -112,8 +125,8 @@ def config():
     c = conn.cursor()
     if request.method == 'POST':
         slots_per_day = int(request.form['slots_per_day'])
-        slot_duration = int(request.form['slot_duration'])
         lesson_duration = int(request.form['lesson_duration'])
+        slot_duration = lesson_duration
         min_lessons = int(request.form['min_lessons'])
         max_lessons = int(request.form['max_lessons'])
         c.execute('UPDATE config SET slots_per_day=?, slot_duration=?, lesson_duration=?, min_lessons=?, max_lessons=? WHERE id=1',
@@ -125,18 +138,21 @@ def config():
         for tid, name, subj in zip(teacher_ids, teacher_names, teacher_subjects):
             if tid:
                 c.execute('UPDATE teachers SET name=?, subject=? WHERE id=?', (name, subj, int(tid)))
-                # teacher restrictions
-                restrict = request.form.get(f'teacher_restrict_{tid}', '')
+                restrict_ids = request.form.getlist(f'teacher_restrict_{tid}')
                 c.execute('DELETE FROM teacher_restrictions WHERE teacher_id=?', (int(tid),))
-                for sid in [s.strip() for s in restrict.split(',') if s.strip()]:
-                    c.execute('INSERT INTO teacher_restrictions (teacher_id, student_id) VALUES (?, ?)', (int(tid), int(sid)))
-                # teacher unavailability ranges "start-end,start2-end2"
-                unavail = request.form.get(f'teacher_unavail_{tid}', '')
+                for sid in restrict_ids:
+                    c.execute('INSERT INTO teacher_restrictions (teacher_id, student_id) VALUES (?, ?)',
+                              (int(tid), int(sid)))
+                unavail_slots = request.form.getlist(f'teacher_unavail_{tid}')
                 c.execute('DELETE FROM teacher_unavailability WHERE teacher_id=?', (int(tid),))
-                for rng in [r.strip() for r in unavail.split(',') if '-' in r]:
-                    s,e = rng.split('-',1)
+                for sl in unavail_slots:
                     c.execute('INSERT INTO teacher_unavailability (teacher_id, start_slot, end_slot) VALUES (?, ?, ?)',
-                              (int(tid), int(s)-1, int(e)-1))
+                              (int(tid), int(sl)-1, int(sl)-1))
+
+        new_t_name = request.form.get('new_teacher_name', '').strip()
+        new_t_subject = request.form.get('new_teacher_subject', '').strip()
+        if new_t_name and new_t_subject:
+            c.execute('INSERT INTO teachers (name, subject) VALUES (?, ?)', (new_t_name, new_t_subject))
         # update students
         student_ids = request.form.getlist('student_id')
         student_names = request.form.getlist('student_name')
@@ -164,6 +180,25 @@ def config():
             time_str = request.form.get(f'slot_time_{i}', '')
             if time_str:
                 c.execute('INSERT OR REPLACE INTO slot_times (slot, start_time) VALUES (?, ?)', (i, time_str))
+
+        # global subject distribution
+        g_ids = request.form.getlist('global_dist_id')
+        g_subjects = request.form.getlist('global_dist_subject')
+        g_mins = request.form.getlist('global_dist_min')
+        g_maxs = request.form.getlist('global_dist_max')
+        for gid, subj, pmin, pmax in zip(g_ids, g_subjects, g_mins, g_maxs):
+            if gid:
+                if subj.strip() == '':
+                    c.execute('DELETE FROM subject_distribution_global WHERE id=?', (int(gid),))
+                else:
+                    c.execute('UPDATE subject_distribution_global SET subject=?, percent_min=?, percent_max=? WHERE id=?',
+                              (subj.strip(), float(pmin), float(pmax), int(gid)))
+        new_g_subj = request.form.get('new_global_subject', '').strip()
+        new_g_min = request.form.get('new_global_min', '')
+        new_g_max = request.form.get('new_global_max', '')
+        if new_g_subj and new_g_min and new_g_max:
+            c.execute('INSERT INTO subject_distribution_global (subject, percent_min, percent_max) VALUES (?, ?, ?)',
+                      (new_g_subj, float(new_g_min), float(new_g_max)))
         conn.commit()
         conn.close()
         return redirect(url_for('config'))
@@ -184,12 +219,15 @@ def config():
     unavail_rows = c.fetchall()
     teacher_unavail = {}
     for r in unavail_rows:
-        teacher_unavail.setdefault(r['teacher_id'], []).append(f"{r['start_slot']+1}-{r['end_slot']+1}")
+        for s in range(r['start_slot'], r['end_slot']+1):
+            teacher_unavail.setdefault(r['teacher_id'], []).append(str(s+1))
     c.execute('SELECT * FROM subject_distribution')
     dist_rows = c.fetchall()
     student_dist = {}
     for r in dist_rows:
         student_dist.setdefault(r['student_id'], []).append(f"{r['subject']}:{r['percent_min']}-{r['percent_max']}")
+    c.execute('SELECT * FROM subject_distribution_global')
+    global_dist_rows = c.fetchall()
     c.execute('SELECT * FROM slot_times ORDER BY slot')
     slot_rows = c.fetchall()
     slot_times = {row['slot']: row['start_time'] for row in slot_rows}
@@ -197,7 +235,7 @@ def config():
     return render_template('config.html', config=cfg, teachers=teachers, students=students,
                            json=json, teacher_restrict=teacher_restrict,
                            teacher_unavail=teacher_unavail, student_dist=student_dist,
-                           slot_times=slot_times)
+                           slot_times=slot_times, global_dist=global_dist_rows)
 
 
 def generate_schedule():
@@ -222,12 +260,16 @@ def generate_schedule():
     unavail_rows = c.fetchall()
     teacher_unavail = {}
     for r in unavail_rows:
-        teacher_unavail.setdefault(r['teacher_id'], []).append((r['start_slot'], r['end_slot']))
+        for s in range(r['start_slot'], r['end_slot']+1):
+            teacher_unavail.setdefault(r['teacher_id'], set()).add(s)
     c.execute('SELECT * FROM subject_distribution')
     dist_rows = c.fetchall()
     student_dist = {}
     for r in dist_rows:
         student_dist.setdefault(r['student_id'], {})[r['subject']] = (r['percent_min'], r['percent_max'])
+    c.execute('SELECT * FROM subject_distribution_global')
+    g_rows = c.fetchall()
+    global_dist = {r['subject']: (r['percent_min'], r['percent_max']) for r in g_rows}
 
     # clear previous timetable
     c.execute('DELETE FROM timetable')
@@ -249,7 +291,8 @@ def generate_schedule():
     max_per_subject = {}
     min_per_subject = {}
     for s in students:
-        dist = student_dist.get(s['id'], {})
+        dist = global_dist.copy()
+        dist.update(student_dist.get(s['id'], {}))
         max_per_subject[s['id']] = {}
         min_per_subject[s['id']] = {}
         for subj in json.loads(s['subjects']):
@@ -269,7 +312,7 @@ def generate_schedule():
                     continue
                 if sid in teacher_restrict.get(t['id'], set()):
                     continue
-                if any(r[0] <= slot <= r[1] for r in teacher_unavail.get(t['id'], [])):
+                if slot in teacher_unavail.get(t['id'], set()):
                     continue
                 if subject_count[sid].get(subj, 0) >= max_per_subject[sid].get(subj, max_lessons):
                     continue
@@ -332,6 +375,28 @@ def delete_student(student_id):
     c = conn.cursor()
     c.execute('DELETE FROM students WHERE id=?', (student_id,))
     c.execute('DELETE FROM subject_distribution WHERE student_id=?', (student_id,))
+    conn.commit()
+    conn.close()
+    return redirect(url_for('config'))
+
+
+@app.route('/delete_teacher/<int:teacher_id>')
+def delete_teacher(teacher_id):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('DELETE FROM teachers WHERE id=?', (teacher_id,))
+    c.execute('DELETE FROM teacher_restrictions WHERE teacher_id=?', (teacher_id,))
+    c.execute('DELETE FROM teacher_unavailability WHERE teacher_id=?', (teacher_id,))
+    conn.commit()
+    conn.close()
+    return redirect(url_for('config'))
+
+
+@app.route('/delete_global_dist/<int:dist_id>')
+def delete_global_dist(dist_id):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('DELETE FROM subject_distribution_global WHERE id=?', (dist_id,))
     conn.commit()
     conn.close()
     return redirect(url_for('config'))

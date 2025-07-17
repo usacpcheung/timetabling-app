@@ -11,7 +11,6 @@
         <fieldset>
             <legend>General</legend>
             <label>Slots per day: <input type="number" name="slots_per_day" value="{{ config['slots_per_day'] }}"></label><br>
-            <label>Slot duration (minutes): <input type="number" name="slot_duration" value="{{ config['slot_duration'] }}"></label><br>
             <label>Lesson duration (minutes): <input type="number" name="lesson_duration" value="{{ config['lesson_duration'] }}"></label><br>
             <label>Min lessons per student: <input type="number" name="min_lessons" value="{{ config['min_lessons'] }}"></label><br>
             <label>Max lessons per student: <input type="number" name="max_lessons" value="{{ config['max_lessons'] }}"></label>
@@ -22,9 +21,27 @@
             <input type="hidden" name="teacher_id" value="{{ t['id'] }}">
             <label>Name: <input type="text" name="teacher_name" value="{{ t['name'] }}"></label>
             <label>Subject: <input type="text" name="teacher_subject" value="{{ t['subject'] }}"></label>
-            <label>Can't teach students: <input type="text" name="teacher_restrict_{{ t['id'] }}" value="{{ teacher_restrict.get(t['id'], [])|join(',') }}"></label>
-            <label>Unavailable slots: <input type="text" name="teacher_unavail_{{ t['id'] }}" value="{{ teacher_unavail.get(t['id'], [])|join(',') }}"></label><br>
+            <label>Can't teach:
+                <select name="teacher_restrict_{{ t['id'] }}" multiple>
+                {% for s in students %}
+                    <option value="{{ s['id'] }}" {% if s['id']|string in teacher_restrict.get(t['id'], []) %}selected{% endif %}>{{ s['name'] }}</option>
+                {% endfor %}
+                </select>
+            </label>
+            <label>Unavailable slots:
+                <select name="teacher_unavail_{{ t['id'] }}" multiple>
+                {% for slot in range(config['slots_per_day']) %}
+                    <option value="{{ slot + 1 }}" {% if (slot + 1)|string in teacher_unavail.get(t['id'], []) %}selected{% endif %}>{{ slot + 1 }}</option>
+                {% endfor %}
+                </select>
+            </label>
+            <a href="{{ url_for('delete_teacher', teacher_id=t['id']) }}">Remove</a><br>
             {% endfor %}
+        </fieldset>
+        <fieldset>
+            <legend>Add Teacher</legend>
+            <label>Name: <input type="text" name="new_teacher_name"></label>
+            <label>Subject: <input type="text" name="new_teacher_subject"></label>
         </fieldset>
         <fieldset>
             <legend>Students (comma separated subjects)</legend>
@@ -35,6 +52,19 @@
             <label>Distribution: <input type="text" name="student_dist_{{ s['id'] }}" value="{{ student_dist.get(s['id'], [])|join(';') }}"></label>
             <a href="{{ url_for('delete_student', student_id=s['id']) }}">Remove</a><br>
             {% endfor %}
+        </fieldset>
+        <fieldset>
+            <legend>Global Subject Distribution</legend>
+            {% for g in global_dist %}
+            <input type="hidden" name="global_dist_id" value="{{ g['id'] }}">
+            <label>Subject: <input type="text" name="global_dist_subject" value="{{ g['subject'] }}"></label>
+            <label>Min%: <input type="number" name="global_dist_min" value="{{ g['percent_min'] }}"></label>
+            <label>Max%: <input type="number" name="global_dist_max" value="{{ g['percent_max'] }}"></label>
+            <a href="{{ url_for('delete_global_dist', dist_id=g['id']) }}">Remove</a><br>
+            {% endfor %}
+            <label>Subject: <input type="text" name="new_global_subject"></label>
+            <label>Min%: <input type="number" name="new_global_min"></label>
+            <label>Max%: <input type="number" name="new_global_max"></label>
         </fieldset>
         <fieldset>
             <legend>Add Student</legend>
