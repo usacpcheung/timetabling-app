@@ -191,33 +191,45 @@ def generate_schedule():
         for subj in json.loads(s['subjects']):
             subject_students.setdefault(subj, deque()).append(s['id'])
 
+    # track which subject each teacher will attempt next
+    teacher_subjects = {
+        t['id']: deque(json.loads(t['subject']) if t['subject'].startswith('[') else [t['subject']])
+        for t in teachers
+    }
+
     # count lessons per student
     lesson_count = {s['id']: 0 for s in students}
 
+    def select_student(queue, slot):
+        chosen = None
+        for _ in range(len(queue)):
+            sid = queue.popleft()
+            queue.append(sid)
+            if student_schedule[sid][slot] is None and lesson_count[sid] < max_lessons:
+                if lesson_count[sid] < min_lessons:
+                    return sid
+                if chosen is None:
+                    chosen = sid
+        return chosen
+
     for slot in range(slots):
         for t in teachers:
-            subjects = json.loads(t['subject']) if t['subject'].startswith('[') else [t['subject']]
-            scheduled = False
-            for subj in subjects:
-                if scheduled:
-                    break
+            subjects = teacher_subjects[t['id']]
+            for _ in range(len(subjects)):
+                subj = subjects[0]
+                subjects.rotate(-1)
                 queue = subject_students.get(subj)
                 if not queue:
                     continue
-                # iterate through queue once to find an available student
-                for _ in range(len(queue)):
-                    sid = queue.popleft()
-                    if student_schedule[sid][slot] is None and lesson_count[sid] < max_lessons:
-                        teacher_schedule[t['id']][slot] = sid
-                        student_schedule[sid][slot] = t['id']
-                        lesson_count[sid] += 1
-                        c.execute('INSERT INTO timetable (student_id, teacher_id, subject, slot) VALUES (?, ?, ?, ?)',
-                                  (sid, t['id'], subj, slot))
-                        queue.append(sid)
-                        scheduled = True
-                        break
-                    else:
-                        queue.append(sid)
+                sid = select_student(queue, slot)
+                if sid is None:
+                    continue
+                teacher_schedule[t['id']][slot] = sid
+                student_schedule[sid][slot] = t['id']
+                lesson_count[sid] += 1
+                c.execute('INSERT INTO timetable (student_id, teacher_id, subject, slot) VALUES (?, ?, ?, ?)',
+                          (sid, t['id'], subj, slot))
+                break
 
     conn.commit()
     conn.close()
