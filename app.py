@@ -27,7 +27,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS teachers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT,
-        subject TEXT
+        subjects TEXT
     )''')
     c.execute('''CREATE TABLE IF NOT EXISTS students (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -50,12 +50,12 @@ def init_db():
     c.execute('SELECT COUNT(*) FROM teachers')
     if c.fetchone()[0] == 0:
         teachers = [
-            ('Teacher A', 'Math'),
-            ('Teacher B', 'English'),
-            ('Teacher C', 'Science'),
-            ('Teacher D', 'History')
+            ('Teacher A', json.dumps(['Math'])),
+            ('Teacher B', json.dumps(['English'])),
+            ('Teacher C', json.dumps(['Science'])),
+            ('Teacher D', json.dumps(['History']))
         ]
-        c.executemany('INSERT INTO teachers (name, subject) VALUES (?, ?)', teachers)
+        c.executemany('INSERT INTO teachers (name, subjects) VALUES (?, ?)', teachers)
     c.execute('SELECT COUNT(*) FROM students')
     if c.fetchone()[0] == 0:
         students = [
@@ -94,10 +94,11 @@ def config():
         # update teachers
         teacher_ids = request.form.getlist('teacher_id')
         teacher_names = request.form.getlist('teacher_name')
-        teacher_subjects = request.form.getlist('teacher_subject')
+        teacher_subjects = request.form.getlist('teacher_subjects')
         for tid, name, subj in zip(teacher_ids, teacher_names, teacher_subjects):
             if tid:
-                c.execute('UPDATE teachers SET name=?, subject=? WHERE id=?', (name, subj, int(tid)))
+                subj_json = json.dumps([s.strip() for s in subj.split(',') if s.strip()])
+                c.execute('UPDATE teachers SET name=?, subjects=? WHERE id=?', (name, subj_json, int(tid)))
         # update students
         student_ids = request.form.getlist('student_id')
         student_names = request.form.getlist('student_name')
@@ -140,6 +141,7 @@ def generate_schedule():
 
     teacher_schedule = {t['id']: [None]*slots for t in teachers}
     student_schedule = {s['id']: [None]*slots for s in students}
+    teacher_subjects = {t['id']: json.loads(t['subjects']) for t in teachers}
 
     # build lists of students per subject
     subject_students = {}
@@ -152,19 +154,22 @@ def generate_schedule():
 
     for slot in range(slots):
         for t in teachers:
-            subj = t['subject']
-            candidates = subject_students.get(subj, [])
-            chosen = None
-            for sid in candidates:
-                if student_schedule[sid][slot] is None and lesson_count[sid] < max_lessons:
-                    chosen = sid
+            assigned = False
+            for subj in teacher_subjects[t['id']]:
+                candidates = subject_students.get(subj, [])
+                chosen = None
+                for sid in candidates:
+                    if student_schedule[sid][slot] is None and lesson_count[sid] < max_lessons:
+                        chosen = sid
+                        break
+                if chosen is not None:
+                    teacher_schedule[t['id']][slot] = chosen
+                    student_schedule[chosen][slot] = t['id']
+                    lesson_count[chosen] += 1
+                    c.execute('INSERT INTO timetable (student_id, teacher_id, subject, slot) VALUES (?, ?, ?, ?)',
+                              (chosen, t['id'], subj, slot))
+                    assigned = True
                     break
-            if chosen is not None:
-                teacher_schedule[t['id']][slot] = chosen
-                student_schedule[chosen][slot] = t['id']
-                lesson_count[chosen] += 1
-                c.execute('INSERT INTO timetable (student_id, teacher_id, subject, slot) VALUES (?, ?, ?, ?)',
-                          (chosen, t['id'], subj, slot))
 
     conn.commit()
     conn.close()
@@ -200,7 +205,7 @@ def timetable():
         tid = next(te['id'] for te in teachers if te['name'] == r['teacher'])
         grid[r['slot']][tid] = f"{r['student']} ({r['subject']})"
 
-    return render_template('timetable.html', slots=range(slots), teachers=teachers, grid=grid)
+    return render_template('timetable.html', slots=range(slots), teachers=teachers, grid=grid, json=json)
 
 
 if __name__ == '__main__':

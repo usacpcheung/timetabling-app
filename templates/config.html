@@ -21,7 +21,7 @@
             {% for t in teachers %}
             <input type="hidden" name="teacher_id" value="{{ t['id'] }}">
             <label>Name: <input type="text" name="teacher_name" value="{{ t['name'] }}"></label>
-            <label>Subject: <input type="text" name="teacher_subject" value="{{ t['subject'] }}"></label><br>
+            <label>Subjects: <input type="text" name="teacher_subjects" value="{{ ', '.join(json.loads(t['subjects'])) }}"></label><br>
             {% endfor %}
         </fieldset>
         <fieldset>
