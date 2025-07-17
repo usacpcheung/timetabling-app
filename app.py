@@ -138,8 +138,8 @@ def generate_schedule():
     # clear previous timetable
     c.execute('DELETE FROM timetable')
 
-    teacher_schedule = {t['id']: [None]*slots for t in teachers}
-    student_schedule = {s['id']: [None]*slots for s in students}
+    teacher_schedule = {t['id']: [None] * slots for t in teachers}
+    student_schedule = {s['id']: [None] * slots for s in students}
 
     # build lists of students per subject
     subject_students = {}
@@ -147,24 +147,55 @@ def generate_schedule():
         for subj in json.loads(s['subjects']):
             subject_students.setdefault(subj, []).append(s['id'])
 
-    # count lessons per student
+    # count lessons per student and per subject
     lesson_count = {s['id']: 0 for s in students}
+    subject_count = {s['id']: {subj: 0 for subj in json.loads(s['subjects'])} for s in students}
+    prev_subject = {s['id']: None for s in students}
+
+    # calculate per-subject min and max
+    per_subject_limits = {}
+    for s in students:
+        subjects = json.loads(s['subjects'])
+        if subjects:
+            min_per = max(1, min_lessons // len(subjects))
+            max_per = max(1, (max_lessons + len(subjects) - 1) // len(subjects))
+        else:
+            min_per = max_per = 0
+        per_subject_limits[s['id']] = (min_per, max_per)
 
     for slot in range(slots):
         for t in teachers:
             subj = t['subject']
             candidates = subject_students.get(subj, [])
-            chosen = None
+            available = []
+            preferred = []
             for sid in candidates:
-                if student_schedule[sid][slot] is None and lesson_count[sid] < max_lessons:
-                    chosen = sid
-                    break
+                if student_schedule[sid][slot] is not None:
+                    continue
+                if lesson_count[sid] >= max_lessons:
+                    continue
+                min_per, max_per = per_subject_limits[sid]
+                if subject_count[sid][subj] >= max_per:
+                    continue
+                if prev_subject[sid] == subj:
+                    continue
+                if subject_count[sid][subj] < min_per:
+                    preferred.append(sid)
+                else:
+                    available.append(sid)
+
+            chosen = preferred[0] if preferred else (available[0] if available else None)
+
             if chosen is not None:
                 teacher_schedule[t['id']][slot] = chosen
                 student_schedule[chosen][slot] = t['id']
                 lesson_count[chosen] += 1
-                c.execute('INSERT INTO timetable (student_id, teacher_id, subject, slot) VALUES (?, ?, ?, ?)',
-                          (chosen, t['id'], subj, slot))
+                subject_count[chosen][subj] += 1
+                prev_subject[chosen] = subj
+                c.execute(
+                    'INSERT INTO timetable (student_id, teacher_id, subject, slot) VALUES (?, ?, ?, ?)',
+                    (chosen, t['id'], subj, slot)
+                )
 
     conn.commit()
     conn.close()
