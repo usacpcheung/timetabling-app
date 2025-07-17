@@ -41,6 +41,10 @@ def init_db():
         subject TEXT,
         slot INTEGER
     )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS default_subjects (
+        id INTEGER PRIMARY KEY,
+        subjects TEXT
+    )''')
     conn.commit()
 
     # insert defaults if tables empty
@@ -70,6 +74,10 @@ def init_db():
             ('Student 9', json.dumps(['English']))
         ]
         c.executemany('INSERT INTO students (name, subjects) VALUES (?, ?)', students)
+    c.execute('SELECT COUNT(*) FROM default_subjects')
+    if c.fetchone()[0] == 0:
+        c.execute('INSERT INTO default_subjects (id, subjects) VALUES (1, ?)',
+                  (json.dumps(["Math", "English"]),))
     conn.commit()
     conn.close()
 
@@ -91,21 +99,48 @@ def config():
         max_lessons = int(request.form['max_lessons'])
         c.execute('UPDATE config SET slots_per_day=?, slot_duration=?, lesson_duration=?, min_lessons=?, max_lessons=? WHERE id=1',
                   (slots_per_day, slot_duration, lesson_duration, min_lessons, max_lessons))
+        default_subjects = [s.strip() for s in request.form.get('default_subjects', '').split(',') if s.strip()]
+        c.execute('REPLACE INTO default_subjects (id, subjects) VALUES (1, ?)', (json.dumps(default_subjects),))
         # update teachers
         teacher_ids = request.form.getlist('teacher_id')
         teacher_names = request.form.getlist('teacher_name')
         teacher_subjects = request.form.getlist('teacher_subject')
+        delete_teachers = request.form.getlist('delete_teacher')
         for tid, name, subj in zip(teacher_ids, teacher_names, teacher_subjects):
             if tid:
-                c.execute('UPDATE teachers SET name=?, subject=? WHERE id=?', (name, subj, int(tid)))
+                if tid in delete_teachers:
+                    c.execute('DELETE FROM teachers WHERE id=?', (int(tid),))
+                    c.execute('DELETE FROM timetable WHERE teacher_id=?', (int(tid),))
+                else:
+                    subj_json = json.dumps([s.strip() for s in subj.split(',') if s.strip()])
+                    c.execute('UPDATE teachers SET name=?, subject=? WHERE id=?', (name, subj_json, int(tid)))
+        new_teacher_name = request.form.get('new_teacher_name')
+        new_teacher_subject = request.form.get('new_teacher_subject')
+        if new_teacher_name and new_teacher_subject:
+            subj_json = json.dumps([s.strip() for s in new_teacher_subject.split(',') if s.strip()])
+            c.execute('INSERT INTO teachers (name, subject) VALUES (?, ?)', (new_teacher_name, subj_json))
         # update students
         student_ids = request.form.getlist('student_id')
         student_names = request.form.getlist('student_name')
         student_subjects = request.form.getlist('student_subjects')
+        delete_students = request.form.getlist('delete_student')
         for sid, name, subj in zip(student_ids, student_names, student_subjects):
             if sid:
-                subj_json = json.dumps([s.strip() for s in subj.split(',') if s.strip()])
-                c.execute('UPDATE students SET name=?, subjects=? WHERE id=?', (name, subj_json, int(sid)))
+                if sid in delete_students:
+                    c.execute('DELETE FROM students WHERE id=?', (int(sid),))
+                    c.execute('DELETE FROM timetable WHERE student_id=?', (int(sid),))
+                else:
+                    subj_json = json.dumps([s.strip() for s in subj.split(',') if s.strip()])
+                    c.execute('UPDATE students SET name=?, subjects=? WHERE id=?', (name, subj_json, int(sid)))
+        new_student_name = request.form.get('new_student_name')
+        new_student_subjects = request.form.get('new_student_subjects')
+        if new_student_name:
+            c.execute('SELECT subjects FROM default_subjects WHERE id=1')
+            row = c.fetchone()
+            defaults = json.loads(row['subjects']) if row else []
+            extras = [s.strip() for s in new_student_subjects.split(',')] if new_student_subjects else []
+            subjects = list(dict.fromkeys(defaults + [e for e in extras if e]))
+            c.execute('INSERT INTO students (name, subjects) VALUES (?, ?)', (new_student_name, json.dumps(subjects)))
         conn.commit()
         conn.close()
         return redirect(url_for('config'))
@@ -117,8 +152,11 @@ def config():
     teachers = c.fetchall()
     c.execute('SELECT * FROM students')
     students = c.fetchall()
+    c.execute('SELECT subjects FROM default_subjects WHERE id=1')
+    row = c.fetchone()
+    default_subjects = ', '.join(json.loads(row['subjects'])) if row and row['subjects'] else ''
     conn.close()
-    return render_template('config.html', config=cfg, teachers=teachers, students=students)
+    return render_template('config.html', config=cfg, teachers=teachers, students=students, default_subjects=default_subjects)
 
 
 def generate_schedule():
@@ -152,19 +190,21 @@ def generate_schedule():
 
     for slot in range(slots):
         for t in teachers:
-            subj = t['subject']
-            candidates = subject_students.get(subj, [])
-            chosen = None
-            for sid in candidates:
-                if student_schedule[sid][slot] is None and lesson_count[sid] < max_lessons:
-                    chosen = sid
+            subjects = json.loads(t['subject']) if t['subject'].startswith('[') else [t['subject']]
+            scheduled = False
+            for subj in subjects:
+                if scheduled:
                     break
-            if chosen is not None:
-                teacher_schedule[t['id']][slot] = chosen
-                student_schedule[chosen][slot] = t['id']
-                lesson_count[chosen] += 1
-                c.execute('INSERT INTO timetable (student_id, teacher_id, subject, slot) VALUES (?, ?, ?, ?)',
-                          (chosen, t['id'], subj, slot))
+                candidates = subject_students.get(subj, [])
+                for sid in candidates:
+                    if student_schedule[sid][slot] is None and lesson_count[sid] < max_lessons:
+                        teacher_schedule[t['id']][slot] = sid
+                        student_schedule[sid][slot] = t['id']
+                        lesson_count[sid] += 1
+                        c.execute('INSERT INTO timetable (student_id, teacher_id, subject, slot) VALUES (?, ?, ?, ?)',
+                                  (sid, t['id'], subj, slot))
+                        scheduled = True
+                        break
 
     conn.commit()
     conn.close()

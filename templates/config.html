@@ -14,23 +14,38 @@
             <label>Slot duration (minutes): <input type="number" name="slot_duration" value="{{ config['slot_duration'] }}"></label><br>
             <label>Lesson duration (minutes): <input type="number" name="lesson_duration" value="{{ config['lesson_duration'] }}"></label><br>
             <label>Min lessons per student: <input type="number" name="min_lessons" value="{{ config['min_lessons'] }}"></label><br>
-            <label>Max lessons per student: <input type="number" name="max_lessons" value="{{ config['max_lessons'] }}"></label>
+            <label>Max lessons per student: <input type="number" name="max_lessons" value="{{ config['max_lessons'] }}"></label><br>
+            <label>Default subjects (comma separated):
+                <input type="text" name="default_subjects" value="{{ default_subjects }}">
+            </label>
         </fieldset>
         <fieldset>
-            <legend>Teachers</legend>
+            <legend>Teachers (comma separated subjects)</legend>
             {% for t in teachers %}
             <input type="hidden" name="teacher_id" value="{{ t['id'] }}">
             <label>Name: <input type="text" name="teacher_name" value="{{ t['name'] }}"></label>
-            <label>Subject: <input type="text" name="teacher_subject" value="{{ t['subject'] }}"></label><br>
+            <label>Subjects: <input type="text" name="teacher_subject" value="{{ ', '.join(json.loads(t['subject'])) if t['subject'].startswith('[') else t['subject'] }}"></label>
+            <label>Delete: <input type="checkbox" name="delete_teacher" value="{{ t['id'] }}"></label><br>
             {% endfor %}
+            <div>
+                <strong>Add Teacher:</strong><br>
+                <label>Name: <input type="text" name="new_teacher_name"></label>
+                <label>Subjects: <input type="text" name="new_teacher_subject"></label>
+            </div>
         </fieldset>
         <fieldset>
             <legend>Students (comma separated subjects)</legend>
             {% for s in students %}
             <input type="hidden" name="student_id" value="{{ s['id'] }}">
             <label>Name: <input type="text" name="student_name" value="{{ s['name'] }}"></label>
-            <label>Subjects: <input type="text" name="student_subjects" value="{{ ', '.join(json.loads(s['subjects'])) }}"></label><br>
+            <label>Subjects: <input type="text" name="student_subjects" value="{{ ', '.join(json.loads(s['subjects'])) }}"></label>
+            <label>Delete: <input type="checkbox" name="delete_student" value="{{ s['id'] }}"></label><br>
             {% endfor %}
+            <div>
+                <strong>Add Student:</strong><br>
+                <label>Name: <input type="text" name="new_student_name"></label>
+                <label>Additional subjects: <input type="text" name="new_student_subjects"></label>
+            </div>
         </fieldset>
         <button type="submit">Save</button>
     </form>
