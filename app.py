@@ -3,6 +3,8 @@ import sqlite3
 import json
 import os
 
+from cp_sat_timetable import build_model, solve_and_print
+
 app = Flask(__name__)
 DB_PATH = os.path.join(os.path.dirname(__file__), 'timetable.db')
 
@@ -138,33 +140,18 @@ def generate_schedule():
     # clear previous timetable
     c.execute('DELETE FROM timetable')
 
-    teacher_schedule = {t['id']: [None]*slots for t in teachers}
-    student_schedule = {s['id']: [None]*slots for s in students}
+    # Build and solve CP-SAT model
+    model, vars_ = build_model(students, teachers, slots, min_lessons, max_lessons)
+    status, assignments = solve_and_print(model, vars_)
 
-    # build lists of students per subject
-    subject_students = {}
-    for s in students:
-        for subj in json.loads(s['subjects']):
-            subject_students.setdefault(subj, []).append(s['id'])
-
-    # count lessons per student
-    lesson_count = {s['id']: 0 for s in students}
-
-    for slot in range(slots):
-        for t in teachers:
-            subj = t['subject']
-            candidates = subject_students.get(subj, [])
-            chosen = None
-            for sid in candidates:
-                if student_schedule[sid][slot] is None and lesson_count[sid] < max_lessons:
-                    chosen = sid
-                    break
-            if chosen is not None:
-                teacher_schedule[t['id']][slot] = chosen
-                student_schedule[chosen][slot] = t['id']
-                lesson_count[chosen] += 1
-                c.execute('INSERT INTO timetable (student_id, teacher_id, subject, slot) VALUES (?, ?, ?, ?)',
-                          (chosen, t['id'], subj, slot))
+    # Insert solver results into DB
+    if assignments:
+        for sid, tid, slot in assignments:
+            subj = next(t['subject'] for t in teachers if t['id'] == tid)
+            c.execute(
+                'INSERT INTO timetable (student_id, teacher_id, subject, slot) VALUES (?, ?, ?, ?)',
+                (sid, tid, subj, slot)
+            )
 
     conn.commit()
     conn.close()
