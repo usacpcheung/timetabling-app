@@ -17,26 +17,105 @@
             <label>Max lessons per student: <input type="number" name="max_lessons" value="{{ config['max_lessons'] }}"></label>
         </fieldset>
         <fieldset>
+            <legend>Subjects</legend>
+            {% for sub in subjects %}
+            <input type="hidden" name="subject_id" value="{{ sub['id'] }}">
+            <label>Name: <input type="text" name="subject_name_{{ sub['id'] }}" value="{{ sub['name'] }}"></label>
+            <label>Delete? <input type="checkbox" name="subject_delete" value="{{ sub['id'] }}"></label><br>
+            {% endfor %}
+            <label>New Subject: <input type="text" name="new_subject_name"></label><br>
+        </fieldset>
+        <fieldset>
             <legend>Teachers</legend>
             {% for t in teachers %}
             <input type="hidden" name="teacher_id" value="{{ t['id'] }}">
-            <label>Name: <input type="text" name="teacher_name" value="{{ t['name'] }}"></label>
-            <label>Subjects: <input type="text" name="teacher_subjects" value="{{ ', '.join(json.loads(t['subjects'])) }}"></label>
-            <label>Delete? <input type="checkbox" name="teacher_delete" value="{{ t['id'] }}"></label><br>
+            <label>Name: <input type="text" name="teacher_name_{{ t['id'] }}" value="{{ t['name'] }}"></label>
+            <label>Subjects:
+                <select multiple name="teacher_subjects_{{ t['id'] }}">
+                    {% for sub in subjects %}
+                    <option value="{{ sub['name'] }}" {% if sub['name'] in json.loads(t['subjects']) %}selected{% endif %}>{{ sub['name'] }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>Delete? <input type="checkbox" name="teacher_delete_{{ t['id'] }}" value="1"></label><br>
             {% endfor %}
             <label>New Name: <input type="text" name="new_teacher_name"></label>
-            <label>Subjects: <input type="text" name="new_teacher_subjects"></label><br>
+            <label>Subjects:
+                <select multiple name="new_teacher_subjects">
+                    {% for sub in subjects %}
+                    <option value="{{ sub['name'] }}">{{ sub['name'] }}</option>
+                    {% endfor %}
+                </select>
+            </label><br>
         </fieldset>
         <fieldset>
-            <legend>Students (comma separated subjects)</legend>
+            <legend>Students</legend>
             {% for s in students %}
             <input type="hidden" name="student_id" value="{{ s['id'] }}">
-            <label>Name: <input type="text" name="student_name" value="{{ s['name'] }}"></label>
-            <label>Subjects: <input type="text" name="student_subjects" value="{{ ', '.join(json.loads(s['subjects'])) }}"></label>
-            <label>Delete? <input type="checkbox" name="student_delete" value="{{ s['id'] }}"></label><br>
+            <label>Name: <input type="text" name="student_name_{{ s['id'] }}" value="{{ s['name'] }}"></label>
+            <label>Subjects:
+                <select multiple name="student_subjects_{{ s['id'] }}">
+                    {% for sub in subjects %}
+                    <option value="{{ sub['name'] }}" {% if sub['name'] in json.loads(s['subjects']) %}selected{% endif %}>{{ sub['name'] }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>Delete? <input type="checkbox" name="student_delete_{{ s['id'] }}" value="1"></label><br>
             {% endfor %}
             <label>New Name: <input type="text" name="new_student_name"></label>
-            <label>Subjects: <input type="text" name="new_student_subjects"></label><br>
+            <label>Subjects:
+                <select multiple name="new_student_subjects">
+                    {% for sub in subjects %}
+                    <option value="{{ sub['name'] }}">{{ sub['name'] }}</option>
+                    {% endfor %}
+                </select>
+            </label><br>
+        </fieldset>
+        <fieldset>
+            <legend>Teacher Unavailability</legend>
+            {% for u in unavailable %}
+            <input type="hidden" name="unavail_id" value="{{ u['id'] }}">
+            <span>{{ u['teacher_name'] }} - Slot {{ u['slot'] + 1 }}</span>
+            <label>Delete? <input type="checkbox" name="unavail_delete" value="{{ u['id'] }}"></label><br>
+            {% endfor %}
+            <label>Teacher:
+                <select name="new_unavail_teacher">
+                    {% for t in teachers %}
+                    <option value="{{ t['id'] }}">{{ t['name'] }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>Slot: <input type="number" name="new_unavail_slot" min="1" max="{{ config['slots_per_day'] }}"></label><br>
+        </fieldset>
+        <fieldset>
+            <legend>Fixed Assignments</legend>
+            {% for a in assignments %}
+            <input type="hidden" name="assign_id" value="{{ a['id'] }}">
+            <span>{{ a['student_name'] }} - {{ a['subject'] }} with {{ a['teacher_name'] }} at Slot {{ a['slot'] + 1 }}</span>
+            <label>Delete? <input type="checkbox" name="assign_delete" value="{{ a['id'] }}"></label><br>
+            {% endfor %}
+            <label>Student:
+                <select name="new_assign_student">
+                    {% for s in students %}
+                    <option value="{{ s['id'] }}">{{ s['name'] }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>Teacher:
+                <select name="new_assign_teacher">
+                    {% for t in teachers %}
+                    <option value="{{ t['id'] }}">{{ t['name'] }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>Subject:
+                <select name="new_assign_subject">
+                    {% for sub in subjects %}
+                    <option value="{{ sub['name'] }}">{{ sub['name'] }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>Slot: <input type="number" name="new_assign_slot" min="1" max="{{ config['slots_per_day'] }}"></label><br>
         </fieldset>
         <button type="submit">Save</button>
     </form>

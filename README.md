@@ -35,10 +35,12 @@ The app will be available at `http://localhost:5000`.
 
 ### Configuration
 
-Open `/config` to edit teachers, students and general parameters. Teacher and
-student subjects are entered as comma separated lists. Each teacher or student
-name must be unique. The default database contains a simple setup with three
-teachers and several students to get you started.
+Open `/config` to edit teachers, students and general parameters. Subjects are
+managed separately and can then be selected for each teacher or student. You
+can also define unavailable slots for teachers and fix a particular
+teacher/student/subject to a specific slot. Each teacher or student name must be
+unique. The default database contains a simple setup with three teachers and
+several students to get you started.
 
 A minimal test configuration could be:
 
