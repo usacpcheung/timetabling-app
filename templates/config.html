@@ -21,16 +21,22 @@
             {% for t in teachers %}
             <input type="hidden" name="teacher_id" value="{{ t['id'] }}">
             <label>Name: <input type="text" name="teacher_name" value="{{ t['name'] }}"></label>
-            <label>Subject: <input type="text" name="teacher_subject" value="{{ t['subject'] }}"></label><br>
+            <label>Subjects: <input type="text" name="teacher_subjects" value="{{ ', '.join(json.loads(t['subjects'])) }}"></label>
+            <label>Delete? <input type="checkbox" name="teacher_delete" value="{{ t['id'] }}"></label><br>
             {% endfor %}
+            <label>New Name: <input type="text" name="new_teacher_name"></label>
+            <label>Subjects: <input type="text" name="new_teacher_subjects"></label><br>
         </fieldset>
         <fieldset>
             <legend>Students (comma separated subjects)</legend>
             {% for s in students %}
             <input type="hidden" name="student_id" value="{{ s['id'] }}">
             <label>Name: <input type="text" name="student_name" value="{{ s['name'] }}"></label>
-            <label>Subjects: <input type="text" name="student_subjects" value="{{ ', '.join(json.loads(s['subjects'])) }}"></label><br>
+            <label>Subjects: <input type="text" name="student_subjects" value="{{ ', '.join(json.loads(s['subjects'])) }}"></label>
+            <label>Delete? <input type="checkbox" name="student_delete" value="{{ s['id'] }}"></label><br>
             {% endfor %}
+            <label>New Name: <input type="text" name="new_student_name"></label>
+            <label>Subjects: <input type="text" name="new_student_subjects"></label><br>
         </fieldset>
         <button type="submit">Save</button>
     </form>

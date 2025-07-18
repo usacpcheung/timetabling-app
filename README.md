@@ -24,11 +24,35 @@ templates/
 
 ## ▶️ Running
 
-Install Flask if needed and start the development server:
+Install Flask and OR-Tools if needed and start the development server:
 
 ```bash
-pip install Flask
+pip install Flask ortools
 python app.py
 ```
 
 The app will be available at `http://localhost:5000`.
+
+### Configuration
+
+Open `/config` to edit teachers, students and general parameters. Teacher and
+student subjects are entered as comma separated lists. Each teacher or student
+name must be unique. The default database contains a simple setup with three
+teachers and several students to get you started.
+
+A minimal test configuration could be:
+
+```
+Teachers
+    Teacher A: Math, English
+    Teacher B: Science
+    Teacher C: History
+
+Students
+    Student 1: Math, English
+    Student 2: Math, Science
+    Student 3: History
+```
+
+With `slots_per_day=6` and `max_lessons=3` you should see a timetable after
+clicking *Generate Timetable* from the home page.
