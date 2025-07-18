@@ -18,6 +18,12 @@ def get_db():
 def init_db():
     conn = get_db()
     c = conn.cursor()
+    # drop old tables when schema changes
+    c.execute('DROP TABLE IF EXISTS config')
+    c.execute('DROP TABLE IF EXISTS teachers')
+    c.execute('DROP TABLE IF EXISTS students')
+    c.execute('DROP TABLE IF EXISTS timetable')
+
     c.execute('''CREATE TABLE IF NOT EXISTS config (
         id INTEGER PRIMARY KEY,
         slots_per_day INTEGER,
@@ -28,12 +34,12 @@ def init_db():
     )''')
     c.execute('''CREATE TABLE IF NOT EXISTS teachers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT,
-        subject TEXT
+        name TEXT UNIQUE,
+        subjects TEXT
     )''')
     c.execute('''CREATE TABLE IF NOT EXISTS students (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT,
+        name TEXT UNIQUE,
         subjects TEXT
     )''')
     c.execute('''CREATE TABLE IF NOT EXISTS timetable (
@@ -52,12 +58,11 @@ def init_db():
     c.execute('SELECT COUNT(*) FROM teachers')
     if c.fetchone()[0] == 0:
         teachers = [
-            ('Teacher A', 'Math'),
-            ('Teacher B', 'English'),
-            ('Teacher C', 'Science'),
-            ('Teacher D', 'History')
+            ('Teacher A', json.dumps(['Math', 'English'])),
+            ('Teacher B', json.dumps(['Science'])),
+            ('Teacher C', json.dumps(['History'])),
         ]
-        c.executemany('INSERT INTO teachers (name, subject) VALUES (?, ?)', teachers)
+        c.executemany('INSERT INTO teachers (name, subjects) VALUES (?, ?)', teachers)
     c.execute('SELECT COUNT(*) FROM students')
     if c.fetchone()[0] == 0:
         students = [
@@ -96,18 +101,20 @@ def config():
         # update teachers
         teacher_ids = request.form.getlist('teacher_id')
         teacher_names = request.form.getlist('teacher_name')
-        teacher_subjects = request.form.getlist('teacher_subject')
+        teacher_subjects = request.form.getlist('teacher_subjects')
         deletes = set(request.form.getlist('teacher_delete'))
         for tid, name, subj in zip(teacher_ids, teacher_names, teacher_subjects):
             if tid:
                 if tid in deletes:
                     c.execute('DELETE FROM teachers WHERE id=?', (int(tid),))
                 else:
-                    c.execute('UPDATE teachers SET name=?, subject=? WHERE id=?', (name, subj, int(tid)))
+                    subj_json = json.dumps([s.strip() for s in subj.split(',') if s.strip()])
+                    c.execute('UPDATE teachers SET name=?, subjects=? WHERE id=?', (name, subj_json, int(tid)))
         new_tname = request.form.get('new_teacher_name')
-        new_tsubj = request.form.get('new_teacher_subject')
+        new_tsubj = request.form.get('new_teacher_subjects')
         if new_tname and new_tsubj:
-            c.execute('INSERT INTO teachers (name, subject) VALUES (?, ?)', (new_tname, new_tsubj))
+            subj_json = json.dumps([s.strip() for s in new_tsubj.split(',') if s.strip()])
+            c.execute('INSERT INTO teachers (name, subjects) VALUES (?, ?)', (new_tname, subj_json))
         # update students
         student_ids = request.form.getlist('student_id')
         student_names = request.form.getlist('student_name')
@@ -163,8 +170,7 @@ def generate_schedule():
 
     # Insert solver results into DB
     if assignments:
-        for sid, tid, slot in assignments:
-            subj = next(t['subject'] for t in teachers if t['id'] == tid)
+        for sid, tid, subj, slot in assignments:
             c.execute(
                 'INSERT INTO timetable (student_id, teacher_id, subject, slot) VALUES (?, ?, ?, ?)',
                 (sid, tid, subj, slot)
@@ -204,7 +210,7 @@ def timetable():
         tid = next(te['id'] for te in teachers if te['name'] == r['teacher'])
         grid[r['slot']][tid] = f"{r['student']} ({r['subject']})"
 
-    return render_template('timetable.html', slots=range(slots), teachers=teachers, grid=grid)
+    return render_template('timetable.html', slots=range(slots), teachers=teachers, grid=grid, json=json)
 
 
 if __name__ == '__main__':
