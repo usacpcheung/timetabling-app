@@ -97,17 +97,34 @@ def config():
         teacher_ids = request.form.getlist('teacher_id')
         teacher_names = request.form.getlist('teacher_name')
         teacher_subjects = request.form.getlist('teacher_subject')
+        deletes = set(request.form.getlist('teacher_delete'))
         for tid, name, subj in zip(teacher_ids, teacher_names, teacher_subjects):
             if tid:
-                c.execute('UPDATE teachers SET name=?, subject=? WHERE id=?', (name, subj, int(tid)))
+                if tid in deletes:
+                    c.execute('DELETE FROM teachers WHERE id=?', (int(tid),))
+                else:
+                    c.execute('UPDATE teachers SET name=?, subject=? WHERE id=?', (name, subj, int(tid)))
+        new_tname = request.form.get('new_teacher_name')
+        new_tsubj = request.form.get('new_teacher_subject')
+        if new_tname and new_tsubj:
+            c.execute('INSERT INTO teachers (name, subject) VALUES (?, ?)', (new_tname, new_tsubj))
         # update students
         student_ids = request.form.getlist('student_id')
         student_names = request.form.getlist('student_name')
         student_subjects = request.form.getlist('student_subjects')
+        deletes_s = set(request.form.getlist('student_delete'))
         for sid, name, subj in zip(student_ids, student_names, student_subjects):
             if sid:
-                subj_json = json.dumps([s.strip() for s in subj.split(',') if s.strip()])
-                c.execute('UPDATE students SET name=?, subjects=? WHERE id=?', (name, subj_json, int(sid)))
+                if sid in deletes_s:
+                    c.execute('DELETE FROM students WHERE id=?', (int(sid),))
+                else:
+                    subj_json = json.dumps([s.strip() for s in subj.split(',') if s.strip()])
+                    c.execute('UPDATE students SET name=?, subjects=? WHERE id=?', (name, subj_json, int(sid)))
+        new_sname = request.form.get('new_student_name')
+        new_ssubj = request.form.get('new_student_subjects')
+        if new_sname and new_ssubj:
+            subj_json = json.dumps([s.strip() for s in new_ssubj.split(',') if s.strip()])
+            c.execute('INSERT INTO students (name, subjects) VALUES (?, ?)', (new_sname, subj_json))
         conn.commit()
         conn.close()
         return redirect(url_for('config'))
@@ -120,7 +137,7 @@ def config():
     c.execute('SELECT * FROM students')
     students = c.fetchall()
     conn.close()
-    return render_template('config.html', config=cfg, teachers=teachers, students=students)
+    return render_template('config.html', config=cfg, teachers=teachers, students=students, json=json)
 
 
 def generate_schedule():

@@ -44,14 +44,22 @@ def build_model(students, teachers, slots, min_lessons, max_lessons):
             if possible:
                 model.Add(sum(possible) <= 1)
 
-    # Limit total lessons per student
+    # Limit total lessons per student and ensure each required subject is taken
     for student in students:
-        possible = [vars_[(student['id'], t['id'], sl)]
-                    for t in teachers for sl in range(slots)
-                    if (student['id'], t['id'], sl) in vars_]
-        if possible:
-            model.Add(sum(possible) >= min_lessons)
-            model.Add(sum(possible) <= max_lessons)
+        total = []
+        subs = json.loads(student['subjects'])
+        for subject in subs:
+            subject_vars = [vars_[(student['id'], t['id'], sl)]
+                            for t in teachers if t['subject'] == subject
+                            for sl in range(slots)
+                            if (student['id'], t['id'], sl) in vars_]
+            if subject_vars:
+                model.Add(sum(subject_vars) >= 1)
+                total.extend(subject_vars)
+        # total lessons constraint
+        if total:
+            model.Add(sum(total) >= min_lessons)
+            model.Add(sum(total) <= max_lessons)
 
     # Maximize total scheduled lessons
     model.Maximize(sum(vars_.values()))

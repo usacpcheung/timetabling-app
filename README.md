@@ -24,10 +24,10 @@ templates/
 
 ## ▶️ Running
 
-Install Flask if needed and start the development server:
+Install Flask and OR-Tools if needed and start the development server:
 
 ```bash
-pip install Flask
+pip install Flask ortools
 python app.py
 ```
 
