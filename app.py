@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash
 import sqlite3
 import json
 import os
+from datetime import date
 
 from cp_sat_timetable import build_model, solve_and_print
 
@@ -19,65 +20,100 @@ def get_db():
 def init_db():
     conn = get_db()
     c = conn.cursor()
-    # drop old tables when schema changes
-    c.execute('DROP TABLE IF EXISTS config')
-    c.execute('DROP TABLE IF EXISTS teachers')
-    c.execute('DROP TABLE IF EXISTS students')
-    c.execute('DROP TABLE IF EXISTS subjects')
-    c.execute('DROP TABLE IF EXISTS teacher_unavailable')
-    c.execute('DROP TABLE IF EXISTS fixed_assignments')
-    c.execute('DROP TABLE IF EXISTS timetable')
 
-    c.execute('''CREATE TABLE IF NOT EXISTS config (
-        id INTEGER PRIMARY KEY,
-        slots_per_day INTEGER,
-        slot_duration INTEGER,
-        lesson_duration INTEGER,
-        min_lessons INTEGER,
-        max_lessons INTEGER,
-        teacher_min_lessons INTEGER,
-        teacher_max_lessons INTEGER,
-        allow_repeats INTEGER,
-        max_repeats INTEGER,
-        prefer_consecutive INTEGER,
-        allow_consecutive INTEGER,
-        consecutive_weight INTEGER
-    )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS teachers (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT UNIQUE,
-        subjects TEXT,
-        min_lessons INTEGER,
-        max_lessons INTEGER
-    )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS students (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT UNIQUE,
-        subjects TEXT
-    )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS subjects (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT UNIQUE
-    )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS teacher_unavailable (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        teacher_id INTEGER,
-        slot INTEGER
-    )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS fixed_assignments (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        teacher_id INTEGER,
-        student_id INTEGER,
-        subject TEXT,
-        slot INTEGER
-    )''')
-    c.execute('''CREATE TABLE IF NOT EXISTS timetable (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        student_id INTEGER,
-        teacher_id INTEGER,
-        subject TEXT,
-        slot INTEGER
-    )''')
+    def table_exists(name):
+        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (name,))
+        return c.fetchone() is not None
+
+    def column_exists(table, column):
+        c.execute(f"PRAGMA table_info({table})")
+        return column in [row[1] for row in c.fetchall()]
+
+    # create tables if not present
+    if not table_exists('config'):
+        c.execute('''CREATE TABLE config (
+            id INTEGER PRIMARY KEY,
+            slots_per_day INTEGER,
+            slot_duration INTEGER,
+            lesson_duration INTEGER,
+            min_lessons INTEGER,
+            max_lessons INTEGER,
+            teacher_min_lessons INTEGER,
+            teacher_max_lessons INTEGER,
+            allow_repeats INTEGER,
+            max_repeats INTEGER,
+            prefer_consecutive INTEGER,
+            allow_consecutive INTEGER,
+            consecutive_weight INTEGER
+        )''')
+
+    if not table_exists('teachers'):
+        c.execute('''CREATE TABLE teachers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE,
+            subjects TEXT,
+            min_lessons INTEGER,
+            max_lessons INTEGER
+        )''')
+
+    if not table_exists('students'):
+        c.execute('''CREATE TABLE students (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE,
+            subjects TEXT,
+            active INTEGER DEFAULT 1
+        )''')
+    elif not column_exists('students', 'active'):
+        c.execute('ALTER TABLE students ADD COLUMN active INTEGER DEFAULT 1')
+
+    if not table_exists('subjects'):
+        c.execute('''CREATE TABLE subjects (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE
+        )''')
+
+    if not table_exists('teacher_unavailable'):
+        c.execute('''CREATE TABLE teacher_unavailable (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            teacher_id INTEGER,
+            slot INTEGER
+        )''')
+
+    if not table_exists('fixed_assignments'):
+        c.execute('''CREATE TABLE fixed_assignments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            teacher_id INTEGER,
+            student_id INTEGER,
+            subject TEXT,
+            slot INTEGER
+        )''')
+
+    if not table_exists('timetable'):
+        c.execute('''CREATE TABLE timetable (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER,
+            teacher_id INTEGER,
+            subject TEXT,
+            slot INTEGER,
+            date TEXT
+        )''')
+    elif not column_exists('timetable', 'date'):
+        c.execute('ALTER TABLE timetable ADD COLUMN date TEXT')
+
+    if not table_exists('groups'):
+        c.execute('''CREATE TABLE groups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE,
+            subjects TEXT
+        )''')
+
+    if not table_exists('group_members'):
+        c.execute('''CREATE TABLE group_members (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id INTEGER,
+            student_id INTEGER
+        )''')
+
     conn.commit()
 
     # insert defaults if tables empty
@@ -121,7 +157,7 @@ def init_db():
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('index.html', today=date.today().isoformat())
 
 
 @app.route('/config', methods=['GET', 'POST'])
@@ -218,13 +254,44 @@ def config():
             else:
                 name = request.form.get(f'student_name_{sid}')
                 subs = request.form.getlist(f'student_subjects_{sid}')
+                active = 1 if request.form.get(f'student_active_{sid}') else 0
                 subj_json = json.dumps(subs)
-                c.execute('UPDATE students SET name=?, subjects=? WHERE id=?', (name, subj_json, int(sid)))
+                c.execute('UPDATE students SET name=?, subjects=?, active=? WHERE id=?',
+                          (name, subj_json, active, int(sid)))
         new_sname = request.form.get('new_student_name')
         new_ssubs = request.form.getlist('new_student_subjects')
         if new_sname and new_ssubs:
             subj_json = json.dumps(new_ssubs)
-            c.execute('INSERT INTO students (name, subjects) VALUES (?, ?)', (new_sname, subj_json))
+            c.execute('INSERT INTO students (name, subjects, active) VALUES (?, ?, 1)',
+                      (new_sname, subj_json))
+
+        # update groups
+        group_ids = request.form.getlist('group_id')
+        deletes_grp = set(request.form.getlist('group_delete'))
+        for gid in group_ids:
+            if gid in deletes_grp:
+                c.execute('DELETE FROM groups WHERE id=?', (int(gid),))
+                c.execute('DELETE FROM group_members WHERE group_id=?', (int(gid),))
+            else:
+                name = request.form.get(f'group_name_{gid}')
+                subs = request.form.getlist(f'group_subjects_{gid}')
+                members = request.form.getlist(f'group_members_{gid}')
+                c.execute('UPDATE groups SET name=?, subjects=? WHERE id=?',
+                          (name, json.dumps(subs), int(gid)))
+                c.execute('DELETE FROM group_members WHERE group_id=?', (int(gid),))
+                for sid in members:
+                    c.execute('INSERT INTO group_members (group_id, student_id) VALUES (?, ?)',
+                              (int(gid), int(sid)))
+        ng_name = request.form.get('new_group_name')
+        ng_subs = request.form.getlist('new_group_subjects')
+        ng_members = request.form.getlist('new_group_members')
+        if ng_name and ng_subs and ng_members:
+            c.execute('INSERT INTO groups (name, subjects) VALUES (?, ?)',
+                      (ng_name, json.dumps(ng_subs)))
+            gid = c.lastrowid
+            for sid in ng_members:
+                c.execute('INSERT INTO group_members (group_id, student_id) VALUES (?, ?)',
+                          (gid, int(sid)))
 
         # update teacher unavailability
         unavail_ids = request.form.getlist('unavail_id')
@@ -307,6 +374,13 @@ def config():
     students = c.fetchall()
     c.execute('SELECT * FROM subjects')
     subjects = c.fetchall()
+    c.execute('SELECT * FROM groups')
+    groups = c.fetchall()
+    c.execute('SELECT group_id, student_id FROM group_members')
+    gm_rows = c.fetchall()
+    group_map = {}
+    for gm in gm_rows:
+        group_map.setdefault(gm['group_id'], []).append(gm['student_id'])
     c.execute('''SELECT u.id, u.teacher_id, u.slot, t.name as teacher_name
                  FROM teacher_unavailable u JOIN teachers t ON u.teacher_id = t.id''')
     unavailable = c.fetchall()
@@ -327,16 +401,18 @@ def config():
     conn.close()
 
     return render_template('config.html', config=cfg, teachers=teachers,
-                           students=students, subjects=subjects,
+                           students=students, subjects=subjects, groups=groups,
                            unavailable=unavailable, assignments=assignments,
                            teacher_map=teacher_map, student_map=student_map,
                            unavail_map=unavail_map, assign_map=assign_map,
-                           json=json)
+                           group_map=group_map, json=json)
 
 
-def generate_schedule():
+def generate_schedule(target_date=None):
     conn = get_db()
     c = conn.cursor()
+    if target_date is None:
+        target_date = date.today().isoformat()
     c.execute('SELECT * FROM config WHERE id=1')
     cfg = c.fetchone()
     slots = cfg['slots_per_day']
@@ -347,15 +423,22 @@ def generate_schedule():
 
     c.execute('SELECT * FROM teachers')
     teachers = c.fetchall()
-    c.execute('SELECT * FROM students')
+    c.execute('SELECT * FROM students WHERE active=1')
     students = c.fetchall()
+    c.execute('SELECT * FROM groups')
+    groups = c.fetchall()
+    c.execute('SELECT group_id, student_id FROM group_members')
+    gm_rows = c.fetchall()
+    group_members = {}
+    for gm in gm_rows:
+        group_members.setdefault(gm['group_id'], []).append(gm['student_id'])
     c.execute('SELECT * FROM teacher_unavailable')
     unavailable = c.fetchall()
     c.execute('SELECT * FROM fixed_assignments')
     assignments_fixed = c.fetchall()
 
-    # clear previous timetable
-    c.execute('DELETE FROM timetable')
+    # clear previous timetable for the target date
+    c.execute('DELETE FROM timetable WHERE date=?', (target_date,))
 
     # Build and solve CP-SAT model
     allow_repeats = bool(cfg['allow_repeats'])
@@ -365,8 +448,26 @@ def generate_schedule():
     consecutive_weight = cfg['consecutive_weight']
     # Build the CP-SAT model with assumption literals so that we can obtain
     # an unsat core explaining conflicts when no timetable exists.
+    # incorporate groups as pseudo students
+    pseudo_students = []
+    offset = 10000
+    for g in groups:
+        ps = {"id": offset + g['id'], "subjects": g['subjects']}
+        pseudo_students.append(ps)
+    actual_students = []
+    for s in students:
+        subs = set(json.loads(s['subjects']))
+        for gid, members in group_members.items():
+            if s['id'] in members:
+                gsubs = json.loads(next(g for g in groups if g['id']==gid)['subjects'])
+                subs -= set(gsubs)
+        new_s = dict(s)
+        new_s['subjects'] = json.dumps(list(subs))
+        actual_students.append(new_s)
+    full_students = actual_students + pseudo_students
+
     model, vars_, assumptions = build_model(
-        students, teachers, slots, min_lessons, max_lessons,
+        full_students, teachers, slots, min_lessons, max_lessons,
         allow_repeats=allow_repeats, max_repeats=max_repeats,
         prefer_consecutive=prefer_consecutive, allow_consecutive=allow_consecutive,
         consecutive_weight=consecutive_weight,
@@ -378,10 +479,15 @@ def generate_schedule():
     # Insert solver results into DB
     if assignments:
         for sid, tid, subj, slot in assignments:
-            c.execute(
-                'INSERT INTO timetable (student_id, teacher_id, subject, slot) VALUES (?, ?, ?, ?)',
-                (sid, tid, subj, slot)
-            )
+            if sid >= offset:
+                gid = sid - offset
+                members = group_members.get(gid, [])
+                for m in members:
+                    c.execute('INSERT INTO timetable (student_id, teacher_id, subject, slot, date) VALUES (?, ?, ?, ?, ?)',
+                              (m, tid, subj, slot, target_date))
+            else:
+                c.execute('INSERT INTO timetable (student_id, teacher_id, subject, slot, date) VALUES (?, ?, ?, ?, ?)',
+                          (sid, tid, subj, slot, target_date))
     else:
         from ortools.sat.python import cp_model
         if status == cp_model.INFEASIBLE:
@@ -401,14 +507,16 @@ def generate_schedule():
     conn.close()
 
 
-@app.route('/generate')
+@app.route('/generate', methods=['POST'])
 def generate():
-    generate_schedule()
-    return redirect(url_for('timetable'))
+    gen_date = request.form.get('date') or date.today().isoformat()
+    generate_schedule(gen_date)
+    return redirect(url_for('timetable', date=gen_date))
 
 
 @app.route('/timetable')
 def timetable():
+    target_date = request.args.get('date')
     conn = get_db()
     c = conn.cursor()
     c.execute('SELECT * FROM config WHERE id=1')
@@ -417,10 +525,15 @@ def timetable():
 
     c.execute('SELECT * FROM teachers')
     teachers = c.fetchall()
+    if not target_date:
+        c.execute('SELECT DISTINCT date FROM timetable ORDER BY date DESC LIMIT 1')
+        row = c.fetchone()
+        target_date = row['date'] if row else date.today().isoformat()
     c.execute('''SELECT t.slot, te.name as teacher, s.name as student, t.subject
                  FROM timetable t
                  JOIN teachers te ON t.teacher_id = te.id
-                 JOIN students s ON t.student_id = s.id''')
+                 JOIN students s ON t.student_id = s.id
+                 WHERE t.date=?''', (target_date,))
     rows = c.fetchall()
     conn.close()
 
@@ -434,7 +547,7 @@ def timetable():
         tid = next(te['id'] for te in teachers if te['name'] == r['teacher'])
         grid[r['slot']][tid] = f"{r['student']} ({r['subject']})"
 
-    return render_template('timetable.html', slots=range(slots), teachers=teachers, grid=grid, json=json)
+    return render_template('timetable.html', slots=range(slots), teachers=teachers, grid=grid, json=json, date=target_date)
 
 
 if __name__ == '__main__':
