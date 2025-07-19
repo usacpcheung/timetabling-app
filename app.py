@@ -22,6 +22,9 @@ def init_db():
     c.execute('DROP TABLE IF EXISTS config')
     c.execute('DROP TABLE IF EXISTS teachers')
     c.execute('DROP TABLE IF EXISTS students')
+    c.execute('DROP TABLE IF EXISTS subjects')
+    c.execute('DROP TABLE IF EXISTS teacher_unavailable')
+    c.execute('DROP TABLE IF EXISTS fixed_assignments')
     c.execute('DROP TABLE IF EXISTS timetable')
 
     c.execute('''CREATE TABLE IF NOT EXISTS config (
@@ -41,6 +44,22 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT UNIQUE,
         subjects TEXT
+    )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS subjects (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE
+    )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS teacher_unavailable (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        teacher_id INTEGER,
+        slot INTEGER
+    )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS fixed_assignments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        teacher_id INTEGER,
+        student_id INTEGER,
+        subject TEXT,
+        slot INTEGER
     )''')
     c.execute('''CREATE TABLE IF NOT EXISTS timetable (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,6 +96,10 @@ def init_db():
             ('Student 9', json.dumps(['English']))
         ]
         c.executemany('INSERT INTO students (name, subjects) VALUES (?, ?)', students)
+    c.execute('SELECT COUNT(*) FROM subjects')
+    if c.fetchone()[0] == 0:
+        subjects = [('Math',), ('English',), ('Science',), ('History',)]
+        c.executemany('INSERT INTO subjects (name) VALUES (?)', subjects)
     conn.commit()
     conn.close()
 
@@ -98,40 +121,79 @@ def config():
         max_lessons = int(request.form['max_lessons'])
         c.execute('UPDATE config SET slots_per_day=?, slot_duration=?, lesson_duration=?, min_lessons=?, max_lessons=? WHERE id=1',
                   (slots_per_day, slot_duration, lesson_duration, min_lessons, max_lessons))
+        # update subjects
+        subj_ids = request.form.getlist('subject_id')
+        deletes_sub = set(request.form.getlist('subject_delete'))
+        for sid in subj_ids:
+            name = request.form.get(f'subject_name_{sid}')
+            if sid in deletes_sub:
+                c.execute('DELETE FROM subjects WHERE id=?', (int(sid),))
+            else:
+                c.execute('UPDATE subjects SET name=? WHERE id=?', (name, int(sid)))
+        new_sub = request.form.get('new_subject_name')
+        if new_sub:
+            c.execute('INSERT INTO subjects (name) VALUES (?)', (new_sub,))
+
         # update teachers
         teacher_ids = request.form.getlist('teacher_id')
-        teacher_names = request.form.getlist('teacher_name')
-        teacher_subjects = request.form.getlist('teacher_subjects')
-        deletes = set(request.form.getlist('teacher_delete'))
-        for tid, name, subj in zip(teacher_ids, teacher_names, teacher_subjects):
-            if tid:
-                if tid in deletes:
-                    c.execute('DELETE FROM teachers WHERE id=?', (int(tid),))
-                else:
-                    subj_json = json.dumps([s.strip() for s in subj.split(',') if s.strip()])
-                    c.execute('UPDATE teachers SET name=?, subjects=? WHERE id=?', (name, subj_json, int(tid)))
+        deletes = set()
+        for tid in teacher_ids:
+            if request.form.get(f'teacher_delete_{tid}'):
+                c.execute('DELETE FROM teachers WHERE id=?', (int(tid),))
+                deletes.add(tid)
+            else:
+                name = request.form.get(f'teacher_name_{tid}')
+                subs = request.form.getlist(f'teacher_subjects_{tid}')
+                subj_json = json.dumps(subs)
+                c.execute('UPDATE teachers SET name=?, subjects=? WHERE id=?', (name, subj_json, int(tid)))
         new_tname = request.form.get('new_teacher_name')
-        new_tsubj = request.form.get('new_teacher_subjects')
-        if new_tname and new_tsubj:
-            subj_json = json.dumps([s.strip() for s in new_tsubj.split(',') if s.strip()])
+        new_tsubs = request.form.getlist('new_teacher_subjects')
+        if new_tname and new_tsubs:
+            subj_json = json.dumps(new_tsubs)
             c.execute('INSERT INTO teachers (name, subjects) VALUES (?, ?)', (new_tname, subj_json))
+
         # update students
         student_ids = request.form.getlist('student_id')
-        student_names = request.form.getlist('student_name')
-        student_subjects = request.form.getlist('student_subjects')
-        deletes_s = set(request.form.getlist('student_delete'))
-        for sid, name, subj in zip(student_ids, student_names, student_subjects):
-            if sid:
-                if sid in deletes_s:
-                    c.execute('DELETE FROM students WHERE id=?', (int(sid),))
-                else:
-                    subj_json = json.dumps([s.strip() for s in subj.split(',') if s.strip()])
-                    c.execute('UPDATE students SET name=?, subjects=? WHERE id=?', (name, subj_json, int(sid)))
+        for sid in student_ids:
+            if request.form.get(f'student_delete_{sid}'):
+                c.execute('DELETE FROM students WHERE id=?', (int(sid),))
+            else:
+                name = request.form.get(f'student_name_{sid}')
+                subs = request.form.getlist(f'student_subjects_{sid}')
+                subj_json = json.dumps(subs)
+                c.execute('UPDATE students SET name=?, subjects=? WHERE id=?', (name, subj_json, int(sid)))
         new_sname = request.form.get('new_student_name')
-        new_ssubj = request.form.get('new_student_subjects')
-        if new_sname and new_ssubj:
-            subj_json = json.dumps([s.strip() for s in new_ssubj.split(',') if s.strip()])
+        new_ssubs = request.form.getlist('new_student_subjects')
+        if new_sname and new_ssubs:
+            subj_json = json.dumps(new_ssubs)
             c.execute('INSERT INTO students (name, subjects) VALUES (?, ?)', (new_sname, subj_json))
+
+        # update teacher unavailability
+        unavail_ids = request.form.getlist('unavail_id')
+        del_unav = set(request.form.getlist('unavail_delete'))
+        for uid in unavail_ids:
+            if uid in del_unav:
+                c.execute('DELETE FROM teacher_unavailable WHERE id=?', (int(uid),))
+        nu_teacher = request.form.get('new_unavail_teacher')
+        nu_slot = request.form.get('new_unavail_slot')
+        if nu_teacher and nu_slot:
+            c.execute('INSERT INTO teacher_unavailable (teacher_id, slot) VALUES (?, ?)',
+                      (int(nu_teacher), int(nu_slot) - 1))
+
+        # update fixed assignments
+        assign_ids = request.form.getlist('assign_id')
+        del_assign = set(request.form.getlist('assign_delete'))
+        for aid in assign_ids:
+            if aid in del_assign:
+                c.execute('DELETE FROM fixed_assignments WHERE id=?', (int(aid),))
+        na_student = request.form.get('new_assign_student')
+        na_teacher = request.form.get('new_assign_teacher')
+        na_subject = request.form.get('new_assign_subject')
+        na_slot = request.form.get('new_assign_slot')
+        if na_student and na_teacher and na_subject and na_slot:
+            c.execute('INSERT INTO fixed_assignments (teacher_id, student_id, subject, slot) VALUES (?, ?, ?, ?)',
+                      (int(na_teacher), int(na_student), na_subject, int(na_slot) - 1))
+
         conn.commit()
         conn.close()
         return redirect(url_for('config'))
@@ -143,8 +205,22 @@ def config():
     teachers = c.fetchall()
     c.execute('SELECT * FROM students')
     students = c.fetchall()
+    c.execute('SELECT * FROM subjects')
+    subjects = c.fetchall()
+    c.execute('''SELECT u.id, u.teacher_id, u.slot, t.name as teacher_name
+                 FROM teacher_unavailable u JOIN teachers t ON u.teacher_id = t.id''')
+    unavailable = c.fetchall()
+    c.execute('''SELECT a.id, a.teacher_id, a.student_id, a.subject, a.slot,
+                        t.name as teacher_name, s.name as student_name
+                 FROM fixed_assignments a
+                 JOIN teachers t ON a.teacher_id = t.id
+                 JOIN students s ON a.student_id = s.id''')
+    assignments = c.fetchall()
     conn.close()
-    return render_template('config.html', config=cfg, teachers=teachers, students=students, json=json)
+    return render_template('config.html', config=cfg, teachers=teachers,
+                           students=students, subjects=subjects,
+                           unavailable=unavailable, assignments=assignments,
+                           json=json)
 
 
 def generate_schedule():
@@ -160,12 +236,17 @@ def generate_schedule():
     teachers = c.fetchall()
     c.execute('SELECT * FROM students')
     students = c.fetchall()
+    c.execute('SELECT * FROM teacher_unavailable')
+    unavailable = c.fetchall()
+    c.execute('SELECT * FROM fixed_assignments')
+    assignments_fixed = c.fetchall()
 
     # clear previous timetable
     c.execute('DELETE FROM timetable')
 
     # Build and solve CP-SAT model
-    model, vars_ = build_model(students, teachers, slots, min_lessons, max_lessons)
+    model, vars_ = build_model(students, teachers, slots, min_lessons, max_lessons,
+                               unavailable, assignments_fixed)
     status, assignments = solve_and_print(model, vars_)
 
     # Insert solver results into DB

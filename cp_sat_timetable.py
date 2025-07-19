@@ -2,7 +2,8 @@ from ortools.sat.python import cp_model
 import json
 
 
-def build_model(students, teachers, slots, min_lessons, max_lessons):
+def build_model(students, teachers, slots, min_lessons, max_lessons,
+                unavailable=None, fixed=None):
     """Build CP-SAT model for the scheduling problem.
 
     Args:
@@ -18,6 +19,11 @@ def build_model(students, teachers, slots, min_lessons, max_lessons):
     """
     model = cp_model.CpModel()
     vars_ = {}
+    unavailable = unavailable or []
+    fixed = fixed or []
+    unavailable_set = {(u['teacher_id'], u['slot']) for u in unavailable}
+    fixed_set = {(f['student_id'], f['teacher_id'], f['subject'], f['slot'])
+                 for f in fixed}
 
     # Create variables for allowed (student, teacher, subject) triples
     for student in students:
@@ -27,8 +33,13 @@ def build_model(students, teachers, slots, min_lessons, max_lessons):
             common = student_subs & teacher_subs
             for subject in common:
                 for slot in range(slots):
-                    vars_[(student['id'], teacher['id'], subject, slot)] = model.NewBoolVar(
+                    key = (student['id'], teacher['id'], subject, slot)
+                    if key not in fixed_set and (teacher['id'], slot) in unavailable_set:
+                        continue
+                    vars_[key] = model.NewBoolVar(
                         f"x_s{student['id']}_t{teacher['id']}_sub{subject}_sl{slot}")
+                    if key in fixed_set:
+                        model.Add(vars_[key] == 1)
 
     # Teacher cannot teach more than one lesson in a slot
     for teacher in teachers:
