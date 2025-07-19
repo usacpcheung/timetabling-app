@@ -24,10 +24,17 @@ templates/
 
 ## ▶️ Running
 
-Install Flask and OR-Tools if needed and start the development server:
+### Dependencies
+
+Install Flask and OR-Tools before running the application:
 
 ```bash
 pip install Flask ortools
+```
+
+Then start the development server:
+
+```bash
 python app.py
 ```
 
@@ -58,3 +65,17 @@ Students
 
 With `slots_per_day=6` and `max_lessons=3` you should see a timetable after
 clicking *Generate Timetable* from the home page.
+
+### Validation Rules
+
+The configuration page performs several checks when saving data:
+
+* The subject chosen for a fixed assignment must be taught by the selected
+  teacher **and** required by the student.
+* A fixed assignment cannot use a slot marked as unavailable for that teacher.
+* A teacher cannot be marked unavailable in a slot that already has a fixed assignment.
+* Duplicate fixed assignments for the same teacher and slot are rejected.
+
+If any of these conditions fail the assignment is rejected and a message is
+shown at the top of the page. Other sections rely on database constraints (for
+example unique teacher and student names) to enforce correctness.
