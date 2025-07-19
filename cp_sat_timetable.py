@@ -18,7 +18,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             in multiple slots.
         max_repeats: maximum allowed repeats when ``allow_repeats`` is True.
         prefer_consecutive: if True, repeated lessons are encouraged to appear in
-            consecutive slots.
+            consecutive slots (only meaningful when ``allow_repeats`` is True).
         allow_consecutive: if False, repeated lessons cannot be scheduled in
             consecutive slots.
         consecutive_weight: weight applied when maximizing consecutive repeats.

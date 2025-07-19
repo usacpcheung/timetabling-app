@@ -83,7 +83,7 @@ def init_db():
             id, slots_per_day, slot_duration, lesson_duration,
             min_lessons, max_lessons, allow_repeats, max_repeats,
             prefer_consecutive, allow_consecutive, consecutive_weight
-        ) VALUES (1, 8, 30, 30, 1, 4, 0, 2, 1, 1, 3)''')
+        ) VALUES (1, 8, 30, 30, 1, 4, 0, 2, 0, 1, 3)''')
     c.execute('SELECT COUNT(*) FROM teachers')
     if c.fetchone()[0] == 0:
         teachers = [
@@ -134,11 +134,17 @@ def config():
         prefer_consecutive = 1 if request.form.get('prefer_consecutive') else 0
         allow_consecutive = 1 if request.form.get('allow_consecutive') else 0
         consecutive_weight = int(request.form['consecutive_weight'])
-        if not allow_consecutive and prefer_consecutive:
+
+        if not allow_repeats:
+            allow_consecutive = 0
             prefer_consecutive = 0
-            flash('Cannot prefer consecutive slots when consecutive repeats are disallowed.', 'error')
-        if allow_repeats and max_repeats < 2:
-            max_repeats = 2
+        else:
+            if not allow_consecutive and prefer_consecutive:
+                prefer_consecutive = 0
+                flash('Cannot prefer consecutive slots when consecutive repeats are disallowed.',
+                      'error')
+            if max_repeats < 2:
+                max_repeats = 2
         c.execute('''UPDATE config SET slots_per_day=?, slot_duration=?, lesson_duration=?,
                      min_lessons=?, max_lessons=?, allow_repeats=?, max_repeats=?,
                      prefer_consecutive=?, allow_consecutive=?, consecutive_weight=? WHERE id=1''',

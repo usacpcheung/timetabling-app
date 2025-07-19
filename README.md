@@ -51,9 +51,10 @@ several students to get you started.
 
 The general section also contains options controlling whether a student can
 have multiple lessons with the same teacher and subject. When repeats are
-enabled you can specify the maximum allowed number, whether consecutive repeat
-slots are permitted and if they should be preferred. A weight value determines
-how strongly consecutive repeats are favored in the optimization.
+enabled you can specify the maximum allowed number. Additional settings allow
+consecutive repeats and optionally prefer them. These consecutive options are
+ignored when repeat lessons are disabled. A weight value determines how strongly
+consecutive repeats are favored in the optimization.
 
 A minimal test configuration could be:
 
