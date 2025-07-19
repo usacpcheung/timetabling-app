@@ -334,104 +334,6 @@ def config():
                            json=json)
 
 
-def analyze_infeasibility(students, teachers, slots, cfg, unavailable, fixed):
-    """Return human readable messages about conflicting constraints.
-
-    The function performs a lightweight analysis without rebuilding the CP-SAT
-    model.  It inspects teacher availability, fixed lessons and the global
-    configuration to highlight possible causes of infeasibility.  The checks are
-    intentionally conservative: they report issues that *may* lead to an
-    infeasible model but do not guarantee this is the only reason.
-    """
-
-    teacher_unavail = {t['id']: set() for t in teachers}
-    for u in unavailable:
-        teacher_unavail[u['teacher_id']].add(u['slot'])
-
-    # Count how many lessons are already fixed for each teacher.
-    teacher_fixed = {t['id']: 0 for t in teachers}
-    for f in fixed:
-        teacher_fixed[f['teacher_id']] += 1
-
-    messages = []
-
-    # Pre-compute remaining capacity for each teacher considering availability
-    # and max lesson limits.
-    teacher_capacity = {}
-    for t in teachers:
-        min_req = t['min_lessons'] if t['min_lessons'] is not None else cfg['teacher_min_lessons']
-        max_allow = t['max_lessons'] if t['max_lessons'] is not None else cfg['teacher_max_lessons']
-        avail = slots - len(teacher_unavail[t['id']])
-        if avail < min_req:
-            messages.append(
-                f"Teacher {t['name']} has only {avail} available slots but requires at least {min_req}."
-            )
-        if max_allow is not None and teacher_fixed[t['id']] > max_allow:
-            messages.append(
-                f"Teacher {t['name']} has {teacher_fixed[t['id']]} fixed lessons exceeding maximum {max_allow}."
-            )
-
-        remaining = avail - teacher_fixed[t['id']]
-        if max_allow is not None:
-            remaining = min(remaining, max_allow - teacher_fixed[t['id']])
-        teacher_capacity[t['id']] = max(0, remaining)
-
-    # Analyse each student individually.
-    for s in students:
-        subs = set(json.loads(s['subjects']))
-
-        # Detect subjects with no teacher at all (respecting unavailability).
-        missing = []
-        for sub in subs:
-            avail_teachers = [
-                t for t in teachers
-                if sub in json.loads(t['subjects']) and len(set(range(slots)) - teacher_unavail[t['id']]) > 0
-            ]
-            if not avail_teachers:
-                missing.append(sub)
-        if missing:
-            messages.append(
-                f"No teacher available for student {s['name']} subject(s): {', '.join(missing)}"
-            )
-
-        # Determine the set of slots where at least one matching teacher is available.
-        possible_slots = set()
-        unique_pairs = set()
-        capacity_total = 0
-        for t in teachers:
-            tsubs = set(json.loads(t['subjects']))
-            if not subs & tsubs:
-                continue
-            available_slots = [sl for sl in range(slots) if sl not in teacher_unavail[t['id']]]
-            if not available_slots:
-                continue
-            possible_slots.update(available_slots)
-            unique_pairs.update((t['id'], sub) for sub in (subs & tsubs))
-            capacity_total += teacher_capacity[t['id']]
-
-        # Upper bound of lessons the student could attend ignoring conflicts with
-        # other students. First limited by available slots and teacher capacity.
-        max_lessons_possible = min(len(possible_slots), capacity_total)
-
-        # When repeats are disabled a student cannot have the same
-        # teacher/subject combination twice.
-        if not cfg['allow_repeats']:
-            max_lessons_possible = min(max_lessons_possible, len(unique_pairs))
-
-        if max_lessons_possible < cfg['min_lessons']:
-            messages.append(
-                f"Student {s['name']} can receive at most {max_lessons_possible} lessons with current setup."
-            )
-
-    if not messages:
-        # Fall back to a generic message when no obvious issue was found.
-        messages.append(
-            'Configuration too restrictive; adjust lesson limits or availability.'
-        )
-
-    return messages
-
-
 def generate_schedule():
     conn = get_db()
     c = conn.cursor()
@@ -461,14 +363,17 @@ def generate_schedule():
     prefer_consecutive = bool(cfg['prefer_consecutive'])
     allow_consecutive = bool(cfg['allow_consecutive'])
     consecutive_weight = cfg['consecutive_weight']
-    model, vars_ = build_model(
+    # Build the CP-SAT model with assumption literals so that we can obtain
+    # an unsat core explaining conflicts when no timetable exists.
+    model, vars_, assumptions = build_model(
         students, teachers, slots, min_lessons, max_lessons,
         allow_repeats=allow_repeats, max_repeats=max_repeats,
         prefer_consecutive=prefer_consecutive, allow_consecutive=allow_consecutive,
         consecutive_weight=consecutive_weight,
         unavailable=unavailable, fixed=assignments_fixed,
-        teacher_min_lessons=teacher_min, teacher_max_lessons=teacher_max)
-    status, assignments = solve_and_print(model, vars_)
+        teacher_min_lessons=teacher_min, teacher_max_lessons=teacher_max,
+        add_assumptions=True)
+    status, assignments, core = solve_and_print(model, vars_, assumptions)
 
     # Insert solver results into DB
     if assignments:
@@ -480,10 +385,17 @@ def generate_schedule():
     else:
         from ortools.sat.python import cp_model
         if status == cp_model.INFEASIBLE:
-            msgs = analyze_infeasibility(students, teachers, slots, cfg, unavailable, assignments_fixed)
+            # Map assumption literals from the unsat core to human readable
+            # messages explaining why the model is infeasible.
+            reason_map = {
+                'teacher_availability': 'A teacher is unavailable for a required slot.',
+                'teacher_limits': 'Teacher lesson limits are too strict.',
+                'student_limits': 'Student lesson or subject requirements conflict.',
+                'repeat_restrictions': 'Repeat or consecutive lesson restrictions prevent a schedule.',
+            }
             flash('No feasible timetable could be generated.', 'error')
-            for m in msgs:
-                flash(m, 'error')
+            for name in core:
+                flash(reason_map.get(name, name), 'error')
 
     conn.commit()
     conn.close()
