@@ -49,6 +49,15 @@ teacher/student/subject to a specific slot. Each teacher or student name must be
 unique. The default database contains a simple setup with three teachers and
 several students to get you started.
 
+The general section also contains options controlling whether a student can
+have multiple lessons with the same teacher and subject. When repeats are
+enabled you can specify the maximum allowed number. Additional settings allow
+consecutive repeats and optionally prefer them. These consecutive options are
+ignored when repeat lessons are disabled. A weight value determines how strongly
+consecutive repeats are favored in the optimization. For a noticeable effect
+set the weight above **10**. Multiples of ten (e.g. `20`, `30`) increasingly
+prioritize consecutive placement over other constraints.
+
 A minimal test configuration could be:
 
 ```

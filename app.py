@@ -34,7 +34,12 @@ def init_db():
         slot_duration INTEGER,
         lesson_duration INTEGER,
         min_lessons INTEGER,
-        max_lessons INTEGER
+        max_lessons INTEGER,
+        allow_repeats INTEGER,
+        max_repeats INTEGER,
+        prefer_consecutive INTEGER,
+        allow_consecutive INTEGER,
+        consecutive_weight INTEGER
     )''')
     c.execute('''CREATE TABLE IF NOT EXISTS teachers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,7 +79,11 @@ def init_db():
     # insert defaults if tables empty
     c.execute('SELECT COUNT(*) FROM config')
     if c.fetchone()[0] == 0:
-        c.execute('INSERT INTO config (id, slots_per_day, slot_duration, lesson_duration, min_lessons, max_lessons) VALUES (1, 8, 30, 30, 1, 4)')
+        c.execute('''INSERT INTO config (
+            id, slots_per_day, slot_duration, lesson_duration,
+            min_lessons, max_lessons, allow_repeats, max_repeats,
+            prefer_consecutive, allow_consecutive, consecutive_weight
+        ) VALUES (1, 8, 30, 30, 1, 4, 0, 2, 0, 1, 3)''')
     c.execute('SELECT COUNT(*) FROM teachers')
     if c.fetchone()[0] == 0:
         teachers = [
@@ -120,8 +129,28 @@ def config():
         lesson_duration = int(request.form['lesson_duration'])
         min_lessons = int(request.form['min_lessons'])
         max_lessons = int(request.form['max_lessons'])
-        c.execute('UPDATE config SET slots_per_day=?, slot_duration=?, lesson_duration=?, min_lessons=?, max_lessons=? WHERE id=1',
-                  (slots_per_day, slot_duration, lesson_duration, min_lessons, max_lessons))
+        allow_repeats = 1 if request.form.get('allow_repeats') else 0
+        max_repeats = int(request.form['max_repeats'])
+        prefer_consecutive = 1 if request.form.get('prefer_consecutive') else 0
+        allow_consecutive = 1 if request.form.get('allow_consecutive') else 0
+        consecutive_weight = int(request.form['consecutive_weight'])
+
+        if not allow_repeats:
+            allow_consecutive = 0
+            prefer_consecutive = 0
+        else:
+            if not allow_consecutive and prefer_consecutive:
+                prefer_consecutive = 0
+                flash('Cannot prefer consecutive slots when consecutive repeats are disallowed.',
+                      'error')
+            if max_repeats < 2:
+                max_repeats = 2
+        c.execute('''UPDATE config SET slots_per_day=?, slot_duration=?, lesson_duration=?,
+                     min_lessons=?, max_lessons=?, allow_repeats=?, max_repeats=?,
+                     prefer_consecutive=?, allow_consecutive=?, consecutive_weight=? WHERE id=1''',
+                  (slots_per_day, slot_duration, lesson_duration, min_lessons,
+                   max_lessons, allow_repeats, max_repeats, prefer_consecutive,
+                   allow_consecutive, consecutive_weight))
         # update subjects
         subj_ids = request.form.getlist('subject_id')
         deletes_sub = set(request.form.getlist('subject_delete'))
@@ -298,8 +327,17 @@ def generate_schedule():
     c.execute('DELETE FROM timetable')
 
     # Build and solve CP-SAT model
-    model, vars_ = build_model(students, teachers, slots, min_lessons, max_lessons,
-                               unavailable, assignments_fixed)
+    allow_repeats = bool(cfg['allow_repeats'])
+    max_repeats = cfg['max_repeats']
+    prefer_consecutive = bool(cfg['prefer_consecutive'])
+    allow_consecutive = bool(cfg['allow_consecutive'])
+    consecutive_weight = cfg['consecutive_weight']
+    model, vars_ = build_model(
+        students, teachers, slots, min_lessons, max_lessons,
+        allow_repeats=allow_repeats, max_repeats=max_repeats,
+        prefer_consecutive=prefer_consecutive, allow_consecutive=allow_consecutive,
+        consecutive_weight=consecutive_weight,
+        unavailable=unavailable, fixed=assignments_fixed)
     status, assignments = solve_and_print(model, vars_)
 
     # Insert solver results into DB
