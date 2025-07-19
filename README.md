@@ -49,6 +49,11 @@ teacher/student/subject to a specific slot. Each teacher or student name must be
 unique. The default database contains a simple setup with three teachers and
 several students to get you started.
 
+The general section also contains options controlling whether a student can
+have multiple lessons with the same teacher and subject, the maximum number of
+such repeats and whether repeated lessons should be arranged in consecutive
+slots.
+
 A minimal test configuration could be:
 
 ```

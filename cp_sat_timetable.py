@@ -3,7 +3,8 @@ import json
 
 
 def build_model(students, teachers, slots, min_lessons, max_lessons,
-                unavailable=None, fixed=None):
+                allow_repeats=False, max_repeats=1,
+                prefer_consecutive=False, unavailable=None, fixed=None):
     """Build CP-SAT model for the scheduling problem.
 
     Args:
@@ -12,6 +13,11 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         slots: number of discrete time slots in the day.
         min_lessons: minimum number of lessons each student should receive.
         max_lessons: maximum number of lessons each student can receive.
+        allow_repeats: whether the same student/teacher/subject triple can occur
+            in multiple slots.
+        max_repeats: maximum allowed repeats when ``allow_repeats`` is True.
+        prefer_consecutive: if True, repeated lessons are encouraged to appear in
+            consecutive slots.
 
     Returns:
         model (cp_model.CpModel): The constructed model.
@@ -57,6 +63,28 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             if possible:
                 model.Add(sum(possible) <= 1)
 
+    # Limit repeats of the same student/teacher/subject combination
+    triple_map = {}
+    for (sid, tid, subj, sl), var in vars_.items():
+        triple_map.setdefault((sid, tid, subj), {})[sl] = var
+
+    adjacency_vars = []
+    repeat_limit = max_repeats if allow_repeats else 1
+    for (sid, tid, subj), slot_map in triple_map.items():
+        vars_list = list(slot_map.values())
+        model.Add(sum(vars_list) <= repeat_limit)
+        if prefer_consecutive and repeat_limit > 1:
+            for s in range(slots - 1):
+                if s in slot_map and s + 1 in slot_map:
+                    v1 = slot_map[s]
+                    v2 = slot_map[s + 1]
+                    adj = model.NewBoolVar(
+                        f"adj_s{sid}_t{tid}_sub{subj}_sl{s}")
+                    model.Add(adj <= v1)
+                    model.Add(adj <= v2)
+                    model.Add(adj >= v1 + v2 - 1)
+                    adjacency_vars.append(adj)
+
     # Limit total lessons per student and ensure each required subject is taken
     for student in students:
         total = []
@@ -71,8 +99,13 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             model.Add(sum(total) >= min_lessons)
             model.Add(sum(total) <= max_lessons)
 
-    # Maximize total scheduled lessons
-    model.Maximize(sum(vars_.values()))
+    # Objective: prioritize scheduling lessons, optionally preferring consecutive repeats
+    if prefer_consecutive and repeat_limit > 1 and adjacency_vars:
+        model.Maximize(
+            sum(var * 10 for var in vars_.values()) + sum(adjacency_vars)
+        )
+    else:
+        model.Maximize(sum(vars_.values()))
 
     return model, vars_
 

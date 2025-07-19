@@ -23,7 +23,16 @@
             <label>Slot duration (minutes): <input type="number" name="slot_duration" value="{{ config['slot_duration'] }}"></label><br>
             <label>Lesson duration (minutes): <input type="number" name="lesson_duration" value="{{ config['lesson_duration'] }}"></label><br>
             <label>Min lessons per student: <input type="number" name="min_lessons" value="{{ config['min_lessons'] }}"></label><br>
-            <label>Max lessons per student: <input type="number" name="max_lessons" value="{{ config['max_lessons'] }}"></label>
+            <label>Max lessons per student: <input type="number" name="max_lessons" value="{{ config['max_lessons'] }}"></label><br>
+            <label>Allow repeated lessons?
+                <input type="checkbox" name="allow_repeats" {% if config['allow_repeats'] %}checked{% endif %}>
+            </label><br>
+            <label>Max repeats per teacher/subject:
+                <input type="number" name="max_repeats" value="{{ config['max_repeats'] }}" min="1">
+            </label><br>
+            <label>Prefer consecutive repeats?
+                <input type="checkbox" name="prefer_consecutive" {% if config['prefer_consecutive'] %}checked{% endif %}>
+            </label>
         </fieldset>
         <fieldset>
             <legend>Subjects</legend>
