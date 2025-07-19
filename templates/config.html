@@ -7,6 +7,15 @@
 </head>
 <body>
     <h1>Configuration</h1>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <ul class="flashes">
+        {% for category, msg in messages %}
+        <li class="{{ category }}">{{ msg }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+    {% endwith %}
     <form method="post">
         <fieldset>
             <legend>General</legend>
@@ -95,30 +104,32 @@
             <label>Delete? <input type="checkbox" name="assign_delete" value="{{ a['id'] }}"></label><br>
             {% endfor %}
             <label>Student:
-                <select name="new_assign_student">
+                <select name="new_assign_student" id="new_assign_student">
                     {% for s in students %}
                     <option value="{{ s['id'] }}">{{ s['name'] }}</option>
                     {% endfor %}
                 </select>
             </label>
             <label>Teacher:
-                <select name="new_assign_teacher">
+                <select name="new_assign_teacher" id="new_assign_teacher">
                     {% for t in teachers %}
                     <option value="{{ t['id'] }}">{{ t['name'] }}</option>
                     {% endfor %}
                 </select>
             </label>
             <label>Subject:
-                <select name="new_assign_subject">
-                    {% for sub in subjects %}
-                    <option value="{{ sub['name'] }}">{{ sub['name'] }}</option>
-                    {% endfor %}
-                </select>
+                <select name="new_assign_subject" id="new_assign_subject"></select>
             </label>
-            <label>Slot: <input type="number" name="new_assign_slot" min="1" max="{{ config['slots_per_day'] }}"></label><br>
+            <label>Slot:
+                <select name="new_assign_slot" id="new_assign_slot" data-total-slots="{{ config['slots_per_day'] }}"></select>
+            </label><br>
         </fieldset>
         <button type="submit">Save</button>
     </form>
     <p><a href="{{ url_for('index') }}">Back to Home</a></p>
+    <script id="teacher-data" type="application/json">{{ teacher_map | tojson }}</script>
+    <script id="student-data" type="application/json">{{ student_map | tojson }}</script>
+    <script id="unavail-data" type="application/json">{{ unavail_map | tojson }}</script>
+    <script src="{{ url_for('static', filename='config.js') }}"></script>
 </body>
 </html>
