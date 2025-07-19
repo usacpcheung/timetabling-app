@@ -54,7 +54,9 @@ have multiple lessons with the same teacher and subject. When repeats are
 enabled you can specify the maximum allowed number. Additional settings allow
 consecutive repeats and optionally prefer them. These consecutive options are
 ignored when repeat lessons are disabled. A weight value determines how strongly
-consecutive repeats are favored in the optimization.
+consecutive repeats are favored in the optimization. For a noticeable effect
+set the weight above **10**. Multiples of ten (e.g. `20`, `30`) increasingly
+prioritize consecutive placement over other constraints.
 
 A minimal test configuration could be:
 
