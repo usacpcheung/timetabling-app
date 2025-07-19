@@ -50,9 +50,10 @@ unique. The default database contains a simple setup with three teachers and
 several students to get you started.
 
 The general section also contains options controlling whether a student can
-have multiple lessons with the same teacher and subject, the maximum number of
-such repeats and whether repeated lessons should be arranged in consecutive
-slots.
+have multiple lessons with the same teacher and subject. When repeats are
+enabled you can specify the maximum allowed number, whether consecutive repeat
+slots are permitted and if they should be preferred. A weight value determines
+how strongly consecutive repeats are favored in the optimization.
 
 A minimal test configuration could be:
 

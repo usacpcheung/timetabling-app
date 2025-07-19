@@ -4,7 +4,8 @@ import json
 
 def build_model(students, teachers, slots, min_lessons, max_lessons,
                 allow_repeats=False, max_repeats=1,
-                prefer_consecutive=False, unavailable=None, fixed=None):
+                prefer_consecutive=False, allow_consecutive=True,
+                consecutive_weight=1, unavailable=None, fixed=None):
     """Build CP-SAT model for the scheduling problem.
 
     Args:
@@ -18,6 +19,9 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         max_repeats: maximum allowed repeats when ``allow_repeats`` is True.
         prefer_consecutive: if True, repeated lessons are encouraged to appear in
             consecutive slots.
+        allow_consecutive: if False, repeated lessons cannot be scheduled in
+            consecutive slots.
+        consecutive_weight: weight applied when maximizing consecutive repeats.
 
     Returns:
         model (cp_model.CpModel): The constructed model.
@@ -73,7 +77,11 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
     for (sid, tid, subj), slot_map in triple_map.items():
         vars_list = list(slot_map.values())
         model.Add(sum(vars_list) <= repeat_limit)
-        if prefer_consecutive and repeat_limit > 1:
+        if not allow_consecutive and repeat_limit > 1:
+            for s in range(slots - 1):
+                if s in slot_map and s + 1 in slot_map:
+                    model.Add(slot_map[s] + slot_map[s + 1] <= 1)
+        if prefer_consecutive and allow_consecutive and repeat_limit > 1:
             for s in range(slots - 1):
                 if s in slot_map and s + 1 in slot_map:
                     v1 = slot_map[s]
@@ -100,9 +108,9 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             model.Add(sum(total) <= max_lessons)
 
     # Objective: prioritize scheduling lessons, optionally preferring consecutive repeats
-    if prefer_consecutive and repeat_limit > 1 and adjacency_vars:
+    if prefer_consecutive and allow_consecutive and repeat_limit > 1 and adjacency_vars:
         model.Maximize(
-            sum(var * 10 for var in vars_.values()) + sum(adjacency_vars)
+            sum(var * 10 for var in vars_.values()) + consecutive_weight * sum(adjacency_vars)
         )
     else:
         model.Maximize(sum(vars_.values()))

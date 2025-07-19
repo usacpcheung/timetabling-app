@@ -30,8 +30,14 @@
             <label>Max repeats per teacher/subject:
                 <input type="number" name="max_repeats" value="{{ config['max_repeats'] }}" min="1">
             </label><br>
+            <label>Allow consecutive repeat slots?
+                <input type="checkbox" name="allow_consecutive" {% if config['allow_consecutive'] %}checked{% endif %}>
+            </label><br>
             <label>Prefer consecutive repeats?
                 <input type="checkbox" name="prefer_consecutive" {% if config['prefer_consecutive'] %}checked{% endif %}>
+            </label><br>
+            <label>Consecutive preference weight:
+                <input type="number" name="consecutive_weight" value="{{ config['consecutive_weight'] }}" min="1">
             </label>
         </fieldset>
         <fieldset>
