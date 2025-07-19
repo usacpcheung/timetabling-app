@@ -35,6 +35,8 @@ def init_db():
         lesson_duration INTEGER,
         min_lessons INTEGER,
         max_lessons INTEGER,
+        teacher_min_lessons INTEGER,
+        teacher_max_lessons INTEGER,
         allow_repeats INTEGER,
         max_repeats INTEGER,
         prefer_consecutive INTEGER,
@@ -44,7 +46,9 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS teachers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT UNIQUE,
-        subjects TEXT
+        subjects TEXT,
+        min_lessons INTEGER,
+        max_lessons INTEGER
     )''')
     c.execute('''CREATE TABLE IF NOT EXISTS students (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -81,17 +85,18 @@ def init_db():
     if c.fetchone()[0] == 0:
         c.execute('''INSERT INTO config (
             id, slots_per_day, slot_duration, lesson_duration,
-            min_lessons, max_lessons, allow_repeats, max_repeats,
+            min_lessons, max_lessons, teacher_min_lessons, teacher_max_lessons,
+            allow_repeats, max_repeats,
             prefer_consecutive, allow_consecutive, consecutive_weight
-        ) VALUES (1, 8, 30, 30, 1, 4, 0, 2, 0, 1, 3)''')
+        ) VALUES (1, 8, 30, 30, 1, 4, 1, 4, 0, 2, 0, 1, 3)''')
     c.execute('SELECT COUNT(*) FROM teachers')
     if c.fetchone()[0] == 0:
         teachers = [
-            ('Teacher A', json.dumps(['Math', 'English'])),
-            ('Teacher B', json.dumps(['Science'])),
-            ('Teacher C', json.dumps(['History'])),
+            ('Teacher A', json.dumps(['Math', 'English']), None, None),
+            ('Teacher B', json.dumps(['Science']), None, None),
+            ('Teacher C', json.dumps(['History']), None, None),
         ]
-        c.executemany('INSERT INTO teachers (name, subjects) VALUES (?, ?)', teachers)
+        c.executemany('INSERT INTO teachers (name, subjects, min_lessons, max_lessons) VALUES (?, ?, ?, ?)', teachers)
     c.execute('SELECT COUNT(*) FROM students')
     if c.fetchone()[0] == 0:
         students = [
@@ -129,6 +134,11 @@ def config():
         lesson_duration = int(request.form['lesson_duration'])
         min_lessons = int(request.form['min_lessons'])
         max_lessons = int(request.form['max_lessons'])
+        t_min_lessons = int(request.form['teacher_min_lessons'])
+        t_max_lessons = int(request.form['teacher_max_lessons'])
+        if t_min_lessons > t_max_lessons:
+            flash('Global teacher min lessons cannot exceed max lessons', 'error')
+            t_min_lessons = t_max_lessons
         allow_repeats = 1 if request.form.get('allow_repeats') else 0
         max_repeats = int(request.form['max_repeats'])
         prefer_consecutive = 1 if request.form.get('prefer_consecutive') else 0
@@ -146,10 +156,12 @@ def config():
             if max_repeats < 2:
                 max_repeats = 2
         c.execute('''UPDATE config SET slots_per_day=?, slot_duration=?, lesson_duration=?,
-                     min_lessons=?, max_lessons=?, allow_repeats=?, max_repeats=?,
+                     min_lessons=?, max_lessons=?, teacher_min_lessons=?, teacher_max_lessons=?,
+                     allow_repeats=?, max_repeats=?,
                      prefer_consecutive=?, allow_consecutive=?, consecutive_weight=? WHERE id=1''',
                   (slots_per_day, slot_duration, lesson_duration, min_lessons,
-                   max_lessons, allow_repeats, max_repeats, prefer_consecutive,
+                   max_lessons, t_min_lessons, t_max_lessons,
+                   allow_repeats, max_repeats, prefer_consecutive,
                    allow_consecutive, consecutive_weight))
         # update subjects
         subj_ids = request.form.getlist('subject_id')
@@ -175,12 +187,28 @@ def config():
                 name = request.form.get(f'teacher_name_{tid}')
                 subs = request.form.getlist(f'teacher_subjects_{tid}')
                 subj_json = json.dumps(subs)
-                c.execute('UPDATE teachers SET name=?, subjects=? WHERE id=?', (name, subj_json, int(tid)))
+                tmin = request.form.get(f'teacher_min_{tid}')
+                tmax = request.form.get(f'teacher_max_{tid}')
+                min_val = int(tmin) if tmin else None
+                max_val = int(tmax) if tmax else None
+                if min_val is not None and max_val is not None and min_val > max_val:
+                    flash('Teacher min lessons greater than max for ' + name, 'error')
+                    continue
+                c.execute('UPDATE teachers SET name=?, subjects=?, min_lessons=?, max_lessons=? WHERE id=?',
+                          (name, subj_json, min_val, max_val, int(tid)))
         new_tname = request.form.get('new_teacher_name')
         new_tsubs = request.form.getlist('new_teacher_subjects')
+        new_tmin = request.form.get('new_teacher_min')
+        new_tmax = request.form.get('new_teacher_max')
         if new_tname and new_tsubs:
             subj_json = json.dumps(new_tsubs)
-            c.execute('INSERT INTO teachers (name, subjects) VALUES (?, ?)', (new_tname, subj_json))
+            min_val = int(new_tmin) if new_tmin else None
+            max_val = int(new_tmax) if new_tmax else None
+            if min_val is not None and max_val is not None and min_val > max_val:
+                flash('New teacher min lessons greater than max', 'error')
+            else:
+                c.execute('INSERT INTO teachers (name, subjects, min_lessons, max_lessons) VALUES (?, ?, ?, ?)',
+                          (new_tname, subj_json, min_val, max_val))
 
         # update students
         student_ids = request.form.getlist('student_id')
@@ -297,12 +325,47 @@ def config():
     for u in unavailable:
         unavail_map.setdefault(u['teacher_id'], []).append(u['slot'])
     conn.close()
+
     return render_template('config.html', config=cfg, teachers=teachers,
                            students=students, subjects=subjects,
                            unavailable=unavailable, assignments=assignments,
                            teacher_map=teacher_map, student_map=student_map,
                            unavail_map=unavail_map, assign_map=assign_map,
                            json=json)
+
+
+def analyze_infeasibility(students, teachers, slots, cfg, unavailable, fixed):
+    """Return human readable messages about conflicting constraints."""
+    teacher_unavail = {t['id']: set() for t in teachers}
+    for u in unavailable:
+        teacher_unavail[u['teacher_id']].add(u['slot'])
+    teacher_fixed = {t['id']: 0 for t in teachers}
+    for f in fixed:
+        teacher_fixed[f['teacher_id']] += 1
+
+    messages = []
+    for t in teachers:
+        min_req = t['min_lessons'] if t['min_lessons'] is not None else cfg['teacher_min_lessons']
+        max_allow = t['max_lessons'] if t['max_lessons'] is not None else cfg['teacher_max_lessons']
+        avail = slots - len(teacher_unavail[t['id']])
+        if avail < min_req:
+            messages.append(f"Teacher {t['name']} has only {avail} available slots but requires at least {min_req}.")
+        if teacher_fixed[t['id']] > max_allow:
+            messages.append(f"Teacher {t['name']} has {teacher_fixed[t['id']]} fixed lessons exceeding maximum {max_allow}.")
+
+    for s in students:
+        subs = json.loads(s['subjects'])
+        missing = []
+        for sub in subs:
+            avail_teachers = [t for t in teachers if sub in json.loads(t['subjects']) and len(set(range(slots)) - teacher_unavail[t['id']]) > 0]
+            if not avail_teachers:
+                missing.append(sub)
+        if missing:
+            messages.append(f"No teacher available for student {s['name']} subject(s): {', '.join(missing)}")
+
+    if not messages:
+        messages.append('Configuration too restrictive; adjust lesson limits or availability.')
+    return messages
 
 
 def generate_schedule():
@@ -313,6 +376,8 @@ def generate_schedule():
     slots = cfg['slots_per_day']
     min_lessons = cfg['min_lessons']
     max_lessons = cfg['max_lessons']
+    teacher_min = cfg['teacher_min_lessons']
+    teacher_max = cfg['teacher_max_lessons']
 
     c.execute('SELECT * FROM teachers')
     teachers = c.fetchall()
@@ -337,7 +402,8 @@ def generate_schedule():
         allow_repeats=allow_repeats, max_repeats=max_repeats,
         prefer_consecutive=prefer_consecutive, allow_consecutive=allow_consecutive,
         consecutive_weight=consecutive_weight,
-        unavailable=unavailable, fixed=assignments_fixed)
+        unavailable=unavailable, fixed=assignments_fixed,
+        teacher_min_lessons=teacher_min, teacher_max_lessons=teacher_max)
     status, assignments = solve_and_print(model, vars_)
 
     # Insert solver results into DB
@@ -347,6 +413,13 @@ def generate_schedule():
                 'INSERT INTO timetable (student_id, teacher_id, subject, slot) VALUES (?, ?, ?, ?)',
                 (sid, tid, subj, slot)
             )
+    else:
+        from ortools.sat.python import cp_model
+        if status == cp_model.INFEASIBLE:
+            msgs = analyze_infeasibility(students, teachers, slots, cfg, unavailable, assignments_fixed)
+            flash('No feasible timetable could be generated.', 'error')
+            for m in msgs:
+                flash(m, 'error')
 
     conn.commit()
     conn.close()
@@ -374,6 +447,9 @@ def timetable():
                  JOIN students s ON t.student_id = s.id''')
     rows = c.fetchall()
     conn.close()
+
+    if not rows:
+        flash('No timetable available. Generate one from the home page.', 'error')
 
     # build grid [slot][teacher] => student
     grid = {slot: {te['id']: None for te in teachers} for slot in range(slots)}
