@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const teacherData = JSON.parse(document.getElementById('teacher-data').textContent);
     const studentData = JSON.parse(document.getElementById('student-data').textContent);
     const unavailData = JSON.parse(document.getElementById('unavail-data').textContent);
+    const assignData = JSON.parse(document.getElementById('assign-data').textContent);
     const totalSlots = parseInt(slotSelect.dataset.totalSlots, 10);
 
     function updateOptions() {
@@ -21,6 +22,10 @@ document.addEventListener('DOMContentLoaded', function () {
         const common = studentSubs.filter(s => teacherSubs.includes(s));
 
         subjectSelect.innerHTML = '';
+        const subPlaceholder = document.createElement('option');
+        subPlaceholder.value = '';
+        subPlaceholder.textContent = '-- Select --';
+        subjectSelect.appendChild(subPlaceholder);
         common.forEach(sub => {
             const opt = document.createElement('option');
             opt.value = sub;
@@ -30,6 +35,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const unavailable = unavailData[tid] || [];
         slotSelect.innerHTML = '';
+        const slotPlaceholder = document.createElement('option');
+        slotPlaceholder.value = '';
+        slotPlaceholder.textContent = '-- Select --';
+        slotSelect.appendChild(slotPlaceholder);
         for (let i = 1; i <= totalSlots; i++) {
             if (!unavailable.includes(i - 1)) {
                 const opt = document.createElement('option');
@@ -38,6 +47,26 @@ document.addEventListener('DOMContentLoaded', function () {
                 slotSelect.appendChild(opt);
             }
         }
+    }
+
+    const unavailTeacher = document.getElementById('new_unavail_teacher');
+    const unavailSlot = document.getElementById('new_unavail_slot');
+    function warnUnavail() {
+        const tid = unavailTeacher.value;
+        const slotVal = unavailSlot.value;
+        const slot = parseInt(slotVal, 10) - 1;
+        if (!tid || isNaN(slot)) return;
+        const fixed = assignData[tid] || [];
+        const unav = unavailData[tid] || [];
+        if (fixed.includes(slot)) {
+            alert('Warning: fixed assignment exists in this slot.');
+        } else if (unav.includes(slot)) {
+            alert('Slot already marked unavailable.');
+        }
+    }
+    if (unavailTeacher && unavailSlot) {
+        unavailTeacher.addEventListener('change', warnUnavail);
+        unavailSlot.addEventListener('input', warnUnavail);
     }
 
     teacherSelect.addEventListener('change', updateOptions);

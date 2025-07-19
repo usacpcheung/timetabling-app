@@ -88,13 +88,13 @@
             <label>Delete? <input type="checkbox" name="unavail_delete" value="{{ u['id'] }}"></label><br>
             {% endfor %}
             <label>Teacher:
-                <select name="new_unavail_teacher">
+                <select name="new_unavail_teacher" id="new_unavail_teacher">
                     {% for t in teachers %}
                     <option value="{{ t['id'] }}">{{ t['name'] }}</option>
                     {% endfor %}
                 </select>
             </label>
-            <label>Slot: <input type="number" name="new_unavail_slot" min="1" max="{{ config['slots_per_day'] }}"></label><br>
+            <label>Slot: <input type="number" name="new_unavail_slot" id="new_unavail_slot" min="1" max="{{ config['slots_per_day'] }}"></label><br>
         </fieldset>
         <fieldset>
             <legend>Fixed Assignments</legend>
@@ -118,10 +118,14 @@
                 </select>
             </label>
             <label>Subject:
-                <select name="new_assign_subject" id="new_assign_subject"></select>
+                <select name="new_assign_subject" id="new_assign_subject">
+                    <option value="">-- Select --</option>
+                </select>
             </label>
             <label>Slot:
-                <select name="new_assign_slot" id="new_assign_slot" data-total-slots="{{ config['slots_per_day'] }}"></select>
+                <select name="new_assign_slot" id="new_assign_slot" data-total-slots="{{ config['slots_per_day'] }}">
+                    <option value="">-- Select --</option>
+                </select>
             </label><br>
         </fieldset>
         <button type="submit">Save</button>
@@ -130,6 +134,7 @@
     <script id="teacher-data" type="application/json">{{ teacher_map | tojson }}</script>
     <script id="student-data" type="application/json">{{ student_map | tojson }}</script>
     <script id="unavail-data" type="application/json">{{ unavail_map | tojson }}</script>
+    <script id="assign-data" type="application/json">{{ assign_map | tojson }}</script>
     <script src="{{ url_for('static', filename='config.js') }}"></script>
 </body>
 </html>

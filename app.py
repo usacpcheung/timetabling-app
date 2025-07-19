@@ -177,9 +177,25 @@ def config():
                 c.execute('DELETE FROM teacher_unavailable WHERE id=?', (int(uid),))
         nu_teacher = request.form.get('new_unavail_teacher')
         nu_slot = request.form.get('new_unavail_slot')
+
+        c.execute('SELECT teacher_id, slot FROM teacher_unavailable')
+        unav = c.fetchall()
+        unav_set = {(u['teacher_id'], u['slot']) for u in unav}
+        c.execute('SELECT teacher_id, slot FROM fixed_assignments')
+        fixed = c.fetchall()
+        fixed_set = {(f['teacher_id'], f['slot']) for f in fixed}
+
         if nu_teacher and nu_slot:
-            c.execute('INSERT INTO teacher_unavailable (teacher_id, slot) VALUES (?, ?)',
-                      (int(nu_teacher), int(nu_slot) - 1))
+            tid = int(nu_teacher)
+            slot = int(nu_slot) - 1
+            if (tid, slot) in fixed_set:
+                flash('Cannot mark slot unavailable: fixed assignment exists', 'error')
+            elif (tid, slot) in unav_set:
+                flash('Teacher already unavailable in that slot', 'error')
+            else:
+                c.execute('INSERT INTO teacher_unavailable (teacher_id, slot) VALUES (?, ?)',
+                          (tid, slot))
+                unav_set.add((tid, slot))
 
         # update fixed assignments
         assign_ids = request.form.getlist('assign_id')
@@ -201,6 +217,9 @@ def config():
         c.execute('SELECT teacher_id, slot FROM teacher_unavailable')
         unav = c.fetchall()
         unav_set = {(u['teacher_id'], u['slot']) for u in unav}
+        c.execute('SELECT teacher_id, slot FROM fixed_assignments')
+        fixed = c.fetchall()
+        fixed_set = {(f['teacher_id'], f['slot']) for f in fixed}
 
         if na_student and na_teacher and na_subject and na_slot:
             tid = int(na_teacher)
@@ -212,6 +231,8 @@ def config():
                 flash('Student does not require the selected subject', 'error')
             elif (tid, slot) in unav_set:
                 flash('Teacher is unavailable in the selected slot', 'error')
+            elif (tid, slot) in fixed_set:
+                flash('Duplicate fixed assignment for that slot', 'error')
             else:
                 c.execute('INSERT INTO fixed_assignments (teacher_id, student_id, subject, slot) VALUES (?, ?, ?, ?)',
                           (tid, sid, na_subject, slot))
@@ -238,6 +259,9 @@ def config():
                  JOIN teachers t ON a.teacher_id = t.id
                  JOIN students s ON a.student_id = s.id''')
     assignments = c.fetchall()
+    assign_map = {}
+    for a in assignments:
+        assign_map.setdefault(a['teacher_id'], []).append(a['slot'])
     teacher_map = {t['id']: json.loads(t['subjects']) for t in teachers}
     student_map = {s['id']: json.loads(s['subjects']) for s in students}
     unavail_map = {}
@@ -248,7 +272,8 @@ def config():
                            students=students, subjects=subjects,
                            unavailable=unavailable, assignments=assignments,
                            teacher_map=teacher_map, student_map=student_map,
-                           unavail_map=unavail_map, json=json)
+                           unavail_map=unavail_map, assign_map=assign_map,
+                           json=json)
 
 
 def generate_schedule():
