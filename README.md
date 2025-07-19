@@ -58,6 +58,10 @@ consecutive repeats are favored in the optimization. For a noticeable effect
 set the weight above **10**. Multiples of ten (e.g. `20`, `30`) increasingly
 prioritize consecutive placement over other constraints.
 
+Two numbers define the minimum and maximum lessons each teacher should teach.
+Individual teachers can override these global limits. Leave the per-teacher
+fields blank to use the global values.
+
 A minimal test configuration could be:
 
 ```
@@ -84,6 +88,7 @@ The configuration page performs several checks when saving data:
 * A fixed assignment cannot use a slot marked as unavailable for that teacher.
 * A teacher cannot be marked unavailable in a slot that already has a fixed assignment.
 * Duplicate fixed assignments for the same teacher and slot are rejected.
+* Minimum lesson values cannot exceed maximum values for either global or per-teacher settings.
 
 If any of these conditions fail the assignment is rejected and a message is
 shown at the top of the page. Other sections rely on database constraints (for

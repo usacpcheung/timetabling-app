@@ -5,7 +5,8 @@ import json
 def build_model(students, teachers, slots, min_lessons, max_lessons,
                 allow_repeats=False, max_repeats=1,
                 prefer_consecutive=False, allow_consecutive=True,
-                consecutive_weight=1, unavailable=None, fixed=None):
+                consecutive_weight=1, unavailable=None, fixed=None,
+                teacher_min_lessons=0, teacher_max_lessons=None):
     """Build CP-SAT model for the scheduling problem.
 
     Args:
@@ -22,6 +23,8 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         allow_consecutive: if False, repeated lessons cannot be scheduled in
             consecutive slots.
         consecutive_weight: weight applied when maximizing consecutive repeats.
+        teacher_min_lessons: global minimum number of lessons per teacher.
+        teacher_max_lessons: global maximum number of lessons per teacher.
 
     Returns:
         model (cp_model.CpModel): The constructed model.
@@ -92,6 +95,20 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                     model.Add(adj <= v2)
                     model.Add(adj >= v1 + v2 - 1)
                     adjacency_vars.append(adj)
+
+    # Limit total lessons per teacher
+    for teacher in teachers:
+        t_vars = [var for (sid, tid, subj, sl), var in vars_.items()
+                  if tid == teacher['id']]
+        if not t_vars:
+            continue
+        tmin = teacher['min_lessons']
+        tmax = teacher['max_lessons']
+        tmin = teacher_min_lessons if tmin is None else tmin
+        tmax = teacher_max_lessons if tmax is None else tmax
+        model.Add(sum(t_vars) >= tmin)
+        if tmax is not None:
+            model.Add(sum(t_vars) <= tmax)
 
     # Limit total lessons per student and ensure each required subject is taken
     for student in students:
