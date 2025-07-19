@@ -102,8 +102,8 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                   if tid == teacher['id']]
         if not t_vars:
             continue
-        tmin = teacher.get('min_lessons')
-        tmax = teacher.get('max_lessons')
+        tmin = teacher['min_lessons']
+        tmax = teacher['max_lessons']
         tmin = teacher_min_lessons if tmin is None else tmin
         tmax = teacher_max_lessons if tmax is None else tmax
         model.Add(sum(t_vars) >= tmin)
