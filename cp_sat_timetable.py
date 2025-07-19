@@ -6,8 +6,15 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 allow_repeats=False, max_repeats=1,
                 prefer_consecutive=False, allow_consecutive=True,
                 consecutive_weight=1, unavailable=None, fixed=None,
-                teacher_min_lessons=0, teacher_max_lessons=None):
+                teacher_min_lessons=0, teacher_max_lessons=None,
+                add_assumptions=False):
     """Build CP-SAT model for the scheduling problem.
+
+    When ``add_assumptions`` is ``True``, Boolean indicators are created for the
+    main constraint groups (teacher availability, teacher lesson limits,
+    student lesson limits and repeat restrictions). These indicators are added as
+    assumptions on the model so that unsatisfied cores can be extracted to
+    diagnose infeasibility.
 
     Args:
         students: iterable of sqlite rows or mappings with ``id`` and ``subjects`` fields.
@@ -29,6 +36,8 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
     Returns:
         model (cp_model.CpModel): The constructed model.
         vars_ (dict): Mapping (student_id, teacher_id, subject, slot) -> BoolVar.
+        assumptions (dict or None): Mapping of constraint group name to the
+            assumption indicator variable when ``add_assumptions`` is True.
     """
     model = cp_model.CpModel()
     vars_ = {}
@@ -37,6 +46,17 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
     unavailable_set = {(u['teacher_id'], u['slot']) for u in unavailable}
     fixed_set = {(f['student_id'], f['teacher_id'], f['subject'], f['slot'])
                  for f in fixed}
+
+    assumptions = None
+    if add_assumptions:
+        assumptions = {
+            'teacher_availability': model.NewBoolVar('assume_teacher_availability'),
+            'teacher_limits': model.NewBoolVar('assume_teacher_limits'),
+            'student_limits': model.NewBoolVar('assume_student_limits'),
+            'repeat_restrictions': model.NewBoolVar('assume_repeat_restrictions'),
+        }
+        for var in assumptions.values():
+            model.AddAssumption(var)
 
     # Create variables for allowed (student, teacher, subject) triples
     for student in students:
@@ -47,12 +67,14 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             for subject in common:
                 for slot in range(slots):
                     key = (student['id'], teacher['id'], subject, slot)
-                    if key not in fixed_set and (teacher['id'], slot) in unavailable_set:
+                    if not add_assumptions and key not in fixed_set and (teacher['id'], slot) in unavailable_set:
                         continue
                     vars_[key] = model.NewBoolVar(
                         f"x_s{student['id']}_t{teacher['id']}_sub{subject}_sl{slot}")
                     if key in fixed_set:
                         model.Add(vars_[key] == 1)
+                    elif add_assumptions and (teacher['id'], slot) in unavailable_set:
+                        model.Add(vars_[key] == 0).OnlyEnforceIf(assumptions['teacher_availability'])
 
     # Teacher cannot teach more than one lesson in a slot
     for teacher in teachers:
@@ -79,11 +101,15 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
     repeat_limit = max_repeats if allow_repeats else 1
     for (sid, tid, subj), slot_map in triple_map.items():
         vars_list = list(slot_map.values())
-        model.Add(sum(vars_list) <= repeat_limit)
+        ct = model.Add(sum(vars_list) <= repeat_limit)
+        if add_assumptions:
+            ct.OnlyEnforceIf(assumptions['repeat_restrictions'])
         if not allow_consecutive and repeat_limit > 1:
             for s in range(slots - 1):
                 if s in slot_map and s + 1 in slot_map:
-                    model.Add(slot_map[s] + slot_map[s + 1] <= 1)
+                    ct2 = model.Add(slot_map[s] + slot_map[s + 1] <= 1)
+                    if add_assumptions:
+                        ct2.OnlyEnforceIf(assumptions['repeat_restrictions'])
         if prefer_consecutive and allow_consecutive and repeat_limit > 1:
             for s in range(slots - 1):
                 if s in slot_map and s + 1 in slot_map:
@@ -106,9 +132,13 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         tmax = teacher['max_lessons']
         tmin = teacher_min_lessons if tmin is None else tmin
         tmax = teacher_max_lessons if tmax is None else tmax
-        model.Add(sum(t_vars) >= tmin)
+        ct = model.Add(sum(t_vars) >= tmin)
+        if add_assumptions:
+            ct.OnlyEnforceIf(assumptions['teacher_limits'])
         if tmax is not None:
-            model.Add(sum(t_vars) <= tmax)
+            ct2 = model.Add(sum(t_vars) <= tmax)
+            if add_assumptions:
+                ct2.OnlyEnforceIf(assumptions['teacher_limits'])
 
     # Limit total lessons per student and ensure each required subject is taken
     for student in students:
@@ -118,11 +148,16 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             subject_vars = [var for (sid, tid, subj, sl), var in vars_.items()
                             if sid == student['id'] and subj == subject]
             if subject_vars:
-                model.Add(sum(subject_vars) >= 1)
+                ct = model.Add(sum(subject_vars) >= 1)
+                if add_assumptions:
+                    ct.OnlyEnforceIf(assumptions['student_limits'])
                 total.extend(subject_vars)
         if total:
-            model.Add(sum(total) >= min_lessons)
-            model.Add(sum(total) <= max_lessons)
+            ct_min = model.Add(sum(total) >= min_lessons)
+            ct_max = model.Add(sum(total) <= max_lessons)
+            if add_assumptions:
+                ct_min.OnlyEnforceIf(assumptions['student_limits'])
+                ct_max.OnlyEnforceIf(assumptions['student_limits'])
 
     # Objective: prioritize scheduling lessons, optionally preferring consecutive repeats
     if prefer_consecutive and allow_consecutive and repeat_limit > 1 and adjacency_vars:
@@ -132,11 +167,11 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
     else:
         model.Maximize(sum(vars_.values()))
 
-    return model, vars_
+    return model, vars_, assumptions
 
 
-def solve_and_print(model, vars_):
-    """Solve the given model and return list of assignments."""
+def solve_and_print(model, vars_, assumptions=None):
+    """Solve the given model and return assignments and failing assumptions."""
     solver = cp_model.CpSolver()
     status = solver.Solve(model)
 
@@ -146,4 +181,12 @@ def solve_and_print(model, vars_):
             if solver.BooleanValue(var):
                 assignments.append((sid, tid, subj, slot))
 
-    return status, assignments
+    core = []
+    if status == cp_model.INFEASIBLE and assumptions:
+        indices = solver.SufficientAssumptionsForInfeasibility()
+        order = list(assumptions.keys())
+        for idx in indices:
+            if 0 <= idx < len(order):
+                core.append(order[idx])
+
+    return status, assignments, core
