@@ -335,36 +335,100 @@ def config():
 
 
 def analyze_infeasibility(students, teachers, slots, cfg, unavailable, fixed):
-    """Return human readable messages about conflicting constraints."""
+    """Return human readable messages about conflicting constraints.
+
+    The function performs a lightweight analysis without rebuilding the CP-SAT
+    model.  It inspects teacher availability, fixed lessons and the global
+    configuration to highlight possible causes of infeasibility.  The checks are
+    intentionally conservative: they report issues that *may* lead to an
+    infeasible model but do not guarantee this is the only reason.
+    """
+
     teacher_unavail = {t['id']: set() for t in teachers}
     for u in unavailable:
         teacher_unavail[u['teacher_id']].add(u['slot'])
+
+    # Count how many lessons are already fixed for each teacher.
     teacher_fixed = {t['id']: 0 for t in teachers}
     for f in fixed:
         teacher_fixed[f['teacher_id']] += 1
 
     messages = []
+
+    # Pre-compute remaining capacity for each teacher considering availability
+    # and max lesson limits.
+    teacher_capacity = {}
     for t in teachers:
         min_req = t['min_lessons'] if t['min_lessons'] is not None else cfg['teacher_min_lessons']
         max_allow = t['max_lessons'] if t['max_lessons'] is not None else cfg['teacher_max_lessons']
         avail = slots - len(teacher_unavail[t['id']])
         if avail < min_req:
-            messages.append(f"Teacher {t['name']} has only {avail} available slots but requires at least {min_req}.")
-        if teacher_fixed[t['id']] > max_allow:
-            messages.append(f"Teacher {t['name']} has {teacher_fixed[t['id']]} fixed lessons exceeding maximum {max_allow}.")
+            messages.append(
+                f"Teacher {t['name']} has only {avail} available slots but requires at least {min_req}."
+            )
+        if max_allow is not None and teacher_fixed[t['id']] > max_allow:
+            messages.append(
+                f"Teacher {t['name']} has {teacher_fixed[t['id']]} fixed lessons exceeding maximum {max_allow}."
+            )
 
+        remaining = avail - teacher_fixed[t['id']]
+        if max_allow is not None:
+            remaining = min(remaining, max_allow - teacher_fixed[t['id']])
+        teacher_capacity[t['id']] = max(0, remaining)
+
+    # Analyse each student individually.
     for s in students:
-        subs = json.loads(s['subjects'])
+        subs = set(json.loads(s['subjects']))
+
+        # Detect subjects with no teacher at all (respecting unavailability).
         missing = []
         for sub in subs:
-            avail_teachers = [t for t in teachers if sub in json.loads(t['subjects']) and len(set(range(slots)) - teacher_unavail[t['id']]) > 0]
+            avail_teachers = [
+                t for t in teachers
+                if sub in json.loads(t['subjects']) and len(set(range(slots)) - teacher_unavail[t['id']]) > 0
+            ]
             if not avail_teachers:
                 missing.append(sub)
         if missing:
-            messages.append(f"No teacher available for student {s['name']} subject(s): {', '.join(missing)}")
+            messages.append(
+                f"No teacher available for student {s['name']} subject(s): {', '.join(missing)}"
+            )
+
+        # Determine the set of slots where at least one matching teacher is available.
+        possible_slots = set()
+        unique_pairs = set()
+        capacity_total = 0
+        for t in teachers:
+            tsubs = set(json.loads(t['subjects']))
+            if not subs & tsubs:
+                continue
+            available_slots = [sl for sl in range(slots) if sl not in teacher_unavail[t['id']]]
+            if not available_slots:
+                continue
+            possible_slots.update(available_slots)
+            unique_pairs.update((t['id'], sub) for sub in (subs & tsubs))
+            capacity_total += teacher_capacity[t['id']]
+
+        # Upper bound of lessons the student could attend ignoring conflicts with
+        # other students. First limited by available slots and teacher capacity.
+        max_lessons_possible = min(len(possible_slots), capacity_total)
+
+        # When repeats are disabled a student cannot have the same
+        # teacher/subject combination twice.
+        if not cfg['allow_repeats']:
+            max_lessons_possible = min(max_lessons_possible, len(unique_pairs))
+
+        if max_lessons_possible < cfg['min_lessons']:
+            messages.append(
+                f"Student {s['name']} can receive at most {max_lessons_possible} lessons with current setup."
+            )
 
     if not messages:
-        messages.append('Configuration too restrictive; adjust lesson limits or availability.')
+        # Fall back to a generic message when no obvious issue was found.
+        messages.append(
+            'Configuration too restrictive; adjust lesson limits or availability.'
+        )
+
     return messages
 
 
