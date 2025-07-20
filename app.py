@@ -458,6 +458,12 @@ def generate_schedule(target_date=None):
     for gm in gm_rows:
         group_members.setdefault(gm['group_id'], []).append(gm['student_id'])
     group_map_offset = {offset + gid: members for gid, members in group_members.items()}
+
+    group_subjects = {g['id']: json.loads(g['subjects']) for g in groups}
+    student_groups = {}
+    for gid, members in group_members.items():
+        for sid in members:
+            student_groups.setdefault(sid, []).append(gid)
     c.execute('SELECT * FROM teacher_unavailable')
     unavailable = c.fetchall()
     c.execute('SELECT * FROM fixed_assignments')
@@ -485,16 +491,8 @@ def generate_schedule(target_date=None):
     for g in groups:
         ps = {"id": offset + g['id'], "subjects": g['subjects']}
         pseudo_students.append(ps)
-    actual_students = []
-    for s in students:
-        subs = set(json.loads(s['subjects']))
-        for gid, members in group_members.items():
-            if s['id'] in members:
-                gsubs = json.loads(next(g for g in groups if g['id']==gid)['subjects'])
-                subs -= set(gsubs)
-        new_s = dict(s)
-        new_s['subjects'] = json.dumps(list(subs))
-        actual_students.append(new_s)
+
+    actual_students = [dict(s) for s in students]
     full_students = actual_students + pseudo_students
 
     model, vars_, assumptions = build_model(
@@ -509,14 +507,27 @@ def generate_schedule(target_date=None):
 
     # Insert solver results into DB
     if assignments:
+        group_lessons = set()
+        filtered = []
         for sid, tid, subj, slot in assignments:
             if sid >= offset:
                 gid = sid - offset
-                c.execute('INSERT INTO timetable (student_id, group_id, teacher_id, subject, slot, date) VALUES (?, ?, ?, ?, ?, ?)',
-                          (None, gid, tid, subj, slot, target_date))
-            else:
-                c.execute('INSERT INTO timetable (student_id, group_id, teacher_id, subject, slot, date) VALUES (?, ?, ?, ?, ?, ?)',
-                          (sid, None, tid, subj, slot, target_date))
+                group_lessons.add((gid, tid, subj, slot))
+                filtered.append((None, gid, tid, subj, slot))
+        for sid, tid, subj, slot in assignments:
+            if sid >= offset:
+                continue
+            skip = False
+            for gid in student_groups.get(sid, []):
+                if subj in group_subjects.get(gid, []) and (gid, tid, subj, slot) in group_lessons:
+                    skip = True
+                    break
+            if not skip:
+                filtered.append((sid, None, tid, subj, slot))
+
+        for entry in filtered:
+            c.execute('INSERT INTO timetable (student_id, group_id, teacher_id, subject, slot, date) VALUES (?, ?, ?, ?, ?, ?)',
+                      (entry[0], entry[1], entry[2], entry[3], entry[4], target_date))
     else:
         from ortools.sat.python import cp_model
         if status == cp_model.INFEASIBLE:

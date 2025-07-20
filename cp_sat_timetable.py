@@ -39,8 +39,8 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         assumptions (dict or None): Mapping of constraint group name to the
             assumption indicator variable when ``add_assumptions`` is True.
         group_members (dict): Optional mapping of pseudo student id to a list of
-            real student ids. When provided, additional constraints ensure group
-            members are not scheduled for other lessons in the same slot.
+            real student ids. When provided, group lessons will be tied to all
+            member students so they attend together.
     """
     model = cp_model.CpModel()
     vars_ = {}
@@ -95,20 +95,27 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             if possible:
                 model.Add(sum(possible) <= 1)
 
-    # If groups are provided, prevent members from being scheduled in other
-    # lessons when their group has a lesson in the same slot
+    # If groups are provided, tie group variables to member variables so that
+    # all members attend the same teacher/subject/slot when the group is
+    # scheduled. Members may still attend other lessons in different slots.
     if group_members:
+        teacher_subj = {t['id']: set(json.loads(t['subjects'])) for t in teachers}
+        group_subjects = {s['id']: set(json.loads(s['subjects']))
+                          for s in students if s['id'] in group_members}
         for gid, members in group_members.items():
-            for slot in range(slots):
-                g_vars = [var for (sid, tid, subj, sl), var in vars_.items()
-                          if sid == gid and sl == slot]
-                if not g_vars:
-                    continue
-                for member in members:
-                    m_vars = [var for (sid, tid, subj, sl), var in vars_.items()
-                              if sid == member and sl == slot]
-                    if m_vars:
-                        model.Add(sum(g_vars) + sum(m_vars) <= 1)
+            g_subs = group_subjects.get(gid, set())
+            for teacher in teachers:
+                common = g_subs & teacher_subj[teacher['id']]
+                for subj in common:
+                    for slot in range(slots):
+                        g_key = (gid, teacher['id'], subj, slot)
+                        if g_key not in vars_:
+                            continue
+                        g_var = vars_[g_key]
+                        for member in members:
+                            m_key = (member, teacher['id'], subj, slot)
+                            if m_key in vars_:
+                                model.Add(vars_[m_key] == g_var)
 
     # Limit repeats of the same student/teacher/subject combination
     triple_map = {}
