@@ -95,13 +95,17 @@ def init_db():
         c.execute('''CREATE TABLE timetable (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             student_id INTEGER,
+            group_id INTEGER,
             teacher_id INTEGER,
             subject TEXT,
             slot INTEGER,
             date TEXT
         )''')
-    elif not column_exists('timetable', 'date'):
-        c.execute('ALTER TABLE timetable ADD COLUMN date TEXT')
+    else:
+        if not column_exists('timetable', 'date'):
+            c.execute('ALTER TABLE timetable ADD COLUMN date TEXT')
+        if not column_exists('timetable', 'group_id'):
+            c.execute('ALTER TABLE timetable ADD COLUMN group_id INTEGER')
 
     if not table_exists('groups'):
         c.execute('''CREATE TABLE groups (
@@ -453,6 +457,7 @@ def generate_schedule(target_date=None):
     group_members = {}
     for gm in gm_rows:
         group_members.setdefault(gm['group_id'], []).append(gm['student_id'])
+    group_map_offset = {offset + gid: members for gid, members in group_members.items()}
     c.execute('SELECT * FROM teacher_unavailable')
     unavailable = c.fetchall()
     c.execute('SELECT * FROM fixed_assignments')
@@ -499,7 +504,7 @@ def generate_schedule(target_date=None):
         consecutive_weight=consecutive_weight,
         unavailable=unavailable, fixed=assignments_fixed,
         teacher_min_lessons=teacher_min, teacher_max_lessons=teacher_max,
-        add_assumptions=True)
+        add_assumptions=True, group_members=group_map_offset)
     status, assignments, core = solve_and_print(model, vars_, assumptions)
 
     # Insert solver results into DB
@@ -507,13 +512,11 @@ def generate_schedule(target_date=None):
         for sid, tid, subj, slot in assignments:
             if sid >= offset:
                 gid = sid - offset
-                members = group_members.get(gid, [])
-                for m in members:
-                    c.execute('INSERT INTO timetable (student_id, teacher_id, subject, slot, date) VALUES (?, ?, ?, ?, ?)',
-                              (m, tid, subj, slot, target_date))
+                c.execute('INSERT INTO timetable (student_id, group_id, teacher_id, subject, slot, date) VALUES (?, ?, ?, ?, ?, ?)',
+                          (None, gid, tid, subj, slot, target_date))
             else:
-                c.execute('INSERT INTO timetable (student_id, teacher_id, subject, slot, date) VALUES (?, ?, ?, ?, ?)',
-                          (sid, tid, subj, slot, target_date))
+                c.execute('INSERT INTO timetable (student_id, group_id, teacher_id, subject, slot, date) VALUES (?, ?, ?, ?, ?, ?)',
+                          (sid, None, tid, subj, slot, target_date))
     else:
         from ortools.sat.python import cp_model
         if status == cp_model.INFEASIBLE:
@@ -555,23 +558,38 @@ def timetable():
         c.execute('SELECT DISTINCT date FROM timetable ORDER BY date DESC LIMIT 1')
         row = c.fetchone()
         target_date = row['date'] if row else date.today().isoformat()
-    c.execute('''SELECT t.slot, te.name as teacher, s.name as student, t.subject
+    c.execute('''SELECT t.slot, te.name as teacher, s.name as student,
+                        g.name as group_name, t.subject, t.group_id, t.teacher_id
                  FROM timetable t
                  JOIN teachers te ON t.teacher_id = te.id
-                 JOIN students s ON t.student_id = s.id
+                 LEFT JOIN students s ON t.student_id = s.id
+                 LEFT JOIN groups g ON t.group_id = g.id
                  WHERE t.date=?''', (target_date,))
     rows = c.fetchall()
+    c.execute('SELECT group_id, student_id FROM group_members')
+    gm_rows = c.fetchall()
+    group_students = {}
+    for gm in gm_rows:
+        group_students.setdefault(gm['group_id'], []).append(gm['student_id'])
+    c.execute('SELECT id, name FROM students')
+    student_rows = c.fetchall()
+    student_names = {s['id']: s['name'] for s in student_rows}
     conn.close()
 
     if not rows:
         flash('No timetable available. Generate one from the home page.', 'error')
 
-    # build grid [slot][teacher] => student
+    # build grid [slot][teacher] => assignment description
     grid = {slot: {te['id']: None for te in teachers} for slot in range(slots)}
     for r in rows:
-        # get teacher id by name
-        tid = next(te['id'] for te in teachers if te['name'] == r['teacher'])
-        grid[r['slot']][tid] = f"{r['student']} ({r['subject']})"
+        tid = r['teacher_id']
+        if r['group_id']:
+            members = group_students.get(r['group_id'], [])
+            names = ', '.join(student_names[m] for m in members)
+            desc = f"{r['group_name']} [{names}] ({r['subject']})"
+        else:
+            desc = f"{r['student']} ({r['subject']})"
+        grid[r['slot']][tid] = desc
 
     return render_template('timetable.html', slots=range(slots), teachers=teachers, grid=grid, json=json, date=target_date)
 

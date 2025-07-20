@@ -7,7 +7,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 prefer_consecutive=False, allow_consecutive=True,
                 consecutive_weight=1, unavailable=None, fixed=None,
                 teacher_min_lessons=0, teacher_max_lessons=None,
-                add_assumptions=False):
+                add_assumptions=False, group_members=None):
     """Build CP-SAT model for the scheduling problem.
 
     When ``add_assumptions`` is ``True``, Boolean indicators are created for the
@@ -38,6 +38,9 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         vars_ (dict): Mapping (student_id, teacher_id, subject, slot) -> BoolVar.
         assumptions (dict or None): Mapping of constraint group name to the
             assumption indicator variable when ``add_assumptions`` is True.
+        group_members (dict): Optional mapping of pseudo student id to a list of
+            real student ids. When provided, additional constraints ensure group
+            members are not scheduled for other lessons in the same slot.
     """
     model = cp_model.CpModel()
     vars_ = {}
@@ -91,6 +94,21 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                         if sid == student['id'] and sl == slot]
             if possible:
                 model.Add(sum(possible) <= 1)
+
+    # If groups are provided, prevent members from being scheduled in other
+    # lessons when their group has a lesson in the same slot
+    if group_members:
+        for gid, members in group_members.items():
+            for slot in range(slots):
+                g_vars = [var for (sid, tid, subj, sl), var in vars_.items()
+                          if sid == gid and sl == slot]
+                if not g_vars:
+                    continue
+                for member in members:
+                    m_vars = [var for (sid, tid, subj, sl), var in vars_.items()
+                              if sid == member and sl == slot]
+                    if m_vars:
+                        model.Add(sum(g_vars) + sum(m_vars) <= 1)
 
     # Limit repeats of the same student/teacher/subject combination
     triple_map = {}
