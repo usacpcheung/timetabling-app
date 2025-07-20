@@ -40,6 +40,9 @@
             </label><br>
             <label>Consecutive preference weight:
                 <input type="number" name="consecutive_weight" value="{{ config['consecutive_weight'] }}" min="1">
+            </label><br>
+            <label>Require all subjects?
+                <input type="checkbox" name="require_all_subjects" {% if config['require_all_subjects'] %}checked{% endif %}>
             </label>
         </fieldset>
         <fieldset>

@@ -32,6 +32,14 @@
         </tr>
         {% endfor %}
     </table>
+    {% if missing %}
+    <h2>Unscheduled Subjects</h2>
+    <ul>
+        {% for sid, subs in missing.items() %}
+        <li>{{ student_names[sid] }}: {{ ', '.join(subs) }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
     <p><a href="{{ url_for('index') }}">Home</a></p>
 </body>
 </html>

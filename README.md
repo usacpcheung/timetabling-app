@@ -58,6 +58,11 @@ consecutive repeats are favored in the optimization. For a noticeable effect
 set the weight above **10**. Multiples of ten (e.g. `20`, `30`) increasingly
 prioritize consecutive placement over other constraints.
 
+Another option lets you disable the rule that every student must attend at
+least one lesson for each of their subjects. When unchecked the solver may skip
+some subjects if required to satisfy other constraints. Any omitted subjects are
+listed on the timetable page.
+
 Two numbers define the minimum and maximum lessons each teacher should teach.
 Individual teachers can override these global limits. Leave the per-teacher
 fields blank to use the global values.

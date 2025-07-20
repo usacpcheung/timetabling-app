@@ -44,8 +44,11 @@ def init_db():
             max_repeats INTEGER,
             prefer_consecutive INTEGER,
             allow_consecutive INTEGER,
-            consecutive_weight INTEGER
+            consecutive_weight INTEGER,
+            require_all_subjects INTEGER
         )''')
+    elif not column_exists('config', 'require_all_subjects'):
+        c.execute('ALTER TABLE config ADD COLUMN require_all_subjects INTEGER DEFAULT 1')
 
     if not table_exists('teachers'):
         c.execute('''CREATE TABLE teachers (
@@ -130,8 +133,9 @@ def init_db():
             id, slots_per_day, slot_duration, lesson_duration,
             min_lessons, max_lessons, teacher_min_lessons, teacher_max_lessons,
             allow_repeats, max_repeats,
-            prefer_consecutive, allow_consecutive, consecutive_weight
-        ) VALUES (1, 8, 30, 30, 1, 4, 1, 4, 0, 2, 0, 1, 3)''')
+            prefer_consecutive, allow_consecutive, consecutive_weight,
+            require_all_subjects
+        ) VALUES (1, 8, 30, 30, 1, 4, 1, 4, 0, 2, 0, 1, 3, 1)''')
     c.execute('SELECT COUNT(*) FROM teachers')
     if c.fetchone()[0] == 0:
         teachers = [
@@ -187,6 +191,7 @@ def config():
         prefer_consecutive = 1 if request.form.get('prefer_consecutive') else 0
         allow_consecutive = 1 if request.form.get('allow_consecutive') else 0
         consecutive_weight = int(request.form['consecutive_weight'])
+        require_all_subjects = 1 if request.form.get('require_all_subjects') else 0
 
         if not allow_repeats:
             allow_consecutive = 0
@@ -201,11 +206,12 @@ def config():
         c.execute('''UPDATE config SET slots_per_day=?, slot_duration=?, lesson_duration=?,
                      min_lessons=?, max_lessons=?, teacher_min_lessons=?, teacher_max_lessons=?,
                      allow_repeats=?, max_repeats=?,
-                     prefer_consecutive=?, allow_consecutive=?, consecutive_weight=? WHERE id=1''',
+                     prefer_consecutive=?, allow_consecutive=?, consecutive_weight=?,
+                     require_all_subjects=? WHERE id=1''',
                   (slots_per_day, slot_duration, lesson_duration, min_lessons,
                    max_lessons, t_min_lessons, t_max_lessons,
                    allow_repeats, max_repeats, prefer_consecutive,
-                   allow_consecutive, consecutive_weight))
+                   allow_consecutive, consecutive_weight, require_all_subjects))
         # update subjects
         subj_ids = request.form.getlist('subject_id')
         deletes_sub = set(request.form.getlist('subject_delete'))
@@ -484,6 +490,7 @@ def generate_schedule(target_date=None):
     prefer_consecutive = bool(cfg['prefer_consecutive'])
     allow_consecutive = bool(cfg['allow_consecutive'])
     consecutive_weight = cfg['consecutive_weight']
+    require_all_subjects = bool(cfg['require_all_subjects'])
     # Build the CP-SAT model with assumption literals so that we can obtain
     # an unsat core explaining conflicts when no timetable exists.
     # incorporate groups as pseudo students
@@ -502,7 +509,8 @@ def generate_schedule(target_date=None):
         consecutive_weight=consecutive_weight,
         unavailable=unavailable, fixed=assignments_fixed,
         teacher_min_lessons=teacher_min, teacher_max_lessons=teacher_max,
-        add_assumptions=True, group_members=group_map_offset)
+        add_assumptions=True, group_members=group_map_offset,
+        require_all_subjects=require_all_subjects)
     status, assignments, core = solve_and_print(model, vars_, assumptions)
 
     # Insert solver results into DB
@@ -582,7 +590,7 @@ def timetable():
     group_students = {}
     for gm in gm_rows:
         group_students.setdefault(gm['group_id'], []).append(gm['student_id'])
-    c.execute('SELECT id, name FROM students')
+    c.execute('SELECT id, name, subjects, active FROM students')
     student_rows = c.fetchall()
     student_names = {s['id']: s['name'] for s in student_rows}
     conn.close()
@@ -602,7 +610,27 @@ def timetable():
             desc = f"{r['student']} ({r['subject']})"
         grid[r['slot']][tid] = desc
 
-    return render_template('timetable.html', slots=range(slots), teachers=teachers, grid=grid, json=json, date=target_date)
+    # determine unscheduled subjects for each active student
+    assigned = {s['id']: set() for s in student_rows}
+    for r in rows:
+        subj = r['subject']
+        if r['group_id']:
+            for sid in group_students.get(r['group_id'], []):
+                assigned.setdefault(sid, set()).add(subj)
+        elif r['student_id']:
+            assigned.setdefault(r['student_id'], set()).add(subj)
+    missing = {}
+    for s in student_rows:
+        if not s['active']:
+            continue
+        required = set(json.loads(s['subjects']))
+        miss = required - assigned.get(s['id'], set())
+        if miss:
+            missing[s['id']] = sorted(miss)
+
+    return render_template('timetable.html', slots=range(slots), teachers=teachers,
+                           grid=grid, json=json, date=target_date,
+                           missing=missing, student_names=student_names)
 
 
 if __name__ == '__main__':
