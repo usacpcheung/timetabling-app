@@ -40,9 +40,12 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             assumption indicator variable when ``add_assumptions`` is True.
         group_members (dict): Optional mapping of pseudo student id to a list of
             real student ids. When provided, group lessons will be tied to all
-            member students so they attend together.
+            member students so they attend together. IDs present in this mapping
+            are treated as groups and are not subject to per-student lesson
+            minimum and maximum limits.
     """
     model = cp_model.CpModel()
+    group_ids = set(group_members.keys()) if group_members else set()
     vars_ = {}
     unavailable = unavailable or []
     fixed = fixed or []
@@ -104,6 +107,8 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
     # for that student in the check so clashes are prevented.
     for student in students:
         sid = student['id']
+        if sid in group_ids:
+            continue
         for slot in range(slots):
             possible = [var for (s, t, subj, sl), var in vars_.items()
                         if s == sid and sl == slot]
@@ -116,6 +121,8 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
     # Limit repeats of the same student/teacher/subject combination
     triple_map = {}
     for (sid, tid, subj, sl), var in vars_.items():
+        if sid in group_ids:
+            continue
         triple_map.setdefault((sid, tid, subj), {})[sl] = var
 
     adjacency_vars = []
@@ -164,6 +171,8 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
     # Limit total lessons per student and ensure each required subject is taken
     for student in students:
         sid = student['id']
+        if sid in group_ids:
+            continue
         total = []
         subs = json.loads(student['subjects'])
         for subject in subs:
