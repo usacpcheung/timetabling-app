@@ -87,35 +87,31 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             if possible:
                 model.Add(sum(possible) <= 1)
 
-    # Student cannot attend more than one lesson in a slot
+    # Build maps relating group variables to member students
+    member_to_group_vars = {}
+    if group_members:
+        for (sid, tid, subj, sl), var in vars_.items():
+            if sid in group_members:
+                for member in group_members[sid]:
+                    member_to_group_vars.setdefault(member, []).append(((sid, tid, subj, sl), var))
+                    # When the group variable is on, prevent member variables for the same
+                    # teacher/subject/slot from activating so the teacher count is correct.
+                    m_key = (member, tid, subj, sl)
+                    if m_key in vars_:
+                        model.Add(vars_[m_key] == 0).OnlyEnforceIf(var)
+
+    # Student cannot attend more than one lesson in a slot. Include group lessons
+    # for that student in the check so clashes are prevented.
     for student in students:
+        sid = student['id']
         for slot in range(slots):
-            possible = [var for (sid, tid, subj, sl), var in vars_.items()
-                        if sid == student['id'] and sl == slot]
+            possible = [var for (s, t, subj, sl), var in vars_.items()
+                        if s == sid and sl == slot]
+            for (g_key, g_var) in member_to_group_vars.get(sid, []):
+                if g_key[3] == slot:  # slot matches
+                    possible.append(g_var)
             if possible:
                 model.Add(sum(possible) <= 1)
-
-    # If groups are provided, tie group variables to member variables so that
-    # all members attend the same teacher/subject/slot when the group is
-    # scheduled. Members may still attend other lessons in different slots.
-    if group_members:
-        teacher_subj = {t['id']: set(json.loads(t['subjects'])) for t in teachers}
-        group_subjects = {s['id']: set(json.loads(s['subjects']))
-                          for s in students if s['id'] in group_members}
-        for gid, members in group_members.items():
-            g_subs = group_subjects.get(gid, set())
-            for teacher in teachers:
-                common = g_subs & teacher_subj[teacher['id']]
-                for subj in common:
-                    for slot in range(slots):
-                        g_key = (gid, teacher['id'], subj, slot)
-                        if g_key not in vars_:
-                            continue
-                        g_var = vars_[g_key]
-                        for member in members:
-                            m_key = (member, teacher['id'], subj, slot)
-                            if m_key in vars_:
-                                model.Add(vars_[m_key] == g_var)
 
     # Limit repeats of the same student/teacher/subject combination
     triple_map = {}
@@ -167,16 +163,22 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
 
     # Limit total lessons per student and ensure each required subject is taken
     for student in students:
+        sid = student['id']
         total = []
         subs = json.loads(student['subjects'])
         for subject in subs:
-            subject_vars = [var for (sid, tid, subj, sl), var in vars_.items()
-                            if sid == student['id'] and subj == subject]
+            subject_vars = [var for (s, t, subj, sl), var in vars_.items()
+                            if s == sid and subj == subject]
+            for (g_key, g_var) in member_to_group_vars.get(sid, []):
+                if g_key[2] == subject:
+                    subject_vars.append(g_var)
             if subject_vars:
                 ct = model.Add(sum(subject_vars) >= 1)
                 if add_assumptions:
                     ct.OnlyEnforceIf(assumptions['student_limits'])
                 total.extend(subject_vars)
+        for (_, g_var) in member_to_group_vars.get(sid, []):
+            total.append(g_var)
         if total:
             ct_min = model.Add(sum(total) >= min_lessons)
             ct_max = model.Add(sum(total) <= max_lessons)
