@@ -578,7 +578,7 @@ def timetable():
         row = c.fetchone()
         target_date = row['date'] if row else date.today().isoformat()
     c.execute('''SELECT t.slot, te.name as teacher, s.name as student,
-                        g.name as group_name, t.subject, t.group_id, t.teacher_id
+                        g.name as group_name, t.subject, t.group_id, t.teacher_id, t.student_id
                  FROM timetable t
                  JOIN teachers te ON t.teacher_id = te.id
                  LEFT JOIN students s ON t.student_id = s.id
