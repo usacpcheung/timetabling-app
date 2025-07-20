@@ -42,7 +42,8 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             real student ids. When provided, group lessons will be tied to all
             member students so they attend together. IDs present in this mapping
             are treated as groups and are not subject to per-student lesson
-            minimum and maximum limits.
+            minimum and maximum limits. Groups obey repeat and consecutive
+            lesson rules in the same way as individual students.
     """
     model = cp_model.CpModel()
     group_ids = set(group_members.keys()) if group_members else set()
@@ -137,11 +138,11 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             if possible:
                 model.Add(sum(possible) <= 1)
 
-    # Limit repeats of the same student/teacher/subject combination
+    # Limit repeats of the same student/teacher/subject combination. Groups
+    # follow the same rules as individual students, so include their variables
+    # here as well.
     triple_map = {}
     for (sid, tid, subj, sl), var in vars_.items():
-        if sid in group_ids:
-            continue
         triple_map.setdefault((sid, tid, subj), {})[sl] = var
 
     adjacency_vars = []
