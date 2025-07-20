@@ -47,6 +47,19 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
     model = cp_model.CpModel()
     group_ids = set(group_members.keys()) if group_members else set()
     vars_ = {}
+    # Map each group id to the subjects it requires and map each member
+    # student to the subjects that must be taken through their group.
+    group_subjects = {}
+    member_group_subjects = {}
+    if group_members:
+        for s in students:
+            sid = s['id']
+            if sid in group_ids:
+                group_subjects[sid] = set(json.loads(s['subjects']))
+        for gid, members in group_members.items():
+            gsubs = group_subjects.get(gid, set())
+            for member in members:
+                member_group_subjects.setdefault(member, set()).update(gsubs)
     unavailable = unavailable or []
     fixed = fixed or []
     unavailable_set = {(u['teacher_id'], u['slot']) for u in unavailable}
@@ -64,13 +77,19 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         for var in assumptions.values():
             model.AddAssumption(var)
 
-    # Create variables for allowed (student, teacher, subject) triples
+    # Create variables for allowed (student, teacher, subject) triples. When a
+    # real student is a member of a group for a particular subject, that subject
+    # is scheduled exclusively through the group so individual variables are not
+    # created.
     for student in students:
         student_subs = set(json.loads(student['subjects']))
         for teacher in teachers:
             teacher_subs = set(json.loads(teacher['subjects']))
             common = student_subs & teacher_subs
             for subject in common:
+                if (student['id'] not in group_ids and
+                        subject in member_group_subjects.get(student['id'], set())):
+                    continue
                 for slot in range(slots):
                     key = (student['id'], teacher['id'], subject, slot)
                     if not add_assumptions and key not in fixed_set and (teacher['id'], slot) in unavailable_set:
