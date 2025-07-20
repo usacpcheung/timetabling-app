@@ -7,7 +7,8 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 prefer_consecutive=False, allow_consecutive=True,
                 consecutive_weight=1, unavailable=None, fixed=None,
                 teacher_min_lessons=0, teacher_max_lessons=None,
-                add_assumptions=False, group_members=None):
+                add_assumptions=False, group_members=None,
+                require_all_subjects=True):
     """Build CP-SAT model for the scheduling problem.
 
     When ``add_assumptions`` is ``True``, Boolean indicators are created for the
@@ -32,6 +33,9 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         consecutive_weight: weight applied when maximizing consecutive repeats.
         teacher_min_lessons: global minimum number of lessons per teacher.
         teacher_max_lessons: global maximum number of lessons per teacher.
+        require_all_subjects: if True, each subject listed for a student must
+            appear at least once in the schedule. When False the solver may
+            omit some subjects if needed to satisfy other constraints.
 
     Returns:
         model (cp_model.CpModel): The constructed model.
@@ -188,7 +192,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             if add_assumptions:
                 ct2.OnlyEnforceIf(assumptions['teacher_limits'])
 
-    # Limit total lessons per student and ensure each required subject is taken
+    # Limit total lessons per student and optionally require every subject
     for student in students:
         sid = student['id']
         if sid in group_ids:
@@ -202,9 +206,10 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 if g_key[2] == subject:
                     subject_vars.append(g_var)
             if subject_vars:
-                ct = model.Add(sum(subject_vars) >= 1)
-                if add_assumptions:
-                    ct.OnlyEnforceIf(assumptions['student_limits'])
+                if require_all_subjects:
+                    ct = model.Add(sum(subject_vars) >= 1)
+                    if add_assumptions:
+                        ct.OnlyEnforceIf(assumptions['student_limits'])
                 total_set.update(subject_vars)
         # Group lessons should only count once toward the student's total lesson
         # limits even when they satisfy multiple subject requirements.
