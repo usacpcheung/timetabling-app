@@ -193,7 +193,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         sid = student['id']
         if sid in group_ids:
             continue
-        total = []
+        total_set = set()
         subs = json.loads(student['subjects'])
         for subject in subs:
             subject_vars = [var for (s, t, subj, sl), var in vars_.items()
@@ -205,9 +205,12 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 ct = model.Add(sum(subject_vars) >= 1)
                 if add_assumptions:
                     ct.OnlyEnforceIf(assumptions['student_limits'])
-                total.extend(subject_vars)
+                total_set.update(subject_vars)
+        # Group lessons should only count once toward the student's total lesson
+        # limits even when they satisfy multiple subject requirements.
         for (_, g_var) in member_to_group_vars.get(sid, []):
-            total.append(g_var)
+            total_set.add(g_var)
+        total = list(total_set)
         if total:
             ct_min = model.Add(sum(total) >= min_lessons)
             ct_max = model.Add(sum(total) <= max_lessons)
