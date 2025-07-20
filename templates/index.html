@@ -9,8 +9,14 @@
     <h1>Welcome to the Timetabling App</h1>
     <ul>
         <li><a href="{{ url_for('config') }}">Edit Configuration</a></li>
-        <li><a href="{{ url_for('generate') }}">Generate Timetable</a></li>
-        <li><a href="{{ url_for('timetable') }}">View Timetable</a></li>
     </ul>
+    <form action="{{ url_for('generate') }}" method="post">
+        <label>Date: <input type="date" name="date" value="{{ today }}"></label>
+        <button type="submit">Generate Timetable</button>
+    </form>
+    <form action="{{ url_for('timetable') }}" method="get">
+        <label>Date: <input type="date" name="date" value="{{ today }}"></label>
+        <button type="submit">View Timetable</button>
+    </form>
 </body>
 </html>

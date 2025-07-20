@@ -90,6 +90,7 @@
                     {% endfor %}
                 </select>
             </label>
+            <label>Needs lessons? <input type="checkbox" name="student_active_{{ s['id'] }}" value="1" {% if s['active'] %}checked{% endif %}></label>
             <label>Delete? <input type="checkbox" name="student_delete_{{ s['id'] }}" value="1"></label><br>
             {% endfor %}
             <label>New Name: <input type="text" name="new_student_name"></label>
@@ -97,6 +98,43 @@
                 <select multiple name="new_student_subjects">
                     {% for sub in subjects %}
                     <option value="{{ sub['name'] }}">{{ sub['name'] }}</option>
+                    {% endfor %}
+                </select>
+            </label><br>
+        </fieldset>
+        <fieldset>
+            <legend>Groups</legend>
+            {% for g in groups %}
+            <input type="hidden" name="group_id" value="{{ g['id'] }}">
+            <label>Name: <input type="text" name="group_name_{{ g['id'] }}" value="{{ g['name'] }}"></label>
+            <label>Subjects:
+                <select multiple name="group_subjects_{{ g['id'] }}">
+                    {% for sub in subjects %}
+                    <option value="{{ sub['name'] }}" {% if sub['name'] in json.loads(g['subjects']) %}selected{% endif %}>{{ sub['name'] }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>Members:
+                <select multiple name="group_members_{{ g['id'] }}">
+                    {% for s in students %}
+                    <option value="{{ s['id'] }}" {% if s['id'] in group_map.get(g['id'], []) %}selected{% endif %}>{{ s['name'] }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>Delete? <input type="checkbox" name="group_delete" value="{{ g['id'] }}"></label><br>
+            {% endfor %}
+            <label>New Group Name: <input type="text" name="new_group_name"></label>
+            <label>Subjects:
+                <select multiple name="new_group_subjects">
+                    {% for sub in subjects %}
+                    <option value="{{ sub['name'] }}">{{ sub['name'] }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>Members:
+                <select multiple name="new_group_members">
+                    {% for s in students %}
+                    <option value="{{ s['id'] }}">{{ s['name'] }}</option>
                     {% endfor %}
                 </select>
             </label><br>
@@ -121,13 +159,25 @@
             <legend>Fixed Assignments</legend>
             {% for a in assignments %}
             <input type="hidden" name="assign_id" value="{{ a['id'] }}">
-            <span>{{ a['student_name'] }} - {{ a['subject'] }} with {{ a['teacher_name'] }} at Slot {{ a['slot'] + 1 }}</span>
+            <span>
+                {% if a['student_name'] %}{{ a['student_name'] }}{% else %}{{ a['group_name'] }}{% endif %} -
+                {{ a['subject'] }} with {{ a['teacher_name'] }} at Slot {{ a['slot'] + 1 }}
+            </span>
             <label>Delete? <input type="checkbox" name="assign_delete" value="{{ a['id'] }}"></label><br>
             {% endfor %}
             <label>Student:
                 <select name="new_assign_student" id="new_assign_student">
+                    <option value="">-- None --</option>
                     {% for s in students %}
                     <option value="{{ s['id'] }}">{{ s['name'] }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>Group:
+                <select name="new_assign_group" id="new_assign_group">
+                    <option value="">-- None --</option>
+                    {% for g in groups %}
+                    <option value="{{ g['id'] }}">{{ g['name'] }}</option>
                     {% endfor %}
                 </select>
             </label>
@@ -154,6 +204,7 @@
     <p><a href="{{ url_for('index') }}">Back to Home</a></p>
     <script id="teacher-data" type="application/json">{{ teacher_map | tojson }}</script>
     <script id="student-data" type="application/json">{{ student_map | tojson }}</script>
+    <script id="group-data" type="application/json">{{ group_subj_map | tojson }}</script>
     <script id="unavail-data" type="application/json">{{ unavail_map | tojson }}</script>
     <script id="assign-data" type="application/json">{{ assign_map | tojson }}</script>
     <script src="{{ url_for('static', filename='config.js') }}"></script>

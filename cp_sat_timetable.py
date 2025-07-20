@@ -7,7 +7,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 prefer_consecutive=False, allow_consecutive=True,
                 consecutive_weight=1, unavailable=None, fixed=None,
                 teacher_min_lessons=0, teacher_max_lessons=None,
-                add_assumptions=False):
+                add_assumptions=False, group_members=None):
     """Build CP-SAT model for the scheduling problem.
 
     When ``add_assumptions`` is ``True``, Boolean indicators are created for the
@@ -38,9 +38,29 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         vars_ (dict): Mapping (student_id, teacher_id, subject, slot) -> BoolVar.
         assumptions (dict or None): Mapping of constraint group name to the
             assumption indicator variable when ``add_assumptions`` is True.
+        group_members (dict): Optional mapping of pseudo student id to a list of
+            real student ids. When provided, group lessons will be tied to all
+            member students so they attend together. IDs present in this mapping
+            are treated as groups and are not subject to per-student lesson
+            minimum and maximum limits. Groups obey repeat and consecutive
+            lesson rules in the same way as individual students.
     """
     model = cp_model.CpModel()
+    group_ids = set(group_members.keys()) if group_members else set()
     vars_ = {}
+    # Map each group id to the subjects it requires and map each member
+    # student to the subjects that must be taken through their group.
+    group_subjects = {}
+    member_group_subjects = {}
+    if group_members:
+        for s in students:
+            sid = s['id']
+            if sid in group_ids:
+                group_subjects[sid] = set(json.loads(s['subjects']))
+        for gid, members in group_members.items():
+            gsubs = group_subjects.get(gid, set())
+            for member in members:
+                member_group_subjects.setdefault(member, set()).update(gsubs)
     unavailable = unavailable or []
     fixed = fixed or []
     unavailable_set = {(u['teacher_id'], u['slot']) for u in unavailable}
@@ -58,13 +78,19 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         for var in assumptions.values():
             model.AddAssumption(var)
 
-    # Create variables for allowed (student, teacher, subject) triples
+    # Create variables for allowed (student, teacher, subject) triples. When a
+    # real student is a member of a group for a particular subject, that subject
+    # is scheduled exclusively through the group so individual variables are not
+    # created.
     for student in students:
         student_subs = set(json.loads(student['subjects']))
         for teacher in teachers:
             teacher_subs = set(json.loads(teacher['subjects']))
             common = student_subs & teacher_subs
             for subject in common:
+                if (student['id'] not in group_ids and
+                        subject in member_group_subjects.get(student['id'], set())):
+                    continue
                 for slot in range(slots):
                     key = (student['id'], teacher['id'], subject, slot)
                     if not add_assumptions and key not in fixed_set and (teacher['id'], slot) in unavailable_set:
@@ -84,15 +110,37 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             if possible:
                 model.Add(sum(possible) <= 1)
 
-    # Student cannot attend more than one lesson in a slot
+    # Build maps relating group variables to member students
+    member_to_group_vars = {}
+    if group_members:
+        for (sid, tid, subj, sl), var in vars_.items():
+            if sid in group_members:
+                for member in group_members[sid]:
+                    member_to_group_vars.setdefault(member, []).append(((sid, tid, subj, sl), var))
+                    # When the group variable is on, prevent member variables for the same
+                    # teacher/subject/slot from activating so the teacher count is correct.
+                    m_key = (member, tid, subj, sl)
+                    if m_key in vars_:
+                        model.Add(vars_[m_key] == 0).OnlyEnforceIf(var)
+
+    # Student cannot attend more than one lesson in a slot. Include group lessons
+    # for that student in the check so clashes are prevented.
     for student in students:
+        sid = student['id']
+        if sid in group_ids:
+            continue
         for slot in range(slots):
-            possible = [var for (sid, tid, subj, sl), var in vars_.items()
-                        if sid == student['id'] and sl == slot]
+            possible = [var for (s, t, subj, sl), var in vars_.items()
+                        if s == sid and sl == slot]
+            for (g_key, g_var) in member_to_group_vars.get(sid, []):
+                if g_key[3] == slot:  # slot matches
+                    possible.append(g_var)
             if possible:
                 model.Add(sum(possible) <= 1)
 
-    # Limit repeats of the same student/teacher/subject combination
+    # Limit repeats of the same student/teacher/subject combination. Groups
+    # follow the same rules as individual students, so include their variables
+    # here as well.
     triple_map = {}
     for (sid, tid, subj, sl), var in vars_.items():
         triple_map.setdefault((sid, tid, subj), {})[sl] = var
@@ -142,16 +190,24 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
 
     # Limit total lessons per student and ensure each required subject is taken
     for student in students:
+        sid = student['id']
+        if sid in group_ids:
+            continue
         total = []
         subs = json.loads(student['subjects'])
         for subject in subs:
-            subject_vars = [var for (sid, tid, subj, sl), var in vars_.items()
-                            if sid == student['id'] and subj == subject]
+            subject_vars = [var for (s, t, subj, sl), var in vars_.items()
+                            if s == sid and subj == subject]
+            for (g_key, g_var) in member_to_group_vars.get(sid, []):
+                if g_key[2] == subject:
+                    subject_vars.append(g_var)
             if subject_vars:
                 ct = model.Add(sum(subject_vars) >= 1)
                 if add_assumptions:
                     ct.OnlyEnforceIf(assumptions['student_limits'])
                 total.extend(subject_vars)
+        for (_, g_var) in member_to_group_vars.get(sid, []):
+            total.append(g_var)
         if total:
             ct_min = model.Add(sum(total) >= min_lessons)
             ct_max = model.Add(sum(total) <= max_lessons)
