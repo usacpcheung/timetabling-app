@@ -84,9 +84,12 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             teacher_id INTEGER,
             student_id INTEGER,
+            group_id INTEGER,
             subject TEXT,
             slot INTEGER
         )''')
+    elif not column_exists('fixed_assignments', 'group_id'):
+        c.execute('ALTER TABLE fixed_assignments ADD COLUMN group_id INTEGER')
 
     if not table_exists('timetable'):
         c.execute('''CREATE TABLE timetable (
@@ -328,6 +331,7 @@ def config():
             if aid in del_assign:
                 c.execute('DELETE FROM fixed_assignments WHERE id=?', (int(aid),))
         na_student = request.form.get('new_assign_student')
+        na_group = request.form.get('new_assign_group')
         na_teacher = request.form.get('new_assign_teacher')
         na_subject = request.form.get('new_assign_subject')
         na_slot = request.form.get('new_assign_slot')
@@ -338,6 +342,9 @@ def config():
         c.execute('SELECT id, subjects FROM students')
         srows = c.fetchall()
         student_map = {s["id"]: json.loads(s["subjects"]) for s in srows}
+        c.execute('SELECT id, subjects FROM groups')
+        grows = c.fetchall()
+        group_subj = {g["id"]: json.loads(g["subjects"]) for g in grows}
         c.execute('SELECT teacher_id, slot FROM teacher_unavailable')
         unav = c.fetchall()
         unav_set = {(u['teacher_id'], u['slot']) for u in unav}
@@ -345,21 +352,29 @@ def config():
         fixed = c.fetchall()
         fixed_set = {(f['teacher_id'], f['slot']) for f in fixed}
 
-        if na_student and na_teacher and na_subject and na_slot:
+        if na_teacher and na_subject and na_slot and (na_student or na_group):
             tid = int(na_teacher)
-            sid = int(na_student)
             slot = int(na_slot) - 1
             if na_subject not in teacher_map.get(tid, []):
                 flash('Teacher does not teach the selected subject', 'error')
-            elif na_subject not in student_map.get(sid, []):
-                flash('Student does not require the selected subject', 'error')
             elif (tid, slot) in unav_set:
                 flash('Teacher is unavailable in the selected slot', 'error')
             elif (tid, slot) in fixed_set:
                 flash('Duplicate fixed assignment for that slot', 'error')
+            elif na_student:
+                sid = int(na_student)
+                if na_subject not in student_map.get(sid, []):
+                    flash('Student does not require the selected subject', 'error')
+                else:
+                    c.execute('INSERT INTO fixed_assignments (teacher_id, student_id, group_id, subject, slot) VALUES (?, ?, ?, ?, ?)',
+                              (tid, sid, None, na_subject, slot))
             else:
-                c.execute('INSERT INTO fixed_assignments (teacher_id, student_id, subject, slot) VALUES (?, ?, ?, ?)',
-                          (tid, sid, na_subject, slot))
+                gid = int(na_group)
+                if na_subject not in group_subj.get(gid, []):
+                    flash('Group does not require the selected subject', 'error')
+                else:
+                    c.execute('INSERT INTO fixed_assignments (teacher_id, student_id, group_id, subject, slot) VALUES (?, ?, ?, ?, ?)',
+                              (tid, None, gid, na_subject, slot))
 
         conn.commit()
         conn.close()
@@ -381,14 +396,18 @@ def config():
     group_map = {}
     for gm in gm_rows:
         group_map.setdefault(gm['group_id'], []).append(gm['student_id'])
+    group_subj_map = {g['id']: json.loads(g['subjects']) for g in groups}
     c.execute('''SELECT u.id, u.teacher_id, u.slot, t.name as teacher_name
                  FROM teacher_unavailable u JOIN teachers t ON u.teacher_id = t.id''')
     unavailable = c.fetchall()
-    c.execute('''SELECT a.id, a.teacher_id, a.student_id, a.subject, a.slot,
-                        t.name as teacher_name, s.name as student_name
+    c.execute('''SELECT a.id, a.teacher_id, a.student_id, a.group_id, a.subject, a.slot,
+                        t.name as teacher_name,
+                        s.name as student_name,
+                        g.name as group_name
                  FROM fixed_assignments a
                  JOIN teachers t ON a.teacher_id = t.id
-                 JOIN students s ON a.student_id = s.id''')
+                 LEFT JOIN students s ON a.student_id = s.id
+                 LEFT JOIN groups g ON a.group_id = g.id''')
     assignments = c.fetchall()
     assign_map = {}
     for a in assignments:
@@ -405,7 +424,8 @@ def config():
                            unavailable=unavailable, assignments=assignments,
                            teacher_map=teacher_map, student_map=student_map,
                            unavail_map=unavail_map, assign_map=assign_map,
-                           group_map=group_map, json=json)
+                           group_map=group_map, group_subj_map=group_subj_map,
+                           json=json)
 
 
 def generate_schedule(target_date=None):
@@ -427,6 +447,7 @@ def generate_schedule(target_date=None):
     students = c.fetchall()
     c.execute('SELECT * FROM groups')
     groups = c.fetchall()
+    offset = 10000
     c.execute('SELECT group_id, student_id FROM group_members')
     gm_rows = c.fetchall()
     group_members = {}
@@ -435,7 +456,13 @@ def generate_schedule(target_date=None):
     c.execute('SELECT * FROM teacher_unavailable')
     unavailable = c.fetchall()
     c.execute('SELECT * FROM fixed_assignments')
-    assignments_fixed = c.fetchall()
+    arows = c.fetchall()
+    assignments_fixed = []
+    for r in arows:
+        row = dict(r)
+        if row.get('group_id'):
+            row['student_id'] = offset + row['group_id']
+        assignments_fixed.append(row)
 
     # clear previous timetable for the target date
     c.execute('DELETE FROM timetable WHERE date=?', (target_date,))
@@ -450,7 +477,6 @@ def generate_schedule(target_date=None):
     # an unsat core explaining conflicts when no timetable exists.
     # incorporate groups as pseudo students
     pseudo_students = []
-    offset = 10000
     for g in groups:
         ps = {"id": offset + g['id'], "subjects": g['subjects']}
         pseudo_students.append(ps)

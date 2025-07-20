@@ -1,6 +1,7 @@
 document.addEventListener('DOMContentLoaded', function () {
     const teacherSelect = document.getElementById('new_assign_teacher');
     const studentSelect = document.getElementById('new_assign_student');
+    const groupSelect = document.getElementById('new_assign_group');
     const subjectSelect = document.getElementById('new_assign_subject');
     const slotSelect = document.getElementById('new_assign_slot');
 
@@ -10,6 +11,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const teacherData = JSON.parse(document.getElementById('teacher-data').textContent);
     const studentData = JSON.parse(document.getElementById('student-data').textContent);
+    const groupData = JSON.parse(document.getElementById('group-data').textContent);
     const unavailData = JSON.parse(document.getElementById('unavail-data').textContent);
     const assignData = JSON.parse(document.getElementById('assign-data').textContent);
     const totalSlots = parseInt(slotSelect.dataset.totalSlots, 10);
@@ -17,9 +19,10 @@ document.addEventListener('DOMContentLoaded', function () {
     function updateOptions() {
         const tid = teacherSelect.value;
         const sid = studentSelect.value;
+        const gid = groupSelect ? groupSelect.value : '';
         const teacherSubs = teacherData[tid] || [];
-        const studentSubs = studentData[sid] || [];
-        const common = studentSubs.filter(s => teacherSubs.includes(s));
+        const baseSubs = gid ? (groupData[gid] || []) : (studentData[sid] || []);
+        const common = baseSubs.filter(s => teacherSubs.includes(s));
 
         subjectSelect.innerHTML = '';
         const subPlaceholder = document.createElement('option');
@@ -71,6 +74,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     teacherSelect.addEventListener('change', updateOptions);
     studentSelect.addEventListener('change', updateOptions);
+    if (groupSelect) groupSelect.addEventListener('change', updateOptions);
 
     updateOptions();
 });

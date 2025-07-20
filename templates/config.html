@@ -159,13 +159,25 @@
             <legend>Fixed Assignments</legend>
             {% for a in assignments %}
             <input type="hidden" name="assign_id" value="{{ a['id'] }}">
-            <span>{{ a['student_name'] }} - {{ a['subject'] }} with {{ a['teacher_name'] }} at Slot {{ a['slot'] + 1 }}</span>
+            <span>
+                {% if a['student_name'] %}{{ a['student_name'] }}{% else %}{{ a['group_name'] }}{% endif %} -
+                {{ a['subject'] }} with {{ a['teacher_name'] }} at Slot {{ a['slot'] + 1 }}
+            </span>
             <label>Delete? <input type="checkbox" name="assign_delete" value="{{ a['id'] }}"></label><br>
             {% endfor %}
             <label>Student:
                 <select name="new_assign_student" id="new_assign_student">
+                    <option value="">-- None --</option>
                     {% for s in students %}
                     <option value="{{ s['id'] }}">{{ s['name'] }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>Group:
+                <select name="new_assign_group" id="new_assign_group">
+                    <option value="">-- None --</option>
+                    {% for g in groups %}
+                    <option value="{{ g['id'] }}">{{ g['name'] }}</option>
                     {% endfor %}
                 </select>
             </label>
@@ -192,6 +204,7 @@
     <p><a href="{{ url_for('index') }}">Back to Home</a></p>
     <script id="teacher-data" type="application/json">{{ teacher_map | tojson }}</script>
     <script id="student-data" type="application/json">{{ student_map | tojson }}</script>
+    <script id="group-data" type="application/json">{{ group_subj_map | tojson }}</script>
     <script id="unavail-data" type="application/json">{{ unavail_map | tojson }}</script>
     <script id="assign-data" type="application/json">{{ assign_map | tojson }}</script>
     <script src="{{ url_for('static', filename='config.js') }}"></script>
