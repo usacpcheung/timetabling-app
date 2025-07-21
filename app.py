@@ -283,7 +283,7 @@ def config():
                      prefer_consecutive=?, allow_consecutive=?, consecutive_weight=?,
                      require_all_subjects=?, use_attendance_priority=?, attendance_weight=?,
                      group_weight=?, allow_multi_teacher=?, balance_teacher_load=?, balance_weight=?
-                     WHERE id=1""",
+                    WHERE id=1""",
                   (slots_per_day, slot_duration, lesson_duration, min_lessons,
                    max_lessons, t_min_lessons, t_max_lessons,
                    allow_repeats, max_repeats, prefer_consecutive,
@@ -627,8 +627,8 @@ def generate_schedule(target_date=None):
     attendance_weight = cfg['attendance_weight']
     group_weight = cfg['group_weight']
     allow_multi_teacher = bool(cfg['allow_multi_teacher'])
-    balance_teacher_load = bool(cfg.get('balance_teacher_load', 0))
-    balance_weight = cfg.get('balance_weight', 1)
+    balance_teacher_load = bool(cfg['balance_teacher_load'])
+    balance_weight = cfg['balance_weight']
     # Build the CP-SAT model with assumption literals so that we can obtain
     # an unsat core explaining conflicts when no timetable exists.
     # incorporate groups as pseudo students
