@@ -806,6 +806,26 @@ def timetable():
     cfg = c.fetchone()
     slots = cfg['slots_per_day']
 
+    try:
+        slot_times = json.loads(cfg['slot_start_times']) if cfg['slot_start_times'] else []
+    except Exception:
+        slot_times = []
+    slot_labels = []
+    last_start = None
+    for i in range(slots):
+        if i < len(slot_times):
+            try:
+                h, m = map(int, slot_times[i].split(':'))
+                start = h * 60 + m
+            except Exception:
+                start = (last_start + cfg['slot_duration']) if last_start is not None else 8 * 60 + 30
+        else:
+            start = (last_start + cfg['slot_duration']) if last_start is not None else 8 * 60 + 30
+        end = start + cfg['slot_duration']
+        slot_labels.append({'start': f"{start // 60:02d}:{start % 60:02d}",
+                            'end': f"{end // 60:02d}:{end % 60:02d}"})
+        last_start = start
+
     c.execute('SELECT * FROM teachers')
     teachers = c.fetchall()
     if not target_date:
