@@ -86,6 +86,15 @@ variable whose ``student_id`` represents a group, making joint lessons more
 appealing relative to individual ones. A value around **2** is a good
 starting point and roughly doubles the attractiveness of group lessons.
 
+Checking **Balance teacher load** instructs the solver to even out lesson counts
+between teachers when possible. The **Balance weight** controls how strongly this
+goal influences the objective. Higher values place more emphasis on fairness at
+the potential expense of maximizing the total scheduled lessons.
+
+A **Balance weight** around **5** offers decent load balancing without greatly
+reducing the number of scheduled lessons. Increase it for stricter balancing at
+the expense of total lessons.
+
 Two numbers define the minimum and maximum lessons each teacher should teach.
 Individual teachers can override these global limits. Leave the per-teacher
 fields blank to use the global values.
