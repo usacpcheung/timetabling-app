@@ -69,12 +69,6 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         vars_ (dict): Mapping (student_id, teacher_id, subject, slot) -> BoolVar.
         assumptions (dict or None): Mapping of constraint group name to the
             assumption indicator variable when ``add_assumptions`` is True.
-        group_members (dict): Optional mapping of pseudo student id to a list of
-            real student ids. When provided, group lessons will be tied to all
-            member students so they attend together. IDs present in this mapping
-            are treated as groups and are not subject to per-student lesson
-            minimum and maximum limits. Groups obey repeat and consecutive
-            lesson rules in the same way as individual students.
     """
     # Create the CP-SAT model object that will hold all variables and constraints
     # for OR-Tools to solve.
