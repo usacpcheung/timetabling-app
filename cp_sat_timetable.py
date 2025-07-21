@@ -8,7 +8,8 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 consecutive_weight=1, unavailable=None, fixed=None,
                 teacher_min_lessons=0, teacher_max_lessons=None,
                 add_assumptions=False, group_members=None,
-                require_all_subjects=True, subject_weights=None):
+                require_all_subjects=True, subject_weights=None,
+                group_weight=1.0):
     """Build CP-SAT model for the scheduling problem.
 
     When ``add_assumptions`` is ``True``, Boolean indicators are created for the
@@ -38,6 +39,9 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             omit some subjects if needed to satisfy other constraints.
         subject_weights: optional mapping ``(student_id, subject) -> weight``
             used to weight variables in the objective.
+        group_weight: multiplier applied to the weight of variables whose
+            ``student_id`` represents a group. This biases the solver toward
+            scheduling group lessons.
 
     Returns:
         model (cp_model.CpModel): The constructed model.
@@ -105,7 +109,10 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                         continue
                     vars_[key] = model.NewBoolVar(
                         f"x_s{student['id']}_t{teacher['id']}_sub{subject}_sl{slot}")
-                    var_weights[vars_[key]] = subject_weights.get((student['id'], subject), 1)
+                    weight = subject_weights.get((student['id'], subject), 1)
+                    if student['id'] in group_ids:
+                        weight *= group_weight
+                    var_weights[vars_[key]] = weight
                     if key in fixed_set:
                         model.Add(vars_[key] == 1)
                     elif add_assumptions and (teacher['id'], slot) in unavailable_set:
