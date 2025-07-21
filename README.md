@@ -66,6 +66,15 @@ least one lesson for each of their subjects. When unchecked the solver may skip
 some subjects if required to satisfy other constraints. Any omitted subjects are
 listed on the timetable page.
 
+Attendance history can also influence scheduling. When **Use attendance
+priority** is checked each subject gets a *Min %* threshold. If a student's past
+attendance percentage for a subject is below this value the solver boosts the
+weight of scheduling that lesson. For group lessons the median attendance of all
+members is compared against the threshold. The weight added is controlled by the
+**Attendance weight** setting. A good starting weight is **10**, which makes
+under-attended subjects roughly ten times more attractive than others. Increase
+this value if you want the solver to focus even more on improving attendance.
+
 Two numbers define the minimum and maximum lessons each teacher should teach.
 Individual teachers can override these global limits. Leave the per-teacher
 fields blank to use the global values.
