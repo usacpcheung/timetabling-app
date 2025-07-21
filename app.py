@@ -758,6 +758,15 @@ def attendance():
     return render_template('attendance.html', active_attendance=active_data, deleted_attendance=deleted_data)
 
 
+@app.route('/reset_db', methods=['POST'])
+def reset_db():
+    if os.path.exists(DB_PATH):
+        os.remove(DB_PATH)
+    init_db()
+    flash('Database reset to default scenario.', 'info')
+    return redirect(url_for('config'))
+
+
 if __name__ == '__main__':
     init_db()
     app.run(debug=True)
