@@ -892,6 +892,42 @@ def attendance():
     return render_template('attendance.html', active_attendance=active_data, deleted_attendance=deleted_data)
 
 
+@app.route('/manage_timetables')
+def manage_timetables():
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT DISTINCT date FROM timetable ORDER BY date DESC')
+    dates = [row['date'] for row in c.fetchall()]
+    conn.close()
+    return render_template('manage_timetables.html', dates=dates)
+
+
+@app.route('/delete_timetables', methods=['POST'])
+def delete_timetables():
+    conn = get_db()
+    c = conn.cursor()
+    if request.form.get('clear_all'):
+        c.execute('DELETE FROM timetable')
+        c.execute('DELETE FROM attendance_log')
+        conn.commit()
+        conn.close()
+        flash('All timetables deleted.', 'info')
+        return redirect(url_for('manage_timetables'))
+
+    dates = request.form.getlist('dates')
+    if dates:
+        for d in dates:
+            c.execute('DELETE FROM timetable WHERE date=?', (d,))
+            c.execute('DELETE FROM attendance_log WHERE date=?', (d,))
+        conn.commit()
+        conn.close()
+        flash(f'Deleted timetables for {len(dates)} date(s).', 'info')
+    else:
+        conn.close()
+        flash('No dates selected.', 'error')
+    return redirect(url_for('manage_timetables'))
+
+
 @app.route('/reset_db', methods=['POST'])
 def reset_db():
     if os.path.exists(DB_PATH):

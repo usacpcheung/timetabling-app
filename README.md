@@ -13,6 +13,7 @@ A local-first, browser-based school timetabling application built with **Python 
 - Attendance report showing how often each student attended each subject. History
   is tied to the numeric `student_id`; deleting a student and re-adding one with
   the same name creates a new ID and past attendance is not merged.
+- Delete saved timetables individually or clear them all at once.
 
 ## 📦 Project Structure
 
