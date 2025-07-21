@@ -9,6 +9,9 @@ A local-first, browser-based school timetabling application built with **Python 
 - Configure teachers, students and lesson constraints
 - Generate optimized, conflict-free timetables
 - Simple web interface, no external database setup
+- Attendance report showing how often each student attended each subject. History
+  is tied to the numeric `student_id`; deleting a student and re-adding one with
+  the same name creates a new ID and past attendance is not merged.
 
 ## 📦 Project Structure
 

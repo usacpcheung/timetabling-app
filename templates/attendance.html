@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Attendance Report</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <h1>Attendance Report</h1>
+    <h2>Active Students</h2>
+    <table border="1" cellpadding="5">
+        <tr>
+            <th>Student</th>
+            <th>Subject</th>
+            <th>Lessons</th>
+            <th>Percentage</th>
+        </tr>
+        {% for sid, info in active_attendance.items() %}
+            {% for subject, stats in info.subjects.items() %}
+        <tr>
+            <td>{{ info.name }}</td>
+            <td>{{ subject }}</td>
+            <td>{{ stats.count }}</td>
+            <td>{{ '%.2f'|format(stats.percentage) }}%</td>
+        </tr>
+            {% endfor %}
+        {% endfor %}
+    </table>
+
+    <h2>Deleted Students</h2>
+    <table border="1" cellpadding="5">
+        <tr>
+            <th>Student</th>
+            <th>Subject</th>
+            <th>Lessons</th>
+            <th>Percentage</th>
+            <th>First Date</th>
+            <th>Last Date</th>
+        </tr>
+        {% for sid, info in deleted_attendance.items() %}
+            {% for subject, stats in info.subjects.items() %}
+        <tr>
+            <td>{{ info.name }}</td>
+            <td>{{ subject }}</td>
+            <td>{{ stats.count }}</td>
+            <td>{{ '%.2f'|format(stats.percentage) }}%</td>
+            <td>{{ info.first_date }}</td>
+            <td>{{ info.last_date }}</td>
+        </tr>
+            {% endfor %}
+        {% endfor %}
+    </table>
+    <p><a href="{{ url_for('index') }}">Home</a></p>
+</body>
+</html>

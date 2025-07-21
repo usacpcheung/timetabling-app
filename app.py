@@ -69,6 +69,12 @@ def init_db():
     elif not column_exists('students', 'active'):
         c.execute('ALTER TABLE students ADD COLUMN active INTEGER DEFAULT 1')
 
+    if not table_exists('students_archive'):
+        c.execute('''CREATE TABLE students_archive (
+            id INTEGER PRIMARY KEY,
+            name TEXT
+        )''')
+
     if not table_exists('subjects'):
         c.execute('''CREATE TABLE subjects (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -110,6 +116,14 @@ def init_db():
         if not column_exists('timetable', 'group_id'):
             c.execute('ALTER TABLE timetable ADD COLUMN group_id INTEGER')
 
+    if not table_exists('attendance_log'):
+        c.execute('''CREATE TABLE attendance_log (
+            student_id INTEGER,
+            student_name TEXT,
+            subject TEXT,
+            date TEXT
+        )''')
+
     if not table_exists('groups'):
         c.execute('''CREATE TABLE groups (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -135,7 +149,7 @@ def init_db():
             allow_repeats, max_repeats,
             prefer_consecutive, allow_consecutive, consecutive_weight,
             require_all_subjects
-        ) VALUES (1, 8, 30, 30, 1, 4, 1, 4, 0, 2, 0, 1, 3, 1)''')
+        ) VALUES (1, 8, 30, 30, 1, 4, 1, 8, 0, 2, 0, 1, 3, 1)''')
     c.execute('SELECT COUNT(*) FROM teachers')
     if c.fetchone()[0] == 0:
         teachers = [
@@ -278,6 +292,11 @@ def config():
         student_ids = request.form.getlist('student_id')
         for sid in student_ids:
             if request.form.get(f'student_delete_{sid}'):
+                c.execute('SELECT name FROM students WHERE id=?', (int(sid),))
+                row = c.fetchone()
+                if row:
+                    c.execute('INSERT OR IGNORE INTO students_archive (id, name) VALUES (?, ?)',
+                              (int(sid), row['name']))
                 c.execute('DELETE FROM students WHERE id=?', (int(sid),))
             else:
                 name = request.form.get(f'student_name_{sid}')
@@ -482,6 +501,9 @@ def generate_schedule(target_date=None):
     students = c.fetchall()
     c.execute('SELECT * FROM groups')
     groups = c.fetchall()
+    c.execute('SELECT id, name FROM students')
+    name_rows = c.fetchall()
+    student_name_map = {r['id']: r['name'] for r in name_rows}
     offset = 10000
     c.execute('SELECT group_id, student_id FROM group_members')
     gm_rows = c.fetchall()
@@ -506,8 +528,9 @@ def generate_schedule(target_date=None):
             row['student_id'] = offset + row['group_id']
         assignments_fixed.append(row)
 
-    # clear previous timetable for the target date
+    # clear previous timetable and attendance logs for the target date
     c.execute('DELETE FROM timetable WHERE date=?', (target_date,))
+    c.execute('DELETE FROM attendance_log WHERE date=?', (target_date,))
 
     # Build and solve CP-SAT model
     allow_repeats = bool(cfg['allow_repeats'])
@@ -558,9 +581,21 @@ def generate_schedule(target_date=None):
             if not skip:
                 filtered.append((sid, None, tid, subj, slot))
 
+        attendance_rows = []
         for entry in filtered:
+            sid, gid, tid, subj, slot = entry
             c.execute('INSERT INTO timetable (student_id, group_id, teacher_id, subject, slot, date) VALUES (?, ?, ?, ?, ?, ?)',
-                      (entry[0], entry[1], entry[2], entry[3], entry[4], target_date))
+                      (sid, gid, tid, subj, slot, target_date))
+            if sid is not None:
+                name = student_name_map.get(sid, '')
+                attendance_rows.append((sid, name, subj, target_date))
+            else:
+                for member in group_members.get(gid, []):
+                    name = student_name_map.get(member, '')
+                    attendance_rows.append((member, name, subj, target_date))
+        if attendance_rows:
+            c.executemany('INSERT INTO attendance_log (student_id, student_name, subject, date) VALUES (?, ?, ?, ?)',
+                          attendance_rows)
     else:
         from ortools.sat.python import cp_model
         if status == cp_model.INFEASIBLE:
@@ -615,11 +650,13 @@ def timetable():
         c.execute('SELECT DISTINCT date FROM timetable ORDER BY date DESC LIMIT 1')
         row = c.fetchone()
         target_date = row['date'] if row else date.today().isoformat()
-    c.execute('''SELECT t.slot, te.name as teacher, s.name as student,
+    c.execute('''SELECT t.slot, te.name as teacher,
+                        COALESCE(s.name, sa.name) as student,
                         g.name as group_name, t.subject, t.group_id, t.teacher_id, t.student_id
                  FROM timetable t
                  JOIN teachers te ON t.teacher_id = te.id
                  LEFT JOIN students s ON t.student_id = s.id
+                 LEFT JOIN students_archive sa ON t.student_id = sa.id
                  LEFT JOIN groups g ON t.group_id = g.id
                  WHERE t.date=?''', (target_date,))
     rows = c.fetchall()
@@ -631,6 +668,9 @@ def timetable():
     c.execute('SELECT id, name, subjects, active FROM students')
     student_rows = c.fetchall()
     student_names = {s['id']: s['name'] for s in student_rows}
+    c.execute('SELECT id, name FROM students_archive')
+    for row in c.fetchall():
+        student_names.setdefault(row['id'], row['name'])
     conn.close()
 
     if not rows:
@@ -642,7 +682,7 @@ def timetable():
         tid = r['teacher_id']
         if r['group_id']:
             members = group_students.get(r['group_id'], [])
-            names = ', '.join(student_names[m] for m in members)
+            names = ', '.join(student_names.get(m, 'Unknown') for m in members)
             desc = f"{r['group_name']} [{names}] ({r['subject']})"
         else:
             desc = f"{r['student']} ({r['subject']})"
@@ -669,6 +709,67 @@ def timetable():
     return render_template('timetable.html', slots=range(slots), teachers=teachers,
                            grid=grid, json=json, date=target_date,
                            missing=missing, student_names=student_names)
+
+
+@app.route('/attendance')
+def attendance():
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('''
+        SELECT al.student_id AS sid, s.name AS name, al.subject, al.date
+        FROM attendance_log al
+        JOIN students s ON al.student_id = s.id
+        WHERE s.active=1
+    ''')
+    active_rows = c.fetchall()
+    c.execute('''
+        SELECT al.student_id AS sid, sa.name AS name, al.subject, al.date
+        FROM attendance_log al
+        JOIN students_archive sa ON al.student_id = sa.id
+        LEFT JOIN students s ON al.student_id = s.id
+        WHERE s.id IS NULL OR s.active=0
+    ''')
+    deleted_rows = c.fetchall()
+    conn.close()
+
+    def aggregate(rows, include_dates=False):
+        data = {}
+        totals = {}
+        for r in rows:
+            sid = r['sid']
+            name = r['name']
+            subj = r['subject']
+            d = r['date']
+            if include_dates:
+                info = data.setdefault(sid, {'name': name, 'subjects': {}, 'first_date': d, 'last_date': d})
+                if d < info['first_date']:
+                    info['first_date'] = d
+                if d > info['last_date']:
+                    info['last_date'] = d
+            else:
+                info = data.setdefault(sid, {'name': name, 'subjects': {}})
+            info['subjects'][subj] = info['subjects'].get(subj, 0) + 1
+            totals[sid] = totals.get(sid, 0) + 1
+        for sid, info in data.items():
+            total = totals.get(sid, 0)
+            for subj, count in info['subjects'].items():
+                perc = round(100 * count / total, 2) if total else 0
+                info['subjects'][subj] = {'count': count, 'percentage': perc}
+        return data
+
+    active_data = aggregate(active_rows)
+    deleted_data = aggregate(deleted_rows, include_dates=True)
+
+    return render_template('attendance.html', active_attendance=active_data, deleted_attendance=deleted_data)
+
+
+@app.route('/reset_db', methods=['POST'])
+def reset_db():
+    if os.path.exists(DB_PATH):
+        os.remove(DB_PATH)
+    init_db()
+    flash('Database reset to default scenario.', 'info')
+    return redirect(url_for('config'))
 
 
 if __name__ == '__main__':
