@@ -1,3 +1,12 @@
+"""Helper functions for building and solving the timetable model.
+
+This module contains a thin wrapper around OR-Tools' CP-SAT solver.  The
+``build_model`` function creates all of the variables and constraints needed for
+our scheduling problem and ``solve_and_print`` executes the solver and extracts
+the results.  The goal is to keep the optimization logic separate from the
+``Flask`` application so the model can be understood in isolation.
+"""
+
 from ortools.sat.python import cp_model
 import json
 
@@ -60,20 +69,28 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         vars_ (dict): Mapping (student_id, teacher_id, subject, slot) -> BoolVar.
         assumptions (dict or None): Mapping of constraint group name to the
             assumption indicator variable when ``add_assumptions`` is True.
-        group_members (dict): Optional mapping of pseudo student id to a list of
-            real student ids. When provided, group lessons will be tied to all
-            member students so they attend together. IDs present in this mapping
-            are treated as groups and are not subject to per-student lesson
-            minimum and maximum limits. Groups obey repeat and consecutive
-            lesson rules in the same way as individual students.
     """
+    # Create the CP-SAT model object that will hold all variables and constraints
+    # for OR-Tools to solve.
     model = cp_model.CpModel()
+
+    # ``group_members`` allows us to treat a set of students as a single pseudo
+    # student when scheduling group lessons.  These pseudo ids are assigned an
+    # offset so they do not clash with real student ids.
     group_ids = set(group_members.keys()) if group_members else set()
+
+    # ``vars_`` will hold all Boolean decision variables keyed by
+    # ``(student_id, teacher_id, subject, slot)``.  ``subject_weights`` can bias
+    # certain lessons in the objective and ``var_weights`` records the weight per
+    # variable for easy access later.
     vars_ = {}
     subject_weights = subject_weights or {}
     var_weights = {}
-    # Map each group id to the subjects it requires and map each member
-    # student to the subjects that must be taken through their group.
+
+    # Map each group id to the subjects it requires and map each member student
+    # to the subjects that must be taken through their group.  This helps filter
+    # out individual lesson variables when a subject is provided exclusively via
+    # a group.
     group_subjects = {}
     member_group_subjects = {}
     if group_members:
@@ -134,7 +151,8 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                     elif add_assumptions and (teacher['id'], slot) in unavailable_set:
                         model.Add(vars_[key] == 0).OnlyEnforceIf(assumptions['teacher_availability'])
 
-    # Teacher cannot teach more than one lesson in a slot
+    # Teacher cannot teach more than one lesson in the same time slot.  We scan
+    # all variables for each teacher/slot pair and ensure at most one is "on".
     for teacher in teachers:
         for slot in range(slots):
             possible = [var for (sid, tid, subj, sl), var in vars_.items()
@@ -155,8 +173,9 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                     if m_key in vars_:
                         model.Add(vars_[m_key] == 0).OnlyEnforceIf(var)
 
-    # Student cannot attend more than one lesson in a slot. Include group lessons
-    # for that student in the check so clashes are prevented.
+    # Student cannot attend more than one lesson in a slot.  Any group lessons
+    # the student belongs to are also included in the check so scheduling
+    # conflicts are avoided.
     for student in students:
         sid = student['id']
         if sid in group_ids:
@@ -170,13 +189,16 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             if possible:
                 model.Add(sum(possible) <= 1)
 
-    # Limit repeats of the same student/teacher/subject combination. Groups
-    # follow the same rules as individual students, so include their variables
-    # here as well.
+    # Limit repeats of the same student/teacher/subject combination.  Group
+    # lessons are treated the same way as individual lessons and therefore their
+    # variables participate in these constraints as well.
     triple_map = {}
     for (sid, tid, subj, sl), var in vars_.items():
         triple_map.setdefault((sid, tid, subj), {})[sl] = var
 
+    # ``adjacency_vars`` collect helper variables used when we want to encourage
+    # consecutive repeat lessons.  ``repeat_limit`` is set to 1 when repeats are
+    # disallowed.
     adjacency_vars = []
     repeat_limit = max_repeats if allow_repeats else 1
     for (sid, tid, subj), slot_map in triple_map.items():
@@ -275,7 +297,9 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 ct_min.OnlyEnforceIf(assumptions['student_limits'])
                 ct_max.OnlyEnforceIf(assumptions['student_limits'])
 
-    # Objective: prioritize scheduling lessons, optionally preferring consecutive repeats
+    # Objective: prioritize scheduling as many lessons as possible.  Additional
+    # terms can encourage consecutive repeats or penalize uneven teacher loads
+    # depending on the configuration options.
     weighted_sum = sum(var * var_weights.get(var, 1) for var in vars_.values())
     objective = weighted_sum
     if prefer_consecutive and allow_consecutive and repeat_limit > 1 and adjacency_vars:
@@ -284,16 +308,38 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         objective -= balance_weight * load_diff
     model.Maximize(objective)
 
+    # Return the constructed model along with the decision variables and any
+    # assumption indicators.
     return model, vars_, assumptions
 
 
 def solve_and_print(model, vars_, assumptions=None):
-    """Solve the given model and return assignments and failing assumptions."""
+    """Run the solver and collect the results.
+
+    Args:
+        model: The ``CpModel`` instance returned by :func:`build_model`.
+        vars_: Dictionary mapping tuple keys to the ``BoolVar`` decision
+            variables.  The solver will decide which of these become ``True``.
+        assumptions: Optional dictionary of assumption indicators.  When the
+            model is infeasible these help identify which group of constraints
+            caused the problem.
+
+    Returns:
+        ``status``: Solver status value from OR-Tools.
+        ``assignments``: List of tuples ``(student_id, teacher_id, subject,
+        slot)`` representing the selected lessons.
+        ``core``: If infeasible and assumptions were used, names of the
+        constraint groups that could not be satisfied.
+    """
+
+    # Instantiate the solver and let it process the model.
     solver = cp_model.CpSolver()
     status = solver.Solve(model)
 
     assignments = []
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        # Pull out any variables that the solver set to ``True`` which
+        # correspond to scheduled lessons.
         for (sid, tid, subj, slot), var in vars_.items():
             if solver.BooleanValue(var):
                 assignments.append((sid, tid, subj, slot))
@@ -306,4 +352,6 @@ def solve_and_print(model, vars_, assumptions=None):
             if 0 <= idx < len(order):
                 core.append(order[idx])
 
+    # ``core`` gives a minimal set of unsatisfied assumption groups when no
+    # feasible schedule exists.  ``assignments`` is empty in that case.
     return status, assignments, core

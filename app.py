@@ -1,3 +1,14 @@
+"""Flask web application for generating simple school timetables.
+
+This file contains all of the web routes and database access logic.  Data is
+stored in a local SQLite database which is initialized with some sample values
+on first run.  Users interact with the app via standard web forms to configure
+teachers, students and various scheduling parameters.  When a timetable is
+requested, the configuration is passed to the CP-SAT model defined in
+``cp_sat_timetable.py`` and the resulting schedule is saved back to the
+database.
+"""
+
 from flask import Flask, render_template, request, redirect, url_for, flash
 import sqlite3
 import json
@@ -13,12 +24,18 @@ DB_PATH = os.path.join(os.path.dirname(__file__), 'timetable.db')
 
 
 def get_db():
+    """Open a connection to the SQLite database.
+
+    ``row_factory`` is set so that query results behave like dictionaries which
+    makes template rendering a little easier.
+    """
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
 
 def init_db():
+    """Create all database tables and insert default data if needed."""
     conn = get_db()
     c = conn.cursor()
 
@@ -227,6 +244,7 @@ def init_db():
 
 @app.route('/check_timetable')
 def check_timetable():
+    """AJAX helper to see if a timetable already exists for a date."""
     target_date = request.args.get('date')
     conn = get_db()
     c = conn.cursor()
@@ -238,11 +256,13 @@ def check_timetable():
 
 @app.route('/')
 def index():
+    """Home page showing actions for the user."""
     return render_template('index.html', today=date.today().isoformat())
 
 
 @app.route('/config', methods=['GET', 'POST'])
 def config():
+    """Display and update teachers, students and other settings."""
     conn = get_db()
     c = conn.cursor()
     if request.method == 'POST':
@@ -587,6 +607,7 @@ def config():
 
 
 def generate_schedule(target_date=None):
+    """Build the CP-SAT model from current data and store the resulting timetable."""
     conn = get_db()
     c = conn.cursor()
     if target_date is None:
@@ -779,6 +800,7 @@ def generate_schedule(target_date=None):
 
 @app.route('/generate', methods=['POST'])
 def generate():
+    """Endpoint triggered from the home page to produce a timetable."""
     gen_date = request.form.get('date') or date.today().isoformat()
     conn = get_db()
     c = conn.cursor()
@@ -799,6 +821,7 @@ def generate():
 
 @app.route('/timetable')
 def timetable():
+    """Display the saved timetable for the given date."""
     target_date = request.args.get('date')
     conn = get_db()
     c = conn.cursor()
@@ -896,6 +919,7 @@ def timetable():
 
 @app.route('/attendance')
 def attendance():
+    """Show attendance statistics for active and removed students."""
     conn = get_db()
     c = conn.cursor()
     c.execute('''
@@ -948,6 +972,7 @@ def attendance():
 
 @app.route('/manage_timetables')
 def manage_timetables():
+    """List all saved timetable dates so the user can remove them."""
     conn = get_db()
     c = conn.cursor()
     c.execute('SELECT DISTINCT date FROM timetable ORDER BY date DESC')
@@ -958,6 +983,7 @@ def manage_timetables():
 
 @app.route('/delete_timetables', methods=['POST'])
 def delete_timetables():
+    """Delete selected timetables or clear them all."""
     conn = get_db()
     c = conn.cursor()
     if request.form.get('clear_all'):
@@ -984,6 +1010,7 @@ def delete_timetables():
 
 @app.route('/reset_db', methods=['POST'])
 def reset_db():
+    """Delete the database file and re-create it with default data."""
     if os.path.exists(DB_PATH):
         os.remove(DB_PATH)
     init_db()

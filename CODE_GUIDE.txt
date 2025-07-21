@@ -1,0 +1,47 @@
+This document gives a high level walkthrough of the Python code found in this
+project.  It is aimed at beginners who want to understand the overall flow.
+
+app.py
+------
+``app.py`` contains the Flask web application.  At the top the SQLite database
+is initialised and helper functions such as ``get_db`` (opens a connection) and
+``init_db`` (creates tables and inserts defaults) are defined.  The file then
+defines a number of route functions using ``@app.route``:
+
+* ``index`` – home page with buttons to generate or view a timetable.
+* ``config`` – form where you edit teachers, students, subjects and other
+  settings.  When submitted this data is written to the database.
+* ``generate`` – triggered when the user wants a new timetable.  It calls
+  ``generate_schedule`` which builds the CP-SAT model and saves the results.
+* ``timetable`` – displays a saved timetable for a chosen date.
+* ``attendance`` – shows how many lessons each student attended.
+* ``manage_timetables``/``delete_timetables`` – let you remove saved timetables.
+* ``reset_db`` – recreates the database with the starter data.
+
+``generate_schedule`` is the heart of the application.  It loads all relevant
+data from the database, constructs the optimisation model (using
+``build_model`` in ``cp_sat_timetable.py``) and then stores the returned
+schedule along with attendance logs.  If the model is infeasible the user is
+shown which constraint group caused the issue.
+
+cp_sat_timetable.py
+-------------------
+This module holds the optimisation logic.  ``build_model`` creates a
+``cp_model.CpModel`` instance and populates it with variables representing all
+possible lessons.  Numerous constraints are added to enforce things like:
+
+* Teachers and students can only be in one place at a time.
+* Optional limits on repeat lessons and consecutive slots.
+* Minimum and maximum lesson counts for both teachers and students.
+* Optional objective terms to balance teacher workload or encourage groups.
+
+The function returns the model, the variable dictionary and optional assumption
+literals used to diagnose conflicts.  ``solve_and_print`` runs the solver and
+extracts the chosen assignments.
+
+Static files and templates
+--------------------------
+The ``static/`` folder contains a small stylesheet and a JavaScript file used on
+the configuration page.  The ``templates/`` directory provides HTML templates
+for the different pages rendered by Flask.
+
