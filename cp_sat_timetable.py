@@ -9,7 +9,8 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 teacher_min_lessons=0, teacher_max_lessons=None,
                 add_assumptions=False, group_members=None,
                 require_all_subjects=True, subject_weights=None,
-                group_weight=1.0, allow_multi_teacher=True):
+                group_weight=1.0, allow_multi_teacher=True,
+                blocked=None):
     """Build CP-SAT model for the scheduling problem.
 
     When ``add_assumptions`` is ``True``, Boolean indicators are created for the
@@ -45,6 +46,10 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             groups without overwhelming other objectives.
         allow_multi_teacher: if False, the same student cannot take a subject
             with more than one teacher in the schedule.
+        blocked: optional mapping ``student_id -> set(teacher_id)`` specifying
+            teachers that cannot teach the given student. When group ids are
+            included in the mapping, those restrictions apply to the entire
+            group.
 
     Returns:
         model (cp_model.CpModel): The constructed model.
@@ -97,9 +102,13 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
     # real student is a member of a group for a particular subject, that subject
     # is scheduled exclusively through the group so individual variables are not
     # created.
+    blocked = blocked or {}
     for student in students:
         student_subs = set(json.loads(student['subjects']))
+        forbidden = set(blocked.get(student['id'], []))
         for teacher in teachers:
+            if teacher['id'] in forbidden:
+                continue
             teacher_subs = set(json.loads(teacher['subjects']))
             common = student_subs & teacher_subs
             for subject in common:

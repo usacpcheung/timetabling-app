@@ -7,6 +7,7 @@ A local-first, browser-based school timetabling application built with **Python 
 ## 💡 Key Features
 
 - Configure teachers, students and lesson constraints
+- Specify teachers that individual students should avoid
 - Generate optimized, conflict-free timetables
 - Simple web interface, no external database setup
 - Attendance report showing how often each student attended each subject. History

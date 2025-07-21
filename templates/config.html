@@ -108,6 +108,13 @@
                 </select>
             </label>
             <label>Needs lessons? <input type="checkbox" name="student_active_{{ s['id'] }}" value="1" {% if s['active'] %}checked{% endif %}></label>
+            <label>Forbidden Teachers:
+                <select multiple name="student_block_{{ s['id'] }}">
+                    {% for t in teachers %}
+                    <option value="{{ t['id'] }}" {% if t['id'] in block_map.get(s['id'], []) %}selected{% endif %}>{{ t['name'] }}</option>
+                    {% endfor %}
+                </select>
+            </label>
             <label>Delete? <input type="checkbox" name="student_delete_{{ s['id'] }}" value="1"></label><br>
             {% endfor %}
             <label>New Name: <input type="text" name="new_student_name"></label>
@@ -115,6 +122,13 @@
                 <select multiple name="new_student_subjects">
                     {% for sub in subjects %}
                     <option value="{{ sub['name'] }}">{{ sub['name'] }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>Forbidden Teachers:
+                <select multiple name="new_student_block">
+                    {% for t in teachers %}
+                    <option value="{{ t['id'] }}">{{ t['name'] }}</option>
                     {% endfor %}
                 </select>
             </label><br>
