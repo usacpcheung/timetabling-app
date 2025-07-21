@@ -21,7 +21,13 @@
             <legend>General</legend>
             <label>Slots per day: <input type="number" name="slots_per_day" value="{{ config['slots_per_day'] }}"></label><br>
             <label>Slot duration (minutes): <input type="number" name="slot_duration" value="{{ config['slot_duration'] }}"></label><br>
-            <label>Lesson duration (minutes): <input type="number" name="lesson_duration" value="{{ config['lesson_duration'] }}"></label><br>
+            <div id="slot-times">
+                {% for i in range(config['slots_per_day']) %}
+                <label>Slot {{ i + 1 }} start:
+                    <input type="time" name="slot_start_{{ i + 1 }}" value="{{ slot_times[i] if slot_times|length > i else '' }}">
+                </label><br>
+                {% endfor %}
+            </div>
             <label>Min lessons per student: <input type="number" name="min_lessons" value="{{ config['min_lessons'] }}"></label><br>
             <label>Max lessons per student: <input type="number" name="max_lessons" value="{{ config['max_lessons'] }}"></label><br>
             <label>Min lessons per teacher: <input type="number" name="teacher_min_lessons" value="{{ config['teacher_min_lessons'] }}"></label><br>
@@ -248,6 +254,7 @@
     <script id="group-data" type="application/json">{{ group_subj_map | tojson }}</script>
     <script id="unavail-data" type="application/json">{{ unavail_map | tojson }}</script>
     <script id="assign-data" type="application/json">{{ assign_map | tojson }}</script>
+    <script id="slot-times-data" type="application/json">{{ slot_times | tojson }}</script>
     <script src="{{ url_for('static', filename='config.js') }}"></script>
 </body>
 </html>
