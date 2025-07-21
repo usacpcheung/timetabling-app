@@ -59,7 +59,10 @@ consecutive repeats and optionally prefer them. These consecutive options are
 ignored when repeat lessons are disabled. A weight value determines how strongly
 consecutive repeats are favored in the optimization. For a noticeable effect
 set the weight above **10**. Multiples of ten (e.g. `20`, `30`) increasingly
-prioritize consecutive placement over other constraints.
+prioritize consecutive placement over other constraints. Another checkbox lets
+you allow or forbid a student taking the same subject from different teachers.
+When this is disabled the repeat option must also remain off, effectively
+limiting each student/subject pair to a single lesson per timetable.
 
 Another option lets you disable the rule that every student must attend at
 least one lesson for each of their subjects. When unchecked the solver may skip

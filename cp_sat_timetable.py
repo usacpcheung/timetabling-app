@@ -9,7 +9,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 teacher_min_lessons=0, teacher_max_lessons=None,
                 add_assumptions=False, group_members=None,
                 require_all_subjects=True, subject_weights=None,
-                group_weight=1.0):
+                group_weight=1.0, allow_multi_teacher=True):
     """Build CP-SAT model for the scheduling problem.
 
     When ``add_assumptions`` is ``True``, Boolean indicators are created for the
@@ -43,6 +43,8 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             ``student_id`` represents a group. This biases the solver toward
             scheduling group lessons. A value around ``2.0`` moderately favors
             groups without overwhelming other objectives.
+        allow_multi_teacher: if False, the same student cannot take a subject
+            with more than one teacher in the schedule.
 
     Returns:
         model (cp_model.CpModel): The constructed model.
@@ -186,6 +188,16 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                     model.Add(adj <= v2)
                     model.Add(adj >= v1 + v2 - 1)
                     adjacency_vars.append(adj)
+
+    if not allow_multi_teacher:
+        by_student_subject = {}
+        for (sid, tid, subj, sl), var in vars_.items():
+            by_student_subject.setdefault((sid, subj), []).append(var)
+        for key, vlist in by_student_subject.items():
+            if len(vlist) > 1:
+                ct = model.Add(sum(vlist) <= 1)
+                if add_assumptions:
+                    ct.OnlyEnforceIf(assumptions['repeat_restrictions'])
 
     # Limit total lessons per teacher
     for teacher in teachers:
