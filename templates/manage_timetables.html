@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Manage Timetables</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <h1>Manage Saved Timetables</h1>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <ul class="flashes">
+        {% for category, msg in messages %}
+        <li class="{{ category }}">{{ msg }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+    {% endwith %}
+    {% if dates %}
+    <form method="post" action="{{ url_for('delete_timetables') }}" id="delete-form" onsubmit="return confirm('Delete selected timetables?');">
+        <table>
+            <tr><th>Date</th><th>Select</th></tr>
+            {% for d in dates %}
+            <tr>
+                <td>{{ d }}</td>
+                <td><input type="checkbox" name="dates" value="{{ d }}"></td>
+            </tr>
+            {% endfor %}
+        </table>
+        <button type="submit">Delete Selected</button>
+    </form>
+    <form method="post" action="{{ url_for('delete_timetables') }}" onsubmit="return confirm('Delete all timetables?');">
+        <input type="hidden" name="clear_all" value="1">
+        <button type="submit">Clear All</button>
+    </form>
+    {% else %}
+    <p>No timetables saved.</p>
+    {% endif %}
+    <p><a href="{{ url_for('index') }}">Home</a></p>
+</body>
+</html>
