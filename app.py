@@ -149,7 +149,7 @@ def init_db():
             allow_repeats, max_repeats,
             prefer_consecutive, allow_consecutive, consecutive_weight,
             require_all_subjects
-        ) VALUES (1, 8, 30, 30, 1, 4, 1, 4, 0, 2, 0, 1, 3, 1)''')
+        ) VALUES (1, 8, 30, 30, 1, 4, 1, 8, 0, 2, 0, 1, 3, 1)''')
     c.execute('SELECT COUNT(*) FROM teachers')
     if c.fetchone()[0] == 0:
         teachers = [
@@ -650,11 +650,13 @@ def timetable():
         c.execute('SELECT DISTINCT date FROM timetable ORDER BY date DESC LIMIT 1')
         row = c.fetchone()
         target_date = row['date'] if row else date.today().isoformat()
-    c.execute('''SELECT t.slot, te.name as teacher, s.name as student,
+    c.execute('''SELECT t.slot, te.name as teacher,
+                        COALESCE(s.name, sa.name) as student,
                         g.name as group_name, t.subject, t.group_id, t.teacher_id, t.student_id
                  FROM timetable t
                  JOIN teachers te ON t.teacher_id = te.id
                  LEFT JOIN students s ON t.student_id = s.id
+                 LEFT JOIN students_archive sa ON t.student_id = sa.id
                  LEFT JOIN groups g ON t.group_id = g.id
                  WHERE t.date=?''', (target_date,))
     rows = c.fetchall()
@@ -666,6 +668,9 @@ def timetable():
     c.execute('SELECT id, name, subjects, active FROM students')
     student_rows = c.fetchall()
     student_names = {s['id']: s['name'] for s in student_rows}
+    c.execute('SELECT id, name FROM students_archive')
+    for row in c.fetchall():
+        student_names.setdefault(row['id'], row['name'])
     conn.close()
 
     if not rows:
@@ -677,7 +682,7 @@ def timetable():
         tid = r['teacher_id']
         if r['group_id']:
             members = group_students.get(r['group_id'], [])
-            names = ', '.join(student_names[m] for m in members)
+            names = ', '.join(student_names.get(m, 'Unknown') for m in members)
             desc = f"{r['group_name']} [{names}] ({r['subject']})"
         else:
             desc = f"{r['student']} ({r['subject']})"
