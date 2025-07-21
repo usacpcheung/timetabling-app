@@ -56,6 +56,12 @@
             <label>Group weight:
                 <input type="number" name="group_weight" value="{{ config['group_weight'] }}" min="1" step="0.1">
             </label>
+            <label>Balance teacher load?
+                <input type="checkbox" name="balance_teacher_load" {% if config['balance_teacher_load'] %}checked{% endif %}>
+            </label>
+            <label>Balance weight:
+                <input type="number" name="balance_weight" value="{{ config['balance_weight'] }}" min="1">
+            </label>
         </fieldset>
         <fieldset>
             <legend>Subjects</legend>

@@ -50,7 +50,9 @@ def init_db():
             use_attendance_priority INTEGER,
             attendance_weight INTEGER,
             group_weight REAL,
-            allow_multi_teacher INTEGER
+            allow_multi_teacher INTEGER,
+            balance_teacher_load INTEGER,
+            balance_weight INTEGER
         )''')
     else:
         if not column_exists('config', 'require_all_subjects'):
@@ -63,6 +65,10 @@ def init_db():
             c.execute('ALTER TABLE config ADD COLUMN group_weight REAL DEFAULT 2.0')
         if not column_exists('config', 'allow_multi_teacher'):
             c.execute('ALTER TABLE config ADD COLUMN allow_multi_teacher INTEGER DEFAULT 1')
+        if not column_exists('config', 'balance_teacher_load'):
+            c.execute('ALTER TABLE config ADD COLUMN balance_teacher_load INTEGER DEFAULT 0')
+        if not column_exists('config', 'balance_weight'):
+            c.execute('ALTER TABLE config ADD COLUMN balance_weight INTEGER DEFAULT 1')
 
     if not table_exists('teachers'):
         c.execute('''CREATE TABLE teachers (
@@ -174,8 +180,8 @@ def init_db():
             allow_repeats, max_repeats,
             prefer_consecutive, allow_consecutive, consecutive_weight,
             require_all_subjects, use_attendance_priority, attendance_weight, group_weight,
-            allow_multi_teacher
-        ) VALUES (1, 8, 30, 30, 1, 4, 1, 8, 0, 2, 0, 1, 3, 1, 0, 10, 2.0, 1)''')
+            allow_multi_teacher, balance_teacher_load, balance_weight
+        ) VALUES (1, 8, 30, 30, 1, 4, 1, 8, 0, 2, 0, 1, 3, 1, 0, 10, 2.0, 1, 0, 1)''')
     c.execute('SELECT COUNT(*) FROM teachers')
     if c.fetchone()[0] == 0:
         teachers = [
@@ -253,6 +259,8 @@ def config():
         attendance_weight = int(request.form['attendance_weight'])
         group_weight = float(request.form['group_weight'])
         allow_multi_teacher = 1 if request.form.get('allow_multi_teacher') else 0
+        balance_teacher_load = 1 if request.form.get('balance_teacher_load') else 0
+        balance_weight = int(request.form['balance_weight'])
 
         if not allow_repeats:
             allow_consecutive = 0
@@ -274,14 +282,14 @@ def config():
                      allow_repeats=?, max_repeats=?,
                      prefer_consecutive=?, allow_consecutive=?, consecutive_weight=?,
                      require_all_subjects=?, use_attendance_priority=?, attendance_weight=?,
-                     group_weight=?, allow_multi_teacher=?
+                     group_weight=?, allow_multi_teacher=?, balance_teacher_load=?, balance_weight=?
                      WHERE id=1""",
                   (slots_per_day, slot_duration, lesson_duration, min_lessons,
                    max_lessons, t_min_lessons, t_max_lessons,
                    allow_repeats, max_repeats, prefer_consecutive,
                    allow_consecutive, consecutive_weight, require_all_subjects,
                    use_attendance_priority, attendance_weight, group_weight,
-                   allow_multi_teacher))
+                   allow_multi_teacher, balance_teacher_load, balance_weight))
         # update subjects
         subj_ids = request.form.getlist('subject_id')
         deletes_sub = set(request.form.getlist('subject_delete'))
@@ -619,6 +627,8 @@ def generate_schedule(target_date=None):
     attendance_weight = cfg['attendance_weight']
     group_weight = cfg['group_weight']
     allow_multi_teacher = bool(cfg['allow_multi_teacher'])
+    balance_teacher_load = bool(cfg.get('balance_teacher_load', 0))
+    balance_weight = cfg.get('balance_weight', 1)
     # Build the CP-SAT model with assumption literals so that we can obtain
     # an unsat core explaining conflicts when no timetable exists.
     # incorporate groups as pseudo students
@@ -675,6 +685,8 @@ def generate_schedule(target_date=None):
         subject_weights=subject_weights,
         group_weight=group_weight,
         allow_multi_teacher=allow_multi_teacher,
+        balance_teacher_load=balance_teacher_load,
+        balance_weight=balance_weight,
         blocked=block_map_sched)
     status, assignments, core = solve_and_print(model, vars_, assumptions)
 

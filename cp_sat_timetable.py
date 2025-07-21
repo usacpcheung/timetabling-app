@@ -10,6 +10,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 add_assumptions=False, group_members=None,
                 require_all_subjects=True, subject_weights=None,
                 group_weight=1.0, allow_multi_teacher=True,
+                balance_teacher_load=False, balance_weight=1,
                 blocked=None):
     """Build CP-SAT model for the scheduling problem.
 
@@ -46,6 +47,9 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             groups without overwhelming other objectives.
         allow_multi_teacher: if False, the same student cannot take a subject
             with more than one teacher in the schedule.
+        balance_teacher_load: when True, the objective penalizes large
+            differences in lesson counts between teachers.
+        balance_weight: weight of the load balancing penalty.
         blocked: optional mapping ``student_id -> set(teacher_id)`` specifying
             teachers that cannot teach the given student. When group ids are
             included in the mapping, those restrictions apply to the entire
@@ -208,23 +212,37 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 if add_assumptions:
                     ct.OnlyEnforceIf(assumptions['repeat_restrictions'])
 
-    # Limit total lessons per teacher
+    # Limit total lessons per teacher and track each teacher's load
+    teacher_load_vars = []
     for teacher in teachers:
         t_vars = [var for (sid, tid, subj, sl), var in vars_.items()
                   if tid == teacher['id']]
-        if not t_vars:
-            continue
+        load_var = model.NewIntVar(0, slots, f"load_t{teacher['id']}")
+        if t_vars:
+            model.Add(load_var == sum(t_vars))
+        else:
+            model.Add(load_var == 0)
+        teacher_load_vars.append(load_var)
         tmin = teacher['min_lessons']
         tmax = teacher['max_lessons']
         tmin = teacher_min_lessons if tmin is None else tmin
         tmax = teacher_max_lessons if tmax is None else tmax
-        ct = model.Add(sum(t_vars) >= tmin)
+        ct = model.Add(load_var >= tmin)
         if add_assumptions:
             ct.OnlyEnforceIf(assumptions['teacher_limits'])
         if tmax is not None:
-            ct2 = model.Add(sum(t_vars) <= tmax)
+            ct2 = model.Add(load_var <= tmax)
             if add_assumptions:
                 ct2.OnlyEnforceIf(assumptions['teacher_limits'])
+
+    # Optional objective terms to balance teacher workloads
+    if balance_teacher_load and teacher_load_vars:
+        max_load = model.NewIntVar(0, slots, 'max_load')
+        min_load = model.NewIntVar(0, slots, 'min_load')
+        model.AddMaxEquality(max_load, teacher_load_vars)
+        model.AddMinEquality(min_load, teacher_load_vars)
+        load_diff = model.NewIntVar(0, slots, 'load_diff')
+        model.Add(load_diff == max_load - min_load)
 
     # Limit total lessons per student and optionally require every subject
     for student in students:
@@ -259,12 +277,12 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
 
     # Objective: prioritize scheduling lessons, optionally preferring consecutive repeats
     weighted_sum = sum(var * var_weights.get(var, 1) for var in vars_.values())
+    objective = weighted_sum
     if prefer_consecutive and allow_consecutive and repeat_limit > 1 and adjacency_vars:
-        model.Maximize(
-            weighted_sum + consecutive_weight * sum(adjacency_vars)
-        )
-    else:
-        model.Maximize(weighted_sum)
+        objective += consecutive_weight * sum(adjacency_vars)
+    if balance_teacher_load and teacher_load_vars:
+        objective -= balance_weight * load_diff
+    model.Maximize(objective)
 
     return model, vars_, assumptions
 
