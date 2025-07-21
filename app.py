@@ -156,6 +156,13 @@ def init_db():
             student_id INTEGER
         )''')
 
+    if not table_exists('student_teacher_block'):
+        c.execute('''CREATE TABLE student_teacher_block (
+            student_id INTEGER,
+            teacher_id INTEGER,
+            PRIMARY KEY(student_id, teacher_id)
+        )''')
+
     conn.commit()
 
     # insert defaults if tables empty
@@ -338,6 +345,7 @@ def config():
                     c.execute('INSERT OR IGNORE INTO students_archive (id, name) VALUES (?, ?)',
                               (int(sid), row['name']))
                 c.execute('DELETE FROM students WHERE id=?', (int(sid),))
+                c.execute('DELETE FROM student_teacher_block WHERE student_id=?', (int(sid),))
             else:
                 name = request.form.get(f'student_name_{sid}')
                 subs = request.form.getlist(f'student_subjects_{sid}')
@@ -345,12 +353,22 @@ def config():
                 subj_json = json.dumps(subs)
                 c.execute('UPDATE students SET name=?, subjects=?, active=? WHERE id=?',
                           (name, subj_json, active, int(sid)))
+                blocks = request.form.getlist(f'student_block_{sid}')
+                c.execute('DELETE FROM student_teacher_block WHERE student_id=?', (int(sid),))
+                for tid in blocks:
+                    c.execute('INSERT INTO student_teacher_block (student_id, teacher_id) VALUES (?, ?)',
+                              (int(sid), int(tid)))
         new_sname = request.form.get('new_student_name')
         new_ssubs = request.form.getlist('new_student_subjects')
+        new_blocks = request.form.getlist('new_student_block')
         if new_sname and new_ssubs:
             subj_json = json.dumps(new_ssubs)
             c.execute('INSERT INTO students (name, subjects, active) VALUES (?, ?, 1)',
                       (new_sname, subj_json))
+            new_sid = c.lastrowid
+            for tid in new_blocks:
+                c.execute('INSERT INTO student_teacher_block (student_id, teacher_id) VALUES (?, ?)',
+                          (new_sid, int(tid)))
 
         # update groups
         group_ids = request.form.getlist('group_id')
@@ -481,6 +499,11 @@ def config():
     teachers = c.fetchall()
     c.execute('SELECT * FROM students')
     students = c.fetchall()
+    c.execute('SELECT student_id, teacher_id FROM student_teacher_block')
+    st_rows = c.fetchall()
+    block_map = {}
+    for r in st_rows:
+        block_map.setdefault(r['student_id'], []).append(r['teacher_id'])
     c.execute('SELECT * FROM subjects')
     subjects = c.fetchall()
     c.execute('SELECT * FROM groups')
@@ -519,7 +542,7 @@ def config():
                            teacher_map=teacher_map, student_map=student_map,
                            unavail_map=unavail_map, assign_map=assign_map,
                            group_map=group_map, group_subj_map=group_subj_map,
-                           json=json)
+                           block_map=block_map, json=json)
 
 
 def generate_schedule(target_date=None):
@@ -552,6 +575,7 @@ def generate_schedule(target_date=None):
         group_members.setdefault(gm['group_id'], []).append(gm['student_id'])
     group_map_offset = {offset + gid: members for gid, members in group_members.items()}
 
+
     group_subjects = {g['id']: json.loads(g['subjects']) for g in groups}
     student_groups = {}
     for gid, members in group_members.items():
@@ -559,6 +583,18 @@ def generate_schedule(target_date=None):
             student_groups.setdefault(sid, []).append(gid)
     c.execute('SELECT * FROM teacher_unavailable')
     unavailable = c.fetchall()
+    c.execute('SELECT student_id, teacher_id FROM student_teacher_block')
+    block_rows = c.fetchall()
+    block_map_sched = {}
+    for r in block_rows:
+        block_map_sched.setdefault(r['student_id'], set()).add(r['teacher_id'])
+
+    for gid, members in group_members.items():
+        union = set()
+        for m in members:
+            union.update(block_map_sched.get(m, set()))
+        if union:
+            block_map_sched[offset + gid] = union
     c.execute('SELECT * FROM fixed_assignments')
     arows = c.fetchall()
     assignments_fixed = []
@@ -638,7 +674,8 @@ def generate_schedule(target_date=None):
         require_all_subjects=require_all_subjects,
         subject_weights=subject_weights,
         group_weight=group_weight,
-        allow_multi_teacher=allow_multi_teacher)
+        allow_multi_teacher=allow_multi_teacher,
+        blocked=block_map_sched)
     status, assignments, core = solve_and_print(model, vars_, assumptions)
 
     # Insert solver results into DB
