@@ -61,11 +61,18 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!tid || isNaN(slot)) return;
         const fixed = assignData[tid] || [];
         const unav = unavailData[tid] || [];
+        const flashes = document.getElementById('flash-messages');
+        if (!flashes) return;
+        const li = document.createElement('li');
+        li.className = 'error';
         if (fixed.includes(slot)) {
-            alert('Warning: fixed assignment exists in this slot.');
+            li.textContent = 'Warning: fixed assignment exists in this slot.';
         } else if (unav.includes(slot)) {
-            alert('Slot already marked unavailable.');
+            li.textContent = 'Slot already marked unavailable.';
+        } else {
+            return;
         }
+        flashes.appendChild(li);
     }
     if (unavailTeacher && unavailSlot) {
         unavailTeacher.addEventListener('change', warnUnavail);
