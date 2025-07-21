@@ -49,7 +49,8 @@ def init_db():
             require_all_subjects INTEGER,
             use_attendance_priority INTEGER,
             attendance_weight INTEGER,
-            group_weight REAL
+            group_weight REAL,
+            allow_multi_teacher INTEGER
         )''')
     else:
         if not column_exists('config', 'require_all_subjects'):
@@ -60,6 +61,8 @@ def init_db():
             c.execute('ALTER TABLE config ADD COLUMN attendance_weight INTEGER DEFAULT 10')
         if not column_exists('config', 'group_weight'):
             c.execute('ALTER TABLE config ADD COLUMN group_weight REAL DEFAULT 2.0')
+        if not column_exists('config', 'allow_multi_teacher'):
+            c.execute('ALTER TABLE config ADD COLUMN allow_multi_teacher INTEGER DEFAULT 1')
 
     if not table_exists('teachers'):
         c.execute('''CREATE TABLE teachers (
@@ -163,8 +166,9 @@ def init_db():
             min_lessons, max_lessons, teacher_min_lessons, teacher_max_lessons,
             allow_repeats, max_repeats,
             prefer_consecutive, allow_consecutive, consecutive_weight,
-            require_all_subjects, use_attendance_priority, attendance_weight, group_weight
-        ) VALUES (1, 8, 30, 30, 1, 4, 1, 8, 0, 2, 0, 1, 3, 1, 0, 10, 2.0)''')
+            require_all_subjects, use_attendance_priority, attendance_weight, group_weight,
+            allow_multi_teacher
+        ) VALUES (1, 8, 30, 30, 1, 4, 1, 8, 0, 2, 0, 1, 3, 1, 0, 10, 2.0, 1)''')
     c.execute('SELECT COUNT(*) FROM teachers')
     if c.fetchone()[0] == 0:
         teachers = [
@@ -241,6 +245,7 @@ def config():
         use_attendance_priority = 1 if request.form.get('use_attendance_priority') else 0
         attendance_weight = int(request.form['attendance_weight'])
         group_weight = float(request.form['group_weight'])
+        allow_multi_teacher = 1 if request.form.get('allow_multi_teacher') else 0
 
         if not allow_repeats:
             allow_consecutive = 0
@@ -253,18 +258,23 @@ def config():
             if max_repeats < 2:
                 flash('Max repeats must be at least 2', 'error')
                 has_error = True
+        if not allow_multi_teacher and allow_repeats:
+            flash('Cannot allow repeats when different teachers per subject are disallowed.', 'error')
+            has_error = True
+
         c.execute("""UPDATE config SET slots_per_day=?, slot_duration=?, lesson_duration=?,
                      min_lessons=?, max_lessons=?, teacher_min_lessons=?, teacher_max_lessons=?,
                      allow_repeats=?, max_repeats=?,
                      prefer_consecutive=?, allow_consecutive=?, consecutive_weight=?,
                      require_all_subjects=?, use_attendance_priority=?, attendance_weight=?,
-                     group_weight=?
+                     group_weight=?, allow_multi_teacher=?
                      WHERE id=1""",
                   (slots_per_day, slot_duration, lesson_duration, min_lessons,
                    max_lessons, t_min_lessons, t_max_lessons,
                    allow_repeats, max_repeats, prefer_consecutive,
                    allow_consecutive, consecutive_weight, require_all_subjects,
-                   use_attendance_priority, attendance_weight, group_weight))
+                   use_attendance_priority, attendance_weight, group_weight,
+                   allow_multi_teacher))
         # update subjects
         subj_ids = request.form.getlist('subject_id')
         deletes_sub = set(request.form.getlist('subject_delete'))
@@ -572,6 +582,7 @@ def generate_schedule(target_date=None):
     use_attendance_priority = bool(cfg['use_attendance_priority'])
     attendance_weight = cfg['attendance_weight']
     group_weight = cfg['group_weight']
+    allow_multi_teacher = bool(cfg['allow_multi_teacher'])
     # Build the CP-SAT model with assumption literals so that we can obtain
     # an unsat core explaining conflicts when no timetable exists.
     # incorporate groups as pseudo students
@@ -626,7 +637,8 @@ def generate_schedule(target_date=None):
         add_assumptions=True, group_members=group_map_offset,
         require_all_subjects=require_all_subjects,
         subject_weights=subject_weights,
-        group_weight=group_weight)
+        group_weight=group_weight,
+        allow_multi_teacher=allow_multi_teacher)
     status, assignments, core = solve_and_print(model, vars_, assumptions)
 
     # Insert solver results into DB

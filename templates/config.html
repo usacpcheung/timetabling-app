@@ -29,6 +29,9 @@
             <label>Allow repeated lessons?
                 <input type="checkbox" name="allow_repeats" {% if config['allow_repeats'] %}checked{% endif %}>
             </label><br>
+            <label>Allow different teachers per subject?
+                <input type="checkbox" name="allow_multi_teacher" {% if config['allow_multi_teacher'] %}checked{% endif %}>
+            </label><br>
             <label>Max repeats per teacher/subject:
                 <input type="number" name="max_repeats" value="{{ config['max_repeats'] }}" min="1">
             </label><br>
