@@ -9,6 +9,7 @@
     <h1>Welcome to the Timetabling App</h1>
     <ul>
         <li><a href="{{ url_for('config') }}">Edit Configuration</a></li>
+        <li><a href="{{ url_for('attendance') }}">View Attendance</a></li>
     </ul>
     <form id="generate-form" action="{{ url_for('generate') }}" method="post">
         <label>Date: <input type="date" name="date" value="{{ today }}"></label>

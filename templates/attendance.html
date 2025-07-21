@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Attendance Report</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <h1>Attendance Report</h1>
+    <table border="1" cellpadding="5">
+        <tr>
+            <th>Student</th>
+            <th>Subject</th>
+            <th>Lessons</th>
+            <th>Percentage</th>
+        </tr>
+        {% for sid, info in attendance.items() %}
+            {% for subject, stats in info.subjects.items() %}
+        <tr>
+            <td>{{ info.name }}</td>
+            <td>{{ subject }}</td>
+            <td>{{ stats.count }}</td>
+            <td>{{ '%.2f'|format(stats.percentage) }}%</td>
+        </tr>
+            {% endfor %}
+        {% endfor %}
+    </table>
+    <p><a href="{{ url_for('index') }}">Home</a></p>
+</body>
+</html>

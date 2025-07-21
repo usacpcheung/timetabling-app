@@ -671,6 +671,44 @@ def timetable():
                            missing=missing, student_names=student_names)
 
 
+@app.route('/attendance')
+def attendance():
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('''
+        SELECT COALESCE(t.student_id, gm.student_id) AS sid,
+               t.subject,
+               s.name AS student_name
+        FROM timetable t
+        LEFT JOIN group_members gm ON t.group_id = gm.group_id
+        LEFT JOIN students s ON s.id = COALESCE(t.student_id, gm.student_id)
+    ''')
+    rows = c.fetchall()
+    conn.close()
+
+    # Aggregate lesson counts per student and subject
+    data = {}
+    totals = {}
+    for r in rows:
+        sid = r['sid']
+        if sid is None:
+            continue
+        name = r['student_name']
+        subj = r['subject']
+        info = data.setdefault(sid, {'name': name, 'subjects': {}})
+        info['subjects'][subj] = info['subjects'].get(subj, 0) + 1
+        totals[sid] = totals.get(sid, 0) + 1
+
+    # Convert counts to include percentages
+    for sid, info in data.items():
+        total = totals.get(sid, 0)
+        for subj, count in info['subjects'].items():
+            perc = round(100 * count / total, 2) if total else 0
+            info['subjects'][subj] = {'count': count, 'percentage': perc}
+
+    return render_template('attendance.html', attendance=data)
+
+
 if __name__ == '__main__':
     init_db()
     app.run(debug=True)
