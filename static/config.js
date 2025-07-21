@@ -5,6 +5,11 @@ document.addEventListener('DOMContentLoaded', function () {
     const subjectSelect = document.getElementById('new_assign_subject');
     const slotSelect = document.getElementById('new_assign_slot');
 
+    const slotTimesDataEl = document.getElementById('slot-times-data');
+    const slotTimesContainer = document.getElementById('slot-times');
+    const slotsInput = document.querySelector('input[name="slots_per_day"]');
+    const slotDurationInput = document.querySelector('input[name="slot_duration"]');
+
     if (!teacherSelect || !studentSelect || !subjectSelect || !slotSelect) {
         return;
     }
@@ -15,6 +20,51 @@ document.addEventListener('DOMContentLoaded', function () {
     const unavailData = JSON.parse(document.getElementById('unavail-data').textContent);
     const assignData = JSON.parse(document.getElementById('assign-data').textContent);
     const totalSlots = parseInt(slotSelect.dataset.totalSlots, 10);
+
+    function parseTime(str) {
+        const parts = str.split(':');
+        return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+    }
+
+    function formatTime(mins) {
+        mins = mins % (24 * 60);
+        const h = String(Math.floor(mins / 60)).padStart(2, '0');
+        const m = String(mins % 60).padStart(2, '0');
+        return h + ':' + m;
+    }
+
+    function updateSlotTimeFields() {
+        if (!slotTimesContainer || !slotTimesDataEl) return;
+        const count = parseInt(slotsInput.value, 10) || 0;
+        const duration = parseInt(slotDurationInput.value, 10) || 0;
+        let times = [];
+        try {
+            times = JSON.parse(slotTimesDataEl.textContent);
+        } catch (e) {}
+        while (times.length < count) {
+            if (times.length === 0) {
+                times.push('08:30');
+            } else {
+                const last = parseTime(times[times.length - 1]);
+                times.push(formatTime(last + duration));
+            }
+        }
+        if (times.length > count) {
+            times = times.slice(0, count);
+        }
+        slotTimesContainer.innerHTML = '';
+        for (let i = 0; i < count; i++) {
+            const label = document.createElement('label');
+            label.textContent = 'Slot ' + (i + 1) + ' start: ';
+            const input = document.createElement('input');
+            input.type = 'time';
+            input.name = 'slot_start_' + (i + 1);
+            input.value = times[i] || '08:30';
+            label.appendChild(input);
+            slotTimesContainer.appendChild(label);
+            slotTimesContainer.appendChild(document.createElement('br'));
+        }
+    }
 
     function updateOptions() {
         const tid = teacherSelect.value;
@@ -83,5 +133,11 @@ document.addEventListener('DOMContentLoaded', function () {
     studentSelect.addEventListener('change', updateOptions);
     if (groupSelect) groupSelect.addEventListener('change', updateOptions);
 
+    if (slotsInput && slotDurationInput) {
+        slotsInput.addEventListener('input', updateSlotTimeFields);
+        slotDurationInput.addEventListener('input', updateSlotTimeFields);
+    }
+
+    updateSlotTimeFields();
     updateOptions();
 });

@@ -36,7 +36,7 @@ def init_db():
             id INTEGER PRIMARY KEY,
             slots_per_day INTEGER,
             slot_duration INTEGER,
-            lesson_duration INTEGER,
+            slot_start_times TEXT,
             min_lessons INTEGER,
             max_lessons INTEGER,
             teacher_min_lessons INTEGER,
@@ -55,6 +55,8 @@ def init_db():
             balance_weight INTEGER
         )''')
     else:
+        if not column_exists('config', 'slot_start_times'):
+            c.execute('ALTER TABLE config ADD COLUMN slot_start_times TEXT')
         if not column_exists('config', 'require_all_subjects'):
             c.execute('ALTER TABLE config ADD COLUMN require_all_subjects INTEGER DEFAULT 1')
         if not column_exists('config', 'use_attendance_priority'):
@@ -174,14 +176,20 @@ def init_db():
     # insert defaults if tables empty
     c.execute('SELECT COUNT(*) FROM config')
     if c.fetchone()[0] == 0:
+        start = 8 * 60 + 30
+        times = []
+        for i in range(8):
+            mins = start + i * 30
+            times.append(f"{mins // 60:02d}:{mins % 60:02d}")
         c.execute('''INSERT INTO config (
-            id, slots_per_day, slot_duration, lesson_duration,
+            id, slots_per_day, slot_duration, slot_start_times,
             min_lessons, max_lessons, teacher_min_lessons, teacher_max_lessons,
             allow_repeats, max_repeats,
             prefer_consecutive, allow_consecutive, consecutive_weight,
             require_all_subjects, use_attendance_priority, attendance_weight, group_weight,
             allow_multi_teacher, balance_teacher_load, balance_weight
-        ) VALUES (1, 8, 30, 30, 1, 4, 1, 8, 0, 2, 0, 1, 3, 1, 0, 10, 2.0, 1, 0, 1)''')
+        ) VALUES (1, 8, 30, ?, 1, 4, 1, 8, 0, 2, 0, 1, 3, 1, 0, 10, 2.0, 1, 0, 1)''',
+                  (json.dumps(times),))
     c.execute('SELECT COUNT(*) FROM teachers')
     if c.fetchone()[0] == 0:
         teachers = [
@@ -241,7 +249,27 @@ def config():
         has_error = False
         slots_per_day = int(request.form['slots_per_day'])
         slot_duration = int(request.form['slot_duration'])
-        lesson_duration = int(request.form['lesson_duration'])
+        start_times = []
+        for i in range(1, slots_per_day + 1):
+            val = request.form.get(f'slot_start_{i}')
+            if not val:
+                flash(f'Missing start time for slot {i}', 'error')
+                has_error = True
+                continue
+            try:
+                h, m = map(int, val.split(':'))
+            except Exception:
+                flash(f'Invalid time for slot {i}', 'error')
+                has_error = True
+                continue
+            if i > 1:
+                ph, pm = map(int, start_times[i - 2].split(':'))
+                prev_total = ph * 60 + pm
+                curr_total = h * 60 + m
+                if curr_total < prev_total + slot_duration:
+                    flash(f'Start time of slot {i} must be at least previous start plus slot duration', 'error')
+                    has_error = True
+            start_times.append(f"{h:02d}:{m:02d}")
         min_lessons = int(request.form['min_lessons'])
         max_lessons = int(request.form['max_lessons'])
         t_min_lessons = int(request.form['teacher_min_lessons'])
@@ -277,14 +305,14 @@ def config():
             flash('Cannot allow repeats when different teachers per subject are disallowed.', 'error')
             has_error = True
 
-        c.execute("""UPDATE config SET slots_per_day=?, slot_duration=?, lesson_duration=?,
+        c.execute("""UPDATE config SET slots_per_day=?, slot_duration=?, slot_start_times=?,
                      min_lessons=?, max_lessons=?, teacher_min_lessons=?, teacher_max_lessons=?,
                      allow_repeats=?, max_repeats=?,
                      prefer_consecutive=?, allow_consecutive=?, consecutive_weight=?,
                      require_all_subjects=?, use_attendance_priority=?, attendance_weight=?,
                      group_weight=?, allow_multi_teacher=?, balance_teacher_load=?, balance_weight=?
                     WHERE id=1""",
-                  (slots_per_day, slot_duration, lesson_duration, min_lessons,
+                  (slots_per_day, slot_duration, json.dumps(start_times), min_lessons,
                    max_lessons, t_min_lessons, t_max_lessons,
                    allow_repeats, max_repeats, prefer_consecutive,
                    allow_consecutive, consecutive_weight, require_all_subjects,
@@ -503,6 +531,10 @@ def config():
     # load config
     c.execute('SELECT * FROM config WHERE id=1')
     cfg = c.fetchone()
+    try:
+        slot_times = json.loads(cfg['slot_start_times']) if cfg['slot_start_times'] else []
+    except Exception:
+        slot_times = []
     c.execute('SELECT * FROM teachers')
     teachers = c.fetchall()
     c.execute('SELECT * FROM students')
@@ -550,7 +582,8 @@ def config():
                            teacher_map=teacher_map, student_map=student_map,
                            unavail_map=unavail_map, assign_map=assign_map,
                            group_map=group_map, group_subj_map=group_subj_map,
-                           block_map=block_map, json=json)
+                           block_map=block_map, json=json,
+                           slot_times=slot_times)
 
 
 def generate_schedule(target_date=None):
@@ -837,7 +870,8 @@ def timetable():
 
     return render_template('timetable.html', slots=range(slots), teachers=teachers,
                            grid=grid, json=json, date=target_date,
-                           missing=missing, student_names=student_names)
+                           missing=missing, student_names=student_names,
+                           slot_labels=slot_labels)
 
 
 @app.route('/attendance')
