@@ -8,7 +8,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 consecutive_weight=1, unavailable=None, fixed=None,
                 teacher_min_lessons=0, teacher_max_lessons=None,
                 add_assumptions=False, group_members=None,
-                require_all_subjects=True):
+                require_all_subjects=True, subject_weights=None):
     """Build CP-SAT model for the scheduling problem.
 
     When ``add_assumptions`` is ``True``, Boolean indicators are created for the
@@ -36,6 +36,8 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         require_all_subjects: if True, each subject listed for a student must
             appear at least once in the schedule. When False the solver may
             omit some subjects if needed to satisfy other constraints.
+        subject_weights: optional mapping ``(student_id, subject) -> weight``
+            used to weight variables in the objective.
 
     Returns:
         model (cp_model.CpModel): The constructed model.
@@ -52,6 +54,8 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
     model = cp_model.CpModel()
     group_ids = set(group_members.keys()) if group_members else set()
     vars_ = {}
+    subject_weights = subject_weights or {}
+    var_weights = {}
     # Map each group id to the subjects it requires and map each member
     # student to the subjects that must be taken through their group.
     group_subjects = {}
@@ -101,6 +105,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                         continue
                     vars_[key] = model.NewBoolVar(
                         f"x_s{student['id']}_t{teacher['id']}_sub{subject}_sl{slot}")
+                    var_weights[vars_[key]] = subject_weights.get((student['id'], subject), 1)
                     if key in fixed_set:
                         model.Add(vars_[key] == 1)
                     elif add_assumptions and (teacher['id'], slot) in unavailable_set:
@@ -224,12 +229,13 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 ct_max.OnlyEnforceIf(assumptions['student_limits'])
 
     # Objective: prioritize scheduling lessons, optionally preferring consecutive repeats
+    weighted_sum = sum(var * var_weights.get(var, 1) for var in vars_.values())
     if prefer_consecutive and allow_consecutive and repeat_limit > 1 and adjacency_vars:
         model.Maximize(
-            sum(var * 10 for var in vars_.values()) + consecutive_weight * sum(adjacency_vars)
+            weighted_sum + consecutive_weight * sum(adjacency_vars)
         )
     else:
-        model.Maximize(sum(vars_.values()))
+        model.Maximize(weighted_sum)
 
     return model, vars_, assumptions
 

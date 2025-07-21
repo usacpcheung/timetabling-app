@@ -43,6 +43,12 @@
             </label><br>
             <label>Require all subjects?
                 <input type="checkbox" name="require_all_subjects" {% if config['require_all_subjects'] %}checked{% endif %}>
+            </label><br>
+            <label>Use attendance priority?
+                <input type="checkbox" name="use_attendance_priority" {% if config['use_attendance_priority'] %}checked{% endif %}>
+            </label><br>
+            <label>Attendance weight:
+                <input type="number" name="attendance_weight" value="{{ config['attendance_weight'] }}" min="1">
             </label>
         </fieldset>
         <fieldset>
@@ -50,9 +56,11 @@
             {% for sub in subjects %}
             <input type="hidden" name="subject_id" value="{{ sub['id'] }}">
             <label>Name: <input type="text" name="subject_name_{{ sub['id'] }}" value="{{ sub['name'] }}"></label>
+            <label>Min %: <input type="number" name="subject_min_{{ sub['id'] }}" value="{{ sub['min_percentage'] if sub['min_percentage'] is not none else 0 }}" min="0" max="100"></label>
             <label>Delete? <input type="checkbox" name="subject_delete" value="{{ sub['id'] }}"></label><br>
             {% endfor %}
-            <label>New Subject: <input type="text" name="new_subject_name"></label><br>
+            <label>New Subject: <input type="text" name="new_subject_name"></label>
+            <label>Min %: <input type="number" name="new_subject_min" min="0" max="100"></label><br>
         </fieldset>
         <fieldset>
             <legend>Teachers</legend>

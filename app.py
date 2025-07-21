@@ -3,6 +3,7 @@ import sqlite3
 import json
 import os
 from datetime import date
+import statistics
 
 from cp_sat_timetable import build_model, solve_and_print
 
@@ -45,10 +46,17 @@ def init_db():
             prefer_consecutive INTEGER,
             allow_consecutive INTEGER,
             consecutive_weight INTEGER,
-            require_all_subjects INTEGER
+            require_all_subjects INTEGER,
+            use_attendance_priority INTEGER,
+            attendance_weight INTEGER
         )''')
-    elif not column_exists('config', 'require_all_subjects'):
-        c.execute('ALTER TABLE config ADD COLUMN require_all_subjects INTEGER DEFAULT 1')
+    else:
+        if not column_exists('config', 'require_all_subjects'):
+            c.execute('ALTER TABLE config ADD COLUMN require_all_subjects INTEGER DEFAULT 1')
+        if not column_exists('config', 'use_attendance_priority'):
+            c.execute('ALTER TABLE config ADD COLUMN use_attendance_priority INTEGER DEFAULT 0')
+        if not column_exists('config', 'attendance_weight'):
+            c.execute('ALTER TABLE config ADD COLUMN attendance_weight INTEGER DEFAULT 10')
 
     if not table_exists('teachers'):
         c.execute('''CREATE TABLE teachers (
@@ -78,8 +86,12 @@ def init_db():
     if not table_exists('subjects'):
         c.execute('''CREATE TABLE subjects (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE
+            name TEXT UNIQUE,
+            min_percentage INTEGER
         )''')
+    else:
+        if not column_exists('subjects', 'min_percentage'):
+            c.execute('ALTER TABLE subjects ADD COLUMN min_percentage INTEGER')
 
     if not table_exists('teacher_unavailable'):
         c.execute('''CREATE TABLE teacher_unavailable (
@@ -148,8 +160,8 @@ def init_db():
             min_lessons, max_lessons, teacher_min_lessons, teacher_max_lessons,
             allow_repeats, max_repeats,
             prefer_consecutive, allow_consecutive, consecutive_weight,
-            require_all_subjects
-        ) VALUES (1, 8, 30, 30, 1, 4, 1, 8, 0, 2, 0, 1, 3, 1)''')
+            require_all_subjects, use_attendance_priority, attendance_weight
+        ) VALUES (1, 8, 30, 30, 1, 4, 1, 8, 0, 2, 0, 1, 3, 1, 0, 10)''')
     c.execute('SELECT COUNT(*) FROM teachers')
     if c.fetchone()[0] == 0:
         teachers = [
@@ -174,8 +186,13 @@ def init_db():
         c.executemany('INSERT INTO students (name, subjects) VALUES (?, ?)', students)
     c.execute('SELECT COUNT(*) FROM subjects')
     if c.fetchone()[0] == 0:
-        subjects = [('Math',), ('English',), ('Science',), ('History',)]
-        c.executemany('INSERT INTO subjects (name) VALUES (?)', subjects)
+        subjects = [
+            ('Math', 0),
+            ('English', 0),
+            ('Science', 0),
+            ('History', 0)
+        ]
+        c.executemany('INSERT INTO subjects (name, min_percentage) VALUES (?, ?)', subjects)
     conn.commit()
     conn.close()
 
@@ -218,6 +235,8 @@ def config():
         allow_consecutive = 1 if request.form.get('allow_consecutive') else 0
         consecutive_weight = int(request.form['consecutive_weight'])
         require_all_subjects = 1 if request.form.get('require_all_subjects') else 0
+        use_attendance_priority = 1 if request.form.get('use_attendance_priority') else 0
+        attendance_weight = int(request.form['attendance_weight'])
 
         if not allow_repeats:
             allow_consecutive = 0
@@ -234,23 +253,29 @@ def config():
                      min_lessons=?, max_lessons=?, teacher_min_lessons=?, teacher_max_lessons=?,
                      allow_repeats=?, max_repeats=?,
                      prefer_consecutive=?, allow_consecutive=?, consecutive_weight=?,
-                     require_all_subjects=? WHERE id=1''',
+                     require_all_subjects=?, use_attendance_priority=?, attendance_weight=?
+                     WHERE id=1''',
                   (slots_per_day, slot_duration, lesson_duration, min_lessons,
                    max_lessons, t_min_lessons, t_max_lessons,
                    allow_repeats, max_repeats, prefer_consecutive,
-                   allow_consecutive, consecutive_weight, require_all_subjects))
+                   allow_consecutive, consecutive_weight, require_all_subjects,
+                   use_attendance_priority, attendance_weight))
         # update subjects
         subj_ids = request.form.getlist('subject_id')
         deletes_sub = set(request.form.getlist('subject_delete'))
         for sid in subj_ids:
             name = request.form.get(f'subject_name_{sid}')
+            min_perc = request.form.get(f'subject_min_{sid}')
+            min_val = int(min_perc) if min_perc else 0
             if sid in deletes_sub:
                 c.execute('DELETE FROM subjects WHERE id=?', (int(sid),))
             else:
-                c.execute('UPDATE subjects SET name=? WHERE id=?', (name, int(sid)))
+                c.execute('UPDATE subjects SET name=?, min_percentage=? WHERE id=?', (name, min_val, int(sid)))
         new_sub = request.form.get('new_subject_name')
+        new_min = request.form.get('new_subject_min')
         if new_sub:
-            c.execute('INSERT INTO subjects (name) VALUES (?)', (new_sub,))
+            min_val = int(new_min) if new_min else 0
+            c.execute('INSERT INTO subjects (name, min_percentage) VALUES (?, ?)', (new_sub, min_val))
 
         # update teachers
         teacher_ids = request.form.getlist('teacher_id')
@@ -539,6 +564,8 @@ def generate_schedule(target_date=None):
     allow_consecutive = bool(cfg['allow_consecutive'])
     consecutive_weight = cfg['consecutive_weight']
     require_all_subjects = bool(cfg['require_all_subjects'])
+    use_attendance_priority = bool(cfg['use_attendance_priority'])
+    attendance_weight = cfg['attendance_weight']
     # Build the CP-SAT model with assumption literals so that we can obtain
     # an unsat core explaining conflicts when no timetable exists.
     # incorporate groups as pseudo students
@@ -550,6 +577,39 @@ def generate_schedule(target_date=None):
     actual_students = [dict(s) for s in students]
     full_students = actual_students + pseudo_students
 
+    subject_weights = {}
+    if use_attendance_priority:
+        c.execute('SELECT name, min_percentage FROM subjects')
+        min_map = {r['name']: r['min_percentage'] or 0 for r in c.fetchall()}
+        attendance_pct = {}
+        for s in students:
+            sid = s['id']
+            required = json.loads(s['subjects'])
+            c.execute('SELECT subject, COUNT(*) as cnt FROM attendance_log WHERE student_id=? GROUP BY subject', (sid,))
+            rows = c.fetchall()
+            total = sum(r['cnt'] for r in rows)
+            counts = {r['subject']: r['cnt'] for r in rows}
+            for subj in required:
+                perc = (counts.get(subj, 0) / total * 100) if total else 0
+                attendance_pct.setdefault(sid, {})[subj] = perc
+                if perc < min_map.get(subj, 0):
+                    subject_weights[(sid, subj)] = 1 + attendance_weight
+        for g in groups:
+            gid = g['id']
+            gsubs = json.loads(g['subjects'])
+            members = group_members.get(gid, [])
+            for subj in gsubs:
+                percs = [attendance_pct.get(m, {}).get(subj, 0) for m in members]
+                if percs:
+                    med = statistics.median(sorted(percs))
+                else:
+                    med = 0
+                if med < min_map.get(subj, 0):
+                    weight = 1 + attendance_weight
+                else:
+                    weight = 1
+                subject_weights[(offset + gid, subj)] = weight
+
     model, vars_, assumptions = build_model(
         full_students, teachers, slots, min_lessons, max_lessons,
         allow_repeats=allow_repeats, max_repeats=max_repeats,
@@ -558,7 +618,8 @@ def generate_schedule(target_date=None):
         unavailable=unavailable, fixed=assignments_fixed,
         teacher_min_lessons=teacher_min, teacher_max_lessons=teacher_max,
         add_assumptions=True, group_members=group_map_offset,
-        require_all_subjects=require_all_subjects)
+        require_all_subjects=require_all_subjects,
+        subject_weights=subject_weights)
     status, assignments, core = solve_and_print(model, vars_, assumptions)
 
     # Insert solver results into DB
