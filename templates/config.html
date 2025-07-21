@@ -9,7 +9,7 @@
     <h1>Configuration</h1>
     {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
-    <ul class="flashes">
+    <ul id="flash-messages" class="flashes">
         {% for category, msg in messages %}
         <li class="{{ category }}">{{ msg }}</li>
         {% endfor %}

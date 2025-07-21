@@ -10,7 +10,7 @@
     <ul>
         <li><a href="{{ url_for('config') }}">Edit Configuration</a></li>
     </ul>
-    <form action="{{ url_for('generate') }}" method="post">
+    <form id="generate-form" action="{{ url_for('generate') }}" method="post">
         <label>Date: <input type="date" name="date" value="{{ today }}"></label>
         <button type="submit">Generate Timetable</button>
     </form>
@@ -18,5 +18,37 @@
         <label>Date: <input type="date" name="date" value="{{ today }}"></label>
         <button type="submit">View Timetable</button>
     </form>
+    <script>
+    const form = document.getElementById('generate-form');
+    const checkUrl = '{{ url_for('check_timetable') }}';
+    form.addEventListener('submit', async function(e) {
+        const dateInput = form.querySelector('input[name="date"]');
+        if (!dateInput || !dateInput.value) return;
+        e.preventDefault();
+        try {
+            const resp = await fetch(checkUrl + '?date=' + encodeURIComponent(dateInput.value));
+            const data = await resp.json();
+            let proceed = true;
+            if (data.exists) {
+                proceed = confirm('Timetable already exists for this date. Overwrite?');
+            }
+            if (proceed) {
+                if (data.exists) {
+                    let input = form.querySelector('input[name="confirm"]');
+                    if (!input) {
+                        input = document.createElement('input');
+                        input.type = 'hidden';
+                        input.name = 'confirm';
+                        input.value = '1';
+                        form.appendChild(input);
+                    }
+                }
+                form.submit();
+            }
+        } catch (err) {
+            form.submit();
+        }
+    });
+    </script>
 </body>
 </html>

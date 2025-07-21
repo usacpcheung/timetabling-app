@@ -166,6 +166,17 @@ def init_db():
     conn.close()
 
 
+@app.route('/check_timetable')
+def check_timetable():
+    target_date = request.args.get('date')
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT 1 FROM timetable WHERE date=? LIMIT 1', (target_date,))
+    exists = c.fetchone() is not None
+    conn.close()
+    return {'exists': exists}
+
+
 @app.route('/')
 def index():
     return render_template('index.html', today=date.today().isoformat())
@@ -176,6 +187,7 @@ def config():
     conn = get_db()
     c = conn.cursor()
     if request.method == 'POST':
+        has_error = False
         slots_per_day = int(request.form['slots_per_day'])
         slot_duration = int(request.form['slot_duration'])
         lesson_duration = int(request.form['lesson_duration'])
@@ -185,7 +197,7 @@ def config():
         t_max_lessons = int(request.form['teacher_max_lessons'])
         if t_min_lessons > t_max_lessons:
             flash('Global teacher min lessons cannot exceed max lessons', 'error')
-            t_min_lessons = t_max_lessons
+            has_error = True
         allow_repeats = 1 if request.form.get('allow_repeats') else 0
         max_repeats = int(request.form['max_repeats'])
         prefer_consecutive = 1 if request.form.get('prefer_consecutive') else 0
@@ -198,11 +210,12 @@ def config():
             prefer_consecutive = 0
         else:
             if not allow_consecutive and prefer_consecutive:
-                prefer_consecutive = 0
                 flash('Cannot prefer consecutive slots when consecutive repeats are disallowed.',
                       'error')
+                has_error = True
             if max_repeats < 2:
-                max_repeats = 2
+                flash('Max repeats must be at least 2', 'error')
+                has_error = True
         c.execute('''UPDATE config SET slots_per_day=?, slot_duration=?, lesson_duration=?,
                      min_lessons=?, max_lessons=?, teacher_min_lessons=?, teacher_max_lessons=?,
                      allow_repeats=?, max_repeats=?,
@@ -242,6 +255,7 @@ def config():
                 max_val = int(tmax) if tmax else None
                 if min_val is not None and max_val is not None and min_val > max_val:
                     flash('Teacher min lessons greater than max for ' + name, 'error')
+                    has_error = True
                     continue
                 c.execute('UPDATE teachers SET name=?, subjects=?, min_lessons=?, max_lessons=? WHERE id=?',
                           (name, subj_json, min_val, max_val, int(tid)))
@@ -255,6 +269,7 @@ def config():
             max_val = int(new_tmax) if new_tmax else None
             if min_val is not None and max_val is not None and min_val > max_val:
                 flash('New teacher min lessons greater than max', 'error')
+                has_error = True
             else:
                 c.execute('INSERT INTO teachers (name, subjects, min_lessons, max_lessons) VALUES (?, ?, ?, ?)',
                           (new_tname, subj_json, min_val, max_val))
@@ -327,8 +342,10 @@ def config():
             slot = int(nu_slot) - 1
             if (tid, slot) in fixed_set:
                 flash('Cannot mark slot unavailable: fixed assignment exists', 'error')
+                has_error = True
             elif (tid, slot) in unav_set:
                 flash('Teacher already unavailable in that slot', 'error')
+                has_error = True
             else:
                 c.execute('INSERT INTO teacher_unavailable (teacher_id, slot) VALUES (?, ?)',
                           (tid, slot))
@@ -367,14 +384,18 @@ def config():
             slot = int(na_slot) - 1
             if na_subject not in teacher_map.get(tid, []):
                 flash('Teacher does not teach the selected subject', 'error')
+                has_error = True
             elif (tid, slot) in unav_set:
                 flash('Teacher is unavailable in the selected slot', 'error')
+                has_error = True
             elif (tid, slot) in fixed_set:
                 flash('Duplicate fixed assignment for that slot', 'error')
+                has_error = True
             elif na_student:
                 sid = int(na_student)
                 if na_subject not in student_map.get(sid, []):
                     flash('Student does not require the selected subject', 'error')
+                    has_error = True
                 else:
                     c.execute('INSERT INTO fixed_assignments (teacher_id, student_id, group_id, subject, slot) VALUES (?, ?, ?, ?, ?)',
                               (tid, sid, None, na_subject, slot))
@@ -382,11 +403,15 @@ def config():
                 gid = int(na_group)
                 if na_subject not in group_subj.get(gid, []):
                     flash('Group does not require the selected subject', 'error')
+                    has_error = True
                 else:
                     c.execute('INSERT INTO fixed_assignments (teacher_id, student_id, group_id, subject, slot) VALUES (?, ?, ?, ?, ?)',
                               (tid, None, gid, na_subject, slot))
 
-        conn.commit()
+        if has_error:
+            conn.rollback()
+        else:
+            conn.commit()
         conn.close()
         return redirect(url_for('config'))
 
@@ -558,6 +583,19 @@ def generate_schedule(target_date=None):
 @app.route('/generate', methods=['POST'])
 def generate():
     gen_date = request.form.get('date') or date.today().isoformat()
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT 1 FROM timetable WHERE date=? LIMIT 1', (gen_date,))
+    exists = c.fetchone() is not None
+    conn.close()
+    if exists and not request.form.get('confirm'):
+        flash('Timetable already exists for that date.', 'error')
+        return redirect(url_for('index'))
+    if exists:
+        conn = get_db()
+        conn.execute('DELETE FROM timetable WHERE date=?', (gen_date,))
+        conn.commit()
+        conn.close()
     generate_schedule(gen_date)
     return redirect(url_for('timetable', date=gen_date))
 
