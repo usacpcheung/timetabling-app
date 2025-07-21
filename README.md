@@ -79,7 +79,8 @@ this value if you want the solver to focus even more on improving attendance.
 When using group lessons you can adjust **Group weight** to bias the solver
 toward scheduling them. This multiplier boosts the objective weight of any
 variable whose ``student_id`` represents a group, making joint lessons more
-appealing relative to individual ones.
+appealing relative to individual ones. A value around **2** is a good
+starting point and roughly doubles the attractiveness of group lessons.
 
 Two numbers define the minimum and maximum lessons each teacher should teach.
 Individual teachers can override these global limits. Leave the per-teacher

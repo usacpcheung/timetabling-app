@@ -41,7 +41,8 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             used to weight variables in the objective.
         group_weight: multiplier applied to the weight of variables whose
             ``student_id`` represents a group. This biases the solver toward
-            scheduling group lessons.
+            scheduling group lessons. A value around ``2.0`` moderately favors
+            groups without overwhelming other objectives.
 
     Returns:
         model (cp_model.CpModel): The constructed model.
