@@ -1,3 +1,6 @@
+// JavaScript helpers for the configuration form.
+// Populate drop-downs and handle dynamic slot time fields.
+
 document.addEventListener('DOMContentLoaded', function () {
     const teacherSelect = document.getElementById('new_assign_teacher');
     const studentSelect = document.getElementById('new_assign_student');
@@ -33,11 +36,13 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    // Convert "HH:MM" to minutes.
     function parseTime(str) {
         const parts = str.split(':');
         return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
     }
 
+    // Convert minutes back to "HH:MM".
     function formatTime(mins) {
         mins = mins % (24 * 60);
         const h = String(Math.floor(mins / 60)).padStart(2, '0');
@@ -45,6 +50,7 @@ document.addEventListener('DOMContentLoaded', function () {
         return h + ':' + m;
     }
 
+    // Build time input fields whenever the slot count or duration changes.
     function updateSlotTimeFields() {
         if (!slotTimesContainer || !slotTimesDataEl) return;
         const count = parseInt(slotsInput.value, 10) || 0;
@@ -78,6 +84,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+    // Update subject and slot dropdowns based on the chosen teacher and student.
     function updateOptions() {
         const tid = teacherSelect.value;
         const sid = studentSelect.value;
@@ -116,6 +123,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const unavailTeacher = document.getElementById('new_unavail_teacher');
     const unavailSlot = document.getElementById('new_unavail_slot');
+    // Display a warning when marking a slot unavailable would conflict.
     function warnUnavail() {
         const tid = unavailTeacher.value;
         const slotVal = unavailSlot.value;
@@ -141,6 +149,8 @@ document.addEventListener('DOMContentLoaded', function () {
         unavailSlot.addEventListener('input', warnUnavail);
     }
 
+    
+    // Hook up event listeners so dropdowns stay in sync.
     teacherSelect.addEventListener('change', updateOptions);
     studentSelect.addEventListener('change', updateOptions);
     if (groupSelect) groupSelect.addEventListener('change', updateOptions);

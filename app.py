@@ -1,8 +1,9 @@
-"""Flask web application for generating simple school timetables.
+"""A heavily commented Flask web application for generating simple school timetables.
 
 This file contains all of the web routes and database access logic.  Data is
 stored in a local SQLite database which is initialized with some sample values
-on first run.  Users interact with the app via standard web forms to configure
+on first run.
+The comments throughout this file explain each step in detail so beginning programmers can follow the flow.  Users interact with the app via standard web forms to configure
 teachers, students and various scheduling parameters.  When a timetable is
 requested, the configuration is passed to the CP-SAT model defined in
 ``cp_sat_timetable.py`` and the resulting schedule is saved back to the
@@ -24,10 +25,11 @@ DB_PATH = os.path.join(os.path.dirname(__file__), 'timetable.db')
 
 
 def get_db():
-    """Open a connection to the SQLite database.
+    """Return a connection to the SQLite database.
 
-    ``row_factory`` is set so that query results behave like dictionaries which
-    makes template rendering a little easier.
+    Each view function calls this helper to obtain a connection. Setting
+    ``row_factory`` allows rows to behave like dictionaries so template
+    code can access columns by name.
     """
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -35,7 +37,11 @@ def get_db():
 
 
 def init_db():
-    """Create all database tables and insert default data if needed."""
+    """Create the SQLite tables and populate default rows.
+
+    This function also performs simple migrations when new columns are added in
+    later versions of the code. It is called on start-up and whenever the
+    database is reset via the web interface."""
     conn = get_db()
     c = conn.cursor()
 
@@ -248,7 +254,11 @@ def init_db():
 
 @app.route('/check_timetable')
 def check_timetable():
-    """AJAX helper to see if a timetable already exists for a date."""
+    """AJAX endpoint used on the index page.
+
+    It checks whether a timetable already exists for the requested date and
+    returns a small JSON response so the browser can warn the user.
+    """
     target_date = request.args.get('date')
     conn = get_db()
     c = conn.cursor()
@@ -260,13 +270,22 @@ def check_timetable():
 
 @app.route('/')
 def index():
-    """Home page showing actions for the user."""
+    """Render the landing page with links to the main actions.
+
+    The page contains small forms to generate a new timetable or view an
+    existing one and links to the configuration and attendance pages.
+    """
     return render_template('index.html', today=date.today().isoformat())
 
 
 @app.route('/config', methods=['GET', 'POST'])
 def config():
-    """Display and update teachers, students and other settings."""
+    """Display and update teachers, students, groups and other settings.
+
+    This route renders a large form when accessed via GET. Submitting the
+    form via POST saves the changes back to the database after running a
+    number of validation checks.
+    """
     conn = get_db()
     c = conn.cursor()
     if request.method == 'POST':
@@ -618,7 +637,13 @@ def config():
 
 
 def generate_schedule(target_date=None):
-    """Build the CP-SAT model from current data and store the resulting timetable."""
+    """Create and solve the CP-SAT model, then save the timetable.
+
+    All configuration data is loaded from the database and translated into
+    the variables and constraints needed by OR-Tools. After solving, the
+    resulting lessons are inserted into the timetable table along with
+    attendance information.
+    """
     conn = get_db()
     c = conn.cursor()
     if target_date is None:
@@ -814,7 +839,12 @@ def generate_schedule(target_date=None):
 
 @app.route('/generate', methods=['POST'])
 def generate():
-    """Endpoint triggered from the home page to produce a timetable."""
+    """Process the Generate Timetable form.
+
+    The selected date is passed to generate_schedule and the browser is
+    redirected back to the index page once complete. Existing timetables can
+    be overwritten when the user confirms the prompt.
+    """
     gen_date = request.form.get('date') or date.today().isoformat()
     conn = get_db()
     c = conn.cursor()
@@ -835,7 +865,12 @@ def generate():
 
 @app.route('/timetable')
 def timetable():
-    """Display the saved timetable for the given date."""
+    """Render a grid of the lessons scheduled for a particular date.
+
+    Each column shows a teacher while each row represents a time slot. The
+    page also lists any subjects that could not be scheduled for active
+    students.
+    """
     target_date = request.args.get('date')
     conn = get_db()
     c = conn.cursor()
@@ -933,7 +968,11 @@ def timetable():
 
 @app.route('/attendance')
 def attendance():
-    """Show attendance statistics for active and removed students."""
+    """Display tables summarising how often students attended each subject.
+
+    The first table lists currently active students while the second keeps
+    records for any students that have been deleted from the configuration.
+    """
     conn = get_db()
     c = conn.cursor()
     c.execute('''
@@ -986,7 +1025,11 @@ def attendance():
 
 @app.route('/manage_timetables')
 def manage_timetables():
-    """List all saved timetable dates so the user can remove them."""
+    """Show a list of saved timetable dates.
+
+    Each date links to a form where the user can delete individual timetables
+    or clear them all at once.
+    """
     conn = get_db()
     c = conn.cursor()
     c.execute('SELECT DISTINCT date FROM timetable ORDER BY date DESC')
@@ -997,7 +1040,12 @@ def manage_timetables():
 
 @app.route('/delete_timetables', methods=['POST'])
 def delete_timetables():
-    """Delete selected timetables or clear them all."""
+    """Handle form submissions to remove saved timetables.
+
+    The user can either tick individual dates to delete or choose the
+    *Clear All* option which wipes every saved timetable and related
+    attendance log entries.
+    """
     conn = get_db()
     c = conn.cursor()
     if request.form.get('clear_all'):
@@ -1024,7 +1072,11 @@ def delete_timetables():
 
 @app.route('/reset_db', methods=['POST'])
 def reset_db():
-    """Delete the database file and re-create it with default data."""
+    """Reset the database to its initial state.
+
+    Useful during development or demos when you want to start from a clean
+    slate. All existing configuration and timetables are removed.
+    """
     if os.path.exists(DB_PATH):
         os.remove(DB_PATH)
     init_db()

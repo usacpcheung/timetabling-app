@@ -1,10 +1,6 @@
-"""Helper functions for building and solving the timetable model.
+"""Detailed helper functions for building and solving the timetable model.
 
-This module contains a thin wrapper around OR-Tools' CP-SAT solver.  The
-``build_model`` function creates all of the variables and constraints needed for
-our scheduling problem and ``solve_and_print`` executes the solver and extracts
-the results.  The goal is to keep the optimization logic separate from the
-``Flask`` application so the model can be understood in isolation.
+This module contains a thin wrapper around OR-Tools' CP-SAT solver. The ``build_model`` function creates all variables and constraints for the scheduling problem, and ``solve_and_print`` executes the solver and extracts the results. Each decision variable is a boolean indicating whether a particular lesson occurs. Keeping this optimization code separate from the Flask application makes the model easier to understand in isolation.
 """
 
 from ortools.sat.python import cp_model
@@ -153,7 +149,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                                              teacher['id'] in forbidden):
                         model.Add(vars_[key] == 0).OnlyEnforceIf(assumptions['teacher_availability'])
 
-    # Teacher cannot teach more than one lesson in the same time slot.  We scan
+    # Constraint 1: teacher availability - a teacher cannot teach more than one lesson in the same time slot.  We scan
     # all variables for each teacher/slot pair and ensure at most one is "on".
     for teacher in teachers:
         for slot in range(slots):
@@ -175,7 +171,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                     if m_key in vars_:
                         model.Add(vars_[m_key] == 0).OnlyEnforceIf(var)
 
-    # Student cannot attend more than one lesson in a slot.  Any group lessons
+    # Constraint 2: student availability - a student cannot attend more than one lesson in a slot.  Any group lessons
     # the student belongs to are also included in the check so scheduling
     # conflicts are avoided.
     for student in students:
@@ -191,7 +187,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             if possible:
                 model.Add(sum(possible) <= 1)
 
-    # Limit repeats of the same student/teacher/subject combination.  Group
+    # Constraint 3: limit repeats of the same student/teacher/subject combination.  Group
     # lessons are treated the same way as individual lessons and therefore their
     # variables participate in these constraints as well.
     triple_map = {}
@@ -299,7 +295,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 ct_min.OnlyEnforceIf(assumptions['student_limits'])
                 ct_max.OnlyEnforceIf(assumptions['student_limits'])
 
-    # Objective: prioritize scheduling as many lessons as possible.  Additional
+    # Objective function: prioritize scheduling as many lessons as possible.  Additional
     # terms can encourage consecutive repeats or penalize uneven teacher loads
     # depending on the configuration options.
     weighted_sum = sum(var * var_weights.get(var, 1) for var in vars_.values())
@@ -316,7 +312,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
 
 
 def solve_and_print(model, vars_, assumptions=None):
-    """Run the solver and collect the results.
+    """Run the OR-Tools solver and collect the results.
 
     Args:
         model: The ``CpModel`` instance returned by :func:`build_model`.

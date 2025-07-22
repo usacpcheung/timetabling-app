@@ -1,3 +1,4 @@
+<!-- Home page providing quick links and forms -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -19,7 +20,9 @@
     <form action="{{ url_for('timetable') }}" method="get">
         <label>Date: <input type="date" name="date" value="{{ today }}"></label>
         <button type="submit">View Timetable</button>
+<!-- Form posts to /generate; JavaScript warns if a timetable already exists -->
     </form>
+    <!-- check_timetable is called via fetch() before submitting -->
     <script>
     const form = document.getElementById('generate-form');
     const checkUrl = '{{ url_for('check_timetable') }}';
