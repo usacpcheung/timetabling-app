@@ -315,11 +315,9 @@ def config():
         balance_teacher_load = 1 if request.form.get('balance_teacher_load') else 0
         balance_weight = int(request.form['balance_weight'])
 
-        if (require_all_subjects and use_attendance_priority and
-                well_attend_weight > 0):
+        if require_all_subjects and use_attendance_priority:
             flash(
-                'Require all subjects with a positive well-attended weight may '
-                'slow solving. Consider setting the weight to 0.',
+                'Require all subjects and attendance priority may slow solving.',
                 'warning'
             )
 

@@ -84,11 +84,7 @@ You can also set a separate **Well-attended weight**. This weight applies once a
 student's attendance percentage meets the threshold. Try **0** if you want the
 solver to freely drop these subjects after the target is met. Small values such
 as `0.1` may not noticeably speed up solving—the solver can still take a few
-minutes. When **Use attendance priority** and **Require all subjects?** are both
-enabled, even a tiny positive value like `0.1` can make schedule generation take
-far longer, so set the weight to `0` if it becomes slow. The configuration page
-shows a warning when these options are enabled together with a positive
-**Well-attended weight** so you can adjust accordingly.
+minutes. When **Use attendance priority** and **Require all subjects?** are both enabled, solving can take significantly longer regardless of the well-attended weight. The configuration page shows a warning when these options are enabled together so you can adjust the settings.
 
 When using group lessons you can adjust **Group weight** to bias the solver
 toward scheduling them. This multiplier boosts the objective weight of any
@@ -136,7 +132,7 @@ The configuration page performs several checks when saving data:
 * A teacher cannot be marked unavailable in a slot that already has a fixed assignment.
 * Duplicate fixed assignments for the same teacher and slot are rejected.
 * Minimum lesson values cannot exceed maximum values for either global or per-teacher settings.
-* A warning appears when **Require all subjects?** and **Use attendance priority** are enabled with a positive **Well-attended weight** because solving can take much longer.
+* A warning appears when **Require all subjects?** and **Use attendance priority** are enabled together because solving can take much longer.
 
 If any of these conditions fail the assignment is rejected and a message is
 shown at the top of the page. Other sections rely on database constraints (for
