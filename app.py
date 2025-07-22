@@ -315,6 +315,14 @@ def config():
         balance_teacher_load = 1 if request.form.get('balance_teacher_load') else 0
         balance_weight = int(request.form['balance_weight'])
 
+        if (require_all_subjects and use_attendance_priority and
+                well_attend_weight > 0):
+            flash(
+                'Require all subjects with a positive well-attended weight may '
+                'slow solving. Consider setting the weight to 0.',
+                'warning'
+            )
+
         if not allow_repeats:
             allow_consecutive = 0
             prefer_consecutive = 0
