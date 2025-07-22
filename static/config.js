@@ -21,6 +21,18 @@ document.addEventListener('DOMContentLoaded', function () {
     const assignData = JSON.parse(document.getElementById('assign-data').textContent);
     const totalSlots = parseInt(slotSelect.dataset.totalSlots, 10);
 
+    const configForm = document.querySelector('form[method="post"]:not([action])');
+    if (configForm) {
+        const selects = configForm.querySelectorAll('select:not([multiple])');
+        selects.forEach(sel => {
+            sel.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') {
+                    configForm.submit();
+                }
+            });
+        });
+    }
+
     function parseTime(str) {
         const parts = str.split(':');
         return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
