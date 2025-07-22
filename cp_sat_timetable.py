@@ -24,8 +24,9 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
     """Build CP-SAT model for the scheduling problem.
 
     When ``add_assumptions`` is ``True``, Boolean indicators are created for the
-    main constraint groups (teacher availability, teacher lesson limits,
-    student lesson limits and repeat restrictions). These indicators are added as
+    main constraint groups (teacher availability and blocking rules, teacher
+    lesson limits, student lesson limits and repeat restrictions). These
+    indicators are added as
     assumptions on the model so that unsatisfied cores can be extracted to
     diagnose infeasibility.
 
@@ -128,8 +129,6 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         student_subs = set(json.loads(student['subjects']))
         forbidden = set(blocked.get(student['id'], []))
         for teacher in teachers:
-            if teacher['id'] in forbidden:
-                continue
             teacher_subs = set(json.loads(teacher['subjects']))
             common = student_subs & teacher_subs
             for subject in common:
@@ -138,7 +137,9 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                     continue
                 for slot in range(slots):
                     key = (student['id'], teacher['id'], subject, slot)
-                    if not add_assumptions and key not in fixed_set and (teacher['id'], slot) in unavailable_set:
+                    if (not add_assumptions and key not in fixed_set and
+                            ((teacher['id'], slot) in unavailable_set or
+                             teacher['id'] in forbidden)):
                         continue
                     vars_[key] = model.NewBoolVar(
                         f"x_s{student['id']}_t{teacher['id']}_sub{subject}_sl{slot}")
@@ -148,7 +149,8 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                     var_weights[vars_[key]] = weight
                     if key in fixed_set:
                         model.Add(vars_[key] == 1)
-                    elif add_assumptions and (teacher['id'], slot) in unavailable_set:
+                    elif add_assumptions and ((teacher['id'], slot) in unavailable_set or
+                                             teacher['id'] in forbidden):
                         model.Add(vars_[key] == 0).OnlyEnforceIf(assumptions['teacher_availability'])
 
     # Teacher cannot teach more than one lesson in the same time slot.  We scan
