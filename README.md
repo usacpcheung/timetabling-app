@@ -82,7 +82,9 @@ under-attended subjects roughly ten times more attractive than others. Increase
 this value if you want the solver to focus even more on improving attendance.
 You can also set a separate **Well-attended weight**. This weight applies when a
 student's attendance percentage already meets the threshold. Try a value of **0**
-if you want the solver to freely drop these subjects once targets are met.
+if you want the solver to freely drop these subjects once targets are met. Small
+weights such as `0.1` may not noticeably reduce solve times and the solver can
+still take a few minutes to finish.
 
 When using group lessons you can adjust **Group weight** to bias the solver
 toward scheduling them. This multiplier boosts the objective weight of any
