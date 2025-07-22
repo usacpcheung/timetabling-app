@@ -1,23 +1,17 @@
-<!-- Configuration page with a long form for teachers, students, groups and settings -->
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Configuration</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-    <h1>Configuration</h1>
-    {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-    <ul id="flash-messages" class="flashes">
-        {% for category, msg in messages %}
-        <li class="{{ category }}">{{ msg }}</li>
-        {% endfor %}
-    </ul>
-    {% endif %}
-    {% endwith %}
-    <form method="post">
+{% extends "base.html" %}
+{% block title %}Configuration{% endblock %}
+{% block content %}
+<h1 class="text-brand-700 text-2xl mb-4">Configuration</h1>
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+<ul id="flash-messages" class="list-none p-0 my-4 text-red-500">
+    {% for category, msg in messages %}
+    <li class="{{ category }}">{{ msg }}</li>
+    {% endfor %}
+</ul>
+{% endif %}
+{% endwith %}
+<form method="post">
         <fieldset>
             <legend>General</legend>
             <label>Slots per day: <input type="number" name="slots_per_day" value="{{ config['slots_per_day'] }}"></label><br>
@@ -246,20 +240,20 @@
                 </select>
             </label><br>
         </fieldset>
-        <button type="submit">Save</button>
+        <button type="submit" class="bg-brand-500 hover:bg-brand-700 text-white px-3 py-1 rounded">Save</button>
     </form>
-
-    <form method="post" action="{{ url_for('reset_db') }}" onsubmit="return confirm('This will erase all data and reset to defaults. Continue?');">
-        <button type="submit">Reset Database</button>
+    <form method="post" action="{{ url_for('reset_db') }}" data-confirm="This will erase all data and reset to defaults. Continue?">
+        <button type="submit" class="bg-brand-500 hover:bg-brand-700 text-white px-3 py-1 rounded">Reset Database</button>
     </form>
-    <p><a href="{{ url_for('index') }}">Back to Home</a></p>
-    <script id="teacher-data" type="application/json">{{ teacher_map | tojson }}</script>
-    <script id="student-data" type="application/json">{{ student_map | tojson }}</script>
-    <!-- JSON blobs provide data for the JavaScript code below -->
-    <script id="group-data" type="application/json">{{ group_subj_map | tojson }}</script>
-    <script id="unavail-data" type="application/json">{{ unavail_map | tojson }}</script>
-    <script id="assign-data" type="application/json">{{ assign_map | tojson }}</script>
-    <script id="slot-times-data" type="application/json">{{ slot_times | tojson }}</script>
-    <script src="{{ url_for('static', filename='config.js') }}"></script>
-</body>
-</html>
+    <p class="mt-4"><a href="{{ url_for('index') }}" class="text-brand-500 hover:text-brand-700">Back to Home</a></p>
+{% endblock %}
+{% block scripts %}
+<script id="teacher-data" type="application/json">{{ teacher_map | tojson }}</script>
+<script id="student-data" type="application/json">{{ student_map | tojson }}</script>
+<!-- JSON blobs provide data for the JavaScript code below -->
+<script id="group-data" type="application/json">{{ group_subj_map | tojson }}</script>
+<script id="unavail-data" type="application/json">{{ unavail_map | tojson }}</script>
+<script id="assign-data" type="application/json">{{ assign_map | tojson }}</script>
+<script id="slot-times-data" type="application/json">{{ slot_times | tojson }}</script>
+<script src="{{ url_for('static', filename='config.js') }}"></script>
+{% endblock %}

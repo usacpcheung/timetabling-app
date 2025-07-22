@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{% block title %}Timetabling App{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@3.3.3/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="m-8 font-sans bg-brand-100" x-data="{loading:false}" @loading.window="loading=$event.detail">
+    <div x-show="loading" x-cloak class="fixed inset-0 flex items-center justify-center bg-brand-50 bg-opacity-75" style="display:none;">
+        <div class="h-12 w-12 border-4 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
+    </div>
+    {% block content %}{% endblock %}
+    <script src="{{ url_for('static', filename='js/ui.js') }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

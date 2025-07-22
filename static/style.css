@@ -1,24 +1,7 @@
-/* Basic styles for the timetable app - kept simple for clarity */
-body {
-    font-family: Arial, sans-serif;
-    margin: 2em;
-}
-
-/* Tables use a collapsed border so the grid looks tidy */
-table {
-    border-collapse: collapse;
-}
-
-td, th {
-    padding: 4px 8px;
-    border: 1px solid #999;
-    text-align: center;
-}
-/* Simple styling for error messages */
-
-.flashes {
-    list-style: none;
-    padding: 0;
-    margin: 1em 0;
-    color: red;
-}
+/* Custom color palette matching Tailwind token names */
+.bg-brand-50  { background-color: #F2F2F2; }
+.bg-brand-100 { background-color: #B7D7CF; }
+.bg-brand-300 { background-color: #A4BFA3; }
+.bg-brand-500 { background-color: #5C735D; }
+.bg-brand-700 { background-color: #31402F; }
+.border-brand-50 { border-color: #F2F2F2; }

@@ -1,56 +1,57 @@
-<!-- Displays attendance statistics -->
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Attendance Report</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-    <h1>Attendance Report</h1>
-    <h2>Active Students</h2>
-    <table border="1" cellpadding="5">
-        <tr>
-            <th>Student</th>
-            <th>Subject</th>
-            <th>Lessons</th>
-            <th>Percentage</th>
-        </tr>
-        {% for sid, info in active_attendance.items() %}
-            {% for subject, stats in info.subjects.items() %}
-        <tr>
-            <td>{{ info.name }}</td>
-            <td>{{ subject }}</td>
-            <td>{{ stats.count }}</td>
-            <td>{{ '%.2f'|format(stats.percentage) }}%</td>
-        </tr>
-            {% endfor %}
-        {% endfor %}
-    </table>
-
-    <h2>Deleted Students</h2>
-    <table border="1" cellpadding="5">
-        <tr>
-            <th>Student</th>
-            <th>Subject</th>
-            <th>Lessons</th>
-            <th>Percentage</th>
-            <th>First Date</th>
-            <th>Last Date</th>
-        </tr>
-        {% for sid, info in deleted_attendance.items() %}
-            {% for subject, stats in info.subjects.items() %}
-        <tr>
-            <td>{{ info.name }}</td>
-            <td>{{ subject }}</td>
-            <td>{{ stats.count }}</td>
-            <td>{{ '%.2f'|format(stats.percentage) }}%</td>
-            <td>{{ info.first_date }}</td>
-            <td>{{ info.last_date }}</td>
-        </tr>
-            {% endfor %}
-        {% endfor %}
-    </table>
-    <p><a href="{{ url_for('index') }}">Home</a></p>
-</body>
-</html>
+{% extends "base.html" %}
+{% block title %}Attendance Report{% endblock %}
+{% from 'components/table.html' import Table %}
+{% block content %}
+<h1 class="text-brand-700 text-2xl mb-4">Attendance Report</h1>
+<h2 class="text-brand-700 text-xl">Active Students</h2>
+{% call Table('mb-4') %}
+<thead class="bg-brand-50">
+<tr>
+<th>Student</th>
+<th>Subject</th>
+<th class="sm:hidden">Lessons</th>
+<th>Percentage</th>
+</tr>
+</thead>
+<tbody>
+{% for sid, info in active_attendance.items() %}
+    {% for subject, stats in info.subjects.items() %}
+<tr>
+<td>{{ info.name }}</td>
+<td>{{ subject }}</td>
+<td class="sm:hidden">{{ stats.count }}</td>
+<td>{{ '%.2f'|format(stats.percentage) }}%</td>
+</tr>
+    {% endfor %}
+{% endfor %}
+</tbody>
+{% endcall %}
+<h2 class="text-brand-700 text-xl mt-4">Deleted Students</h2>
+{% call Table() %}
+<thead class="bg-brand-50">
+<tr>
+<th>Student</th>
+<th>Subject</th>
+<th class="sm:hidden">Lessons</th>
+<th>Percentage</th>
+<th class="hidden sm:table-cell">First Date</th>
+<th class="hidden sm:table-cell">Last Date</th>
+</tr>
+</thead>
+<tbody>
+{% for sid, info in deleted_attendance.items() %}
+    {% for subject, stats in info.subjects.items() %}
+<tr>
+<td>{{ info.name }}</td>
+<td>{{ subject }}</td>
+<td class="sm:hidden">{{ stats.count }}</td>
+<td>{{ '%.2f'|format(stats.percentage) }}%</td>
+<td class="hidden sm:table-cell">{{ info.first_date }}</td>
+<td class="hidden sm:table-cell">{{ info.last_date }}</td>
+</tr>
+    {% endfor %}
+{% endfor %}
+</tbody>
+{% endcall %}
+<p class="mt-4"><a href="{{ url_for('index') }}" class="text-brand-500 hover:text-brand-700">Home</a></p>
+{% endblock %}

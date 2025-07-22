@@ -1,59 +1,18 @@
-<!-- Home page providing quick links and forms -->
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Timetabling App</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-    <h1>Welcome to the Timetabling App</h1>
-    <ul>
-        <li><a href="{{ url_for('config') }}">Edit Configuration</a></li>
-        <li><a href="{{ url_for('attendance') }}">View Attendance</a></li>
-        <li><a href="{{ url_for('manage_timetables') }}">Manage Timetables</a></li>
-    </ul>
-    <form id="generate-form" action="{{ url_for('generate') }}" method="post">
-        <label>Date: <input type="date" name="date" value="{{ today }}"></label>
-        <button type="submit">Generate Timetable</button>
-    </form>
-    <form action="{{ url_for('timetable') }}" method="get">
-        <label>Date: <input type="date" name="date" value="{{ today }}"></label>
-        <button type="submit">View Timetable</button>
-<!-- Form posts to /generate; JavaScript warns if a timetable already exists -->
-    </form>
-    <!-- check_timetable is called via fetch() before submitting -->
-    <script>
-    const form = document.getElementById('generate-form');
-    const checkUrl = '{{ url_for('check_timetable') }}';
-    form.addEventListener('submit', async function(e) {
-        const dateInput = form.querySelector('input[name="date"]');
-        if (!dateInput || !dateInput.value) return;
-        e.preventDefault();
-        try {
-            const resp = await fetch(checkUrl + '?date=' + encodeURIComponent(dateInput.value));
-            const data = await resp.json();
-            let proceed = true;
-            if (data.exists) {
-                proceed = confirm('Timetable already exists for this date. Overwrite?');
-            }
-            if (proceed) {
-                if (data.exists) {
-                    let input = form.querySelector('input[name="confirm"]');
-                    if (!input) {
-                        input = document.createElement('input');
-                        input.type = 'hidden';
-                        input.name = 'confirm';
-                        input.value = '1';
-                        form.appendChild(input);
-                    }
-                }
-                form.submit();
-            }
-        } catch (err) {
-            form.submit();
-        }
-    });
-    </script>
-</body>
-</html>
+{% extends "base.html" %}
+{% block title %}Timetabling App{% endblock %}
+{% block content %}
+<h1 class="text-brand-700 text-2xl mb-4">Welcome to the Timetabling App</h1>
+<ul class="list-disc ml-6 mb-4">
+    <li><a href="{{ url_for('config') }}" class="text-brand-500 hover:text-brand-700">Edit Configuration</a></li>
+    <li><a href="{{ url_for('attendance') }}" class="text-brand-500 hover:text-brand-700">View Attendance</a></li>
+    <li><a href="{{ url_for('manage_timetables') }}" class="text-brand-500 hover:text-brand-700">Manage Timetables</a></li>
+</ul>
+<form id="generate-form" data-check-url="{{ url_for('check_timetable') }}" action="{{ url_for('generate') }}" method="post" class="space-x-2 mb-4">
+    <label>Date: <input type="date" name="date" value="{{ today }}" class="border p-1"></label>
+    <button type="submit" class="bg-brand-500 hover:bg-brand-700 text-white px-3 py-1 rounded">Generate Timetable</button>
+</form>
+<form action="{{ url_for('timetable') }}" method="get" class="space-x-2">
+    <label>Date: <input type="date" name="date" value="{{ today }}" class="border p-1"></label>
+    <button type="submit" class="bg-brand-500 hover:bg-brand-700 text-white px-3 py-1 rounded">View Timetable</button>
+</form>
+{% endblock %}

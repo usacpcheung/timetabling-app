@@ -1,0 +1,7 @@
+{% macro Table(extra_classes='') %}
+<div class="overflow-x-auto">
+<table class="min-w-full text-sm text-center border-collapse border border-brand-50 {{ extra_classes }}">
+    {{ caller() }}
+</table>
+</div>
+{% endmacro %}

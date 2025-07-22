@@ -1,47 +1,45 @@
-<!-- Shows the timetable grid for a chosen date -->
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Timetable</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-    <h1>Timetable for {{ date }}</h1>
-    {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-    <ul class="flashes">
-        {% for category, msg in messages %}
-        <li class="{{ category }}">{{ msg }}</li>
-        {% endfor %}
-    </ul>
-    {% endif %}
-    {% endwith %}
-    <table border="1" cellpadding="5">
-        <tr>
-            <th>Slot</th>
-            {% for t in teachers %}
-            <th>{{ t['name'] }}<br>{{ ', '.join(json.loads(t['subjects'])) }}</th>
-            {% endfor %}
-        </tr>
-        {% for slot in slots %}
-        {% set label = slot_labels[slot] %}
-        <tr>
-            <td>Slot {{ slot + 1 }}<br>{{ label.start }}-{{ label.end }}</td>
-            {% for t in teachers %}
-            <td>{{ grid[slot][t['id']] or '' }}</td>
-            {% endfor %}
-        </tr>
-        {% endfor %}
-    </table>
-    {% if missing %}
-    <h2>Unscheduled Subjects</h2>
-    <ul>
-        {% for sid, subs in missing.items() %}
-        <li>{{ student_names[sid] }}: {{ ', '.join(subs) }}</li>
-        {% endfor %}
-    </ul>
-    {% endif %}
-    <p><a href="{{ url_for('index') }}">Home</a></p>
-</body>
-</html>
+{% extends "base.html" %}
+{% block title %}Timetable{% endblock %}
+{% from 'components/table.html' import Table %}
+{% block content %}
+<h1 class="text-brand-700 text-2xl mb-4">Timetable for {{ date }}</h1>
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+<ul class="list-none p-0 my-4 text-red-500">
+    {% for category, msg in messages %}
+    <li class="{{ category }}">{{ msg }}</li>
+    {% endfor %}
+</ul>
+{% endif %}
+{% endwith %}
+{% call Table() %}
+<thead class="bg-brand-50">
+<tr>
+<th>Slot</th>
+{% for t in teachers %}
+<th class="{% if loop.index > 3 %}hidden sm:table-cell{% endif %}">{{ t['name'] }}<br><span class="hidden sm:inline">{{ ', '.join(json.loads(t['subjects'])) }}</span></th>
+{% endfor %}
+</tr>
+</thead>
+<tbody>
+{% for slot in slots %}
+{% set label = slot_labels[slot] %}
+<tr>
+<td>Slot {{ slot + 1 }}<br class="hidden sm:block">{{ label.start }}-{{ label.end }}</td>
+{% for t in teachers %}
+<td class="{% if loop.index > 3 %}hidden sm:table-cell{% endif %}">{{ grid[slot][t['id']] or '' }}</td>
+{% endfor %}
+</tr>
+{% endfor %}
+</tbody>
+{% endcall %}
+{% if missing %}
+<h2 class="text-brand-700 text-xl mt-4">Unscheduled Subjects</h2>
+<ul class="list-disc ml-6">
+{% for sid, subs in missing.items() %}
+<li>{{ student_names[sid] }}: {{ ', '.join(subs) }}</li>
+{% endfor %}
+</ul>
+{% endif %}
+<p class="mt-4"><a href="{{ url_for('index') }}" class="text-brand-500 hover:text-brand-700">Home</a></p>
+{% endblock %}
