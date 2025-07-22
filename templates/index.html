@@ -5,23 +5,33 @@
     <meta charset="UTF-8">
     <title>Timetabling App</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flowbite/1.6.0/flowbite.min.css">
 </head>
-<body>
-    <h1>Welcome to the Timetabling App</h1>
-    <ul>
-        <li><a href="{{ url_for('config') }}">Edit Configuration</a></li>
-        <li><a href="{{ url_for('attendance') }}">View Attendance</a></li>
-        <li><a href="{{ url_for('manage_timetables') }}">Manage Timetables</a></li>
-    </ul>
-    <form id="generate-form" action="{{ url_for('generate') }}" method="post" data-check-url="{{ url_for('check_timetable') }}">
-        <label>Date: <input type="date" name="date" value="{{ today }}"></label>
-        <button type="submit">Generate Timetable</button>
-    </form>
-    <form action="{{ url_for('timetable') }}" method="get">
-        <label>Date: <input type="date" name="date" value="{{ today }}"></label>
-        <button type="submit">View Timetable</button>
-<!-- Form posts to /generate; JavaScript warns if a timetable already exists -->
-    </form>
+<body class="bg-gray-100 min-h-screen">
+    <div class="max-w-xl mx-auto mt-10 p-6 bg-white rounded-xl shadow">
+        <h1 class="text-2xl font-semibold mb-4 text-center">Welcome to the Timetabling App</h1>
+        <ul class="flex justify-center space-x-4 mb-6">
+            <li><a class="text-blue-600 hover:underline" href="{{ url_for('config') }}">Edit Configuration</a></li>
+            <li><a class="text-blue-600 hover:underline" href="{{ url_for('attendance') }}">View Attendance</a></li>
+            <li><a class="text-blue-600 hover:underline" href="{{ url_for('manage_timetables') }}">Manage Timetables</a></li>
+        </ul>
+        <form id="generate-form" action="{{ url_for('generate') }}" method="post" data-check-url="{{ url_for('check_timetable') }}" class="mb-4">
+            <label class="block mb-2">Date:
+                <input class="rounded-lg border border-gray-300 px-3 py-2 w-full" type="date" name="date" value="{{ today }}">
+            </label>
+            <button type="submit" class="w-full bg-blue-500 text-white border rounded-md px-3 py-2 hover:bg-blue-600 transition">Generate Timetable</button>
+        </form>
+        <form action="{{ url_for('timetable') }}" method="get" class="mb-2">
+            <label class="block mb-2">Date:
+                <input class="rounded-lg border border-gray-300 px-3 py-2 w-full" type="date" name="date" value="{{ today }}">
+            </label>
+            <button type="submit" class="w-full bg-green-500 text-white border rounded-md px-3 py-2 hover:bg-green-600 transition">View Timetable</button>
+        </form>
+        <!-- Form posts to /generate; JavaScript warns if a timetable already exists -->
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/flowbite/1.6.0/flowbite.min.js"></script>
+    <script src="{{ url_for('static', filename='ui.js') }}"></script>
     <script src="{{ url_for('static', filename='main.js') }}"></script>
 </body>
 </html>
