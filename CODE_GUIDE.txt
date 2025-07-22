@@ -1,5 +1,16 @@
 This guide walks through the code in this project at a beginner friendly level. It is intended to show how the pieces fit together so you can modify the app or use it as a learning resource.
 
+Project layout
+--------------
+The repository contains these key files:
+
+* ``README.md`` – overview of the project and how to run it.
+* ``CODE_GUIDE.txt`` – this document.
+* ``app.py`` – Flask routes and database setup.
+* ``cp_sat_timetable.py`` – OR-Tools model builder and solver.
+* ``static/`` – front-end files ``style.css`` and ``config.js``.
+* ``templates/`` – the HTML templates rendered by Flask.
+
 app.py
 ------
 ``app.py`` implements the Flask web server and all database access. When the file is executed it calls ``init_db()`` which creates the SQLite tables and inserts some starter data if the database file does not exist. Key helper functions are:

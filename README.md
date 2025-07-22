@@ -19,13 +19,19 @@ A local-first, browser-based school timetabling application built with **Python 
 ## 📦 Project Structure
 
 ```
+README.md
+CODE_GUIDE.txt
 app.py
+cp_sat_timetable.py
 static/
     style.css
+    config.js
 templates/
     index.html
     config.html
     timetable.html
+    attendance.html
+    manage_timetables.html
 ```
 
 ## ▶️ Running
