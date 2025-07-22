@@ -84,7 +84,9 @@ You can also set a separate **Well-attended weight**. This weight applies when a
 student's attendance percentage already meets the threshold. Try a value of **0**
 if you want the solver to freely drop these subjects once targets are met. Small
 weights such as `0.1` may not noticeably reduce solve times and the solver can
-still take a few minutes to finish.
+still take a few minutes to finish. With **Require all subjects?** enabled, even
+a tiny positive value like `0.1` can cause the solver to spend much longer
+generating a timetable, so consider setting this weight to `0` if solving becomes slow.
 
 When using group lessons you can adjust **Group weight** to bias the solver
 toward scheduling them. This multiplier boosts the objective weight of any
