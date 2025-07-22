@@ -13,7 +13,7 @@
         <li><a href="{{ url_for('attendance') }}">View Attendance</a></li>
         <li><a href="{{ url_for('manage_timetables') }}">Manage Timetables</a></li>
     </ul>
-    <form id="generate-form" action="{{ url_for('generate') }}" method="post">
+    <form id="generate-form" action="{{ url_for('generate') }}" method="post" data-check-url="{{ url_for('check_timetable') }}">
         <label>Date: <input type="date" name="date" value="{{ today }}"></label>
         <button type="submit">Generate Timetable</button>
     </form>
@@ -22,38 +22,6 @@
         <button type="submit">View Timetable</button>
 <!-- Form posts to /generate; JavaScript warns if a timetable already exists -->
     </form>
-    <!-- check_timetable is called via fetch() before submitting -->
-    <script>
-    const form = document.getElementById('generate-form');
-    const checkUrl = '{{ url_for('check_timetable') }}';
-    form.addEventListener('submit', async function(e) {
-        const dateInput = form.querySelector('input[name="date"]');
-        if (!dateInput || !dateInput.value) return;
-        e.preventDefault();
-        try {
-            const resp = await fetch(checkUrl + '?date=' + encodeURIComponent(dateInput.value));
-            const data = await resp.json();
-            let proceed = true;
-            if (data.exists) {
-                proceed = confirm('Timetable already exists for this date. Overwrite?');
-            }
-            if (proceed) {
-                if (data.exists) {
-                    let input = form.querySelector('input[name="confirm"]');
-                    if (!input) {
-                        input = document.createElement('input');
-                        input.type = 'hidden';
-                        input.name = 'confirm';
-                        input.value = '1';
-                        form.appendChild(input);
-                    }
-                }
-                form.submit();
-            }
-        } catch (err) {
-            form.submit();
-        }
-    });
-    </script>
+    <script src="{{ url_for('static', filename='main.js') }}"></script>
 </body>
 </html>

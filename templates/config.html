@@ -249,7 +249,7 @@
         <button type="submit">Save</button>
     </form>
 
-    <form method="post" action="{{ url_for('reset_db') }}" onsubmit="return confirm('This will erase all data and reset to defaults. Continue?');">
+    <form method="post" action="{{ url_for('reset_db') }}" id="reset-db-form">
         <button type="submit">Reset Database</button>
     </form>
     <p><a href="{{ url_for('index') }}">Back to Home</a></p>
@@ -261,5 +261,7 @@
     <script id="assign-data" type="application/json">{{ assign_map | tojson }}</script>
     <script id="slot-times-data" type="application/json">{{ slot_times | tojson }}</script>
     <script src="{{ url_for('static', filename='config.js') }}"></script>
+    <script src="{{ url_for('static', filename='ui.js') }}"></script>
+    <script src="{{ url_for('static', filename='main.js') }}"></script>
 </body>
 </html>

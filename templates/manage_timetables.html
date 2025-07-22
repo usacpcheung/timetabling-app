@@ -18,7 +18,7 @@
     {% endif %}
     {% endwith %}
     {% if dates %}
-    <form method="post" action="{{ url_for('delete_timetables') }}" id="delete-form" onsubmit="return confirm('Delete selected timetables?');">
+    <form method="post" action="{{ url_for('delete_timetables') }}" id="delete-form">
         <table>
             <tr><th>Date</th><th>Select</th></tr>
             {% for d in dates %}
@@ -30,7 +30,7 @@
         </table>
         <button type="submit">Delete Selected</button>
     </form>
-    <form method="post" action="{{ url_for('delete_timetables') }}" onsubmit="return confirm('Delete all timetables?');">
+    <form method="post" action="{{ url_for('delete_timetables') }}" id="clear-all-form">
         <input type="hidden" name="clear_all" value="1">
         <button type="submit">Clear All</button>
     </form>
@@ -38,5 +38,7 @@
     <p>No timetables saved.</p>
     {% endif %}
     <p><a href="{{ url_for('index') }}">Home</a></p>
+    <script src="{{ url_for('static', filename='ui.js') }}"></script>
+    <script src="{{ url_for('static', filename='main.js') }}"></script>
 </body>
 </html>
