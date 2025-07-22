@@ -69,7 +69,8 @@ def init_db():
             group_weight REAL,
             allow_multi_teacher INTEGER,
             balance_teacher_load INTEGER,
-            balance_weight INTEGER
+            balance_weight INTEGER,
+            well_attend_weight REAL
         )''')
     else:
         if not column_exists('config', 'slot_start_times'):
@@ -88,6 +89,8 @@ def init_db():
             c.execute('ALTER TABLE config ADD COLUMN balance_teacher_load INTEGER DEFAULT 0')
         if not column_exists('config', 'balance_weight'):
             c.execute('ALTER TABLE config ADD COLUMN balance_weight INTEGER DEFAULT 1')
+        if not column_exists('config', 'well_attend_weight'):
+            c.execute('ALTER TABLE config ADD COLUMN well_attend_weight REAL DEFAULT 1')
 
     if not table_exists('teachers'):
         c.execute('''CREATE TABLE teachers (
@@ -204,8 +207,9 @@ def init_db():
             allow_repeats, max_repeats,
             prefer_consecutive, allow_consecutive, consecutive_weight,
             require_all_subjects, use_attendance_priority, attendance_weight, group_weight,
-            allow_multi_teacher, balance_teacher_load, balance_weight
-        ) VALUES (1, 8, 30, ?, 1, 4, 1, 8, 0, 2, 0, 1, 3, 1, 0, 10, 2.0, 1, 0, 1)''',
+            allow_multi_teacher, balance_teacher_load, balance_weight,
+            well_attend_weight
+        ) VALUES (1, 8, 30, ?, 1, 4, 1, 8, 0, 2, 0, 1, 3, 1, 0, 10, 2.0, 1, 0, 1, 1)''',
                   (json.dumps(times),))
     c.execute('SELECT COUNT(*) FROM teachers')
     if c.fetchone()[0] == 0:
@@ -305,6 +309,7 @@ def config():
         require_all_subjects = 1 if request.form.get('require_all_subjects') else 0
         use_attendance_priority = 1 if request.form.get('use_attendance_priority') else 0
         attendance_weight = int(request.form['attendance_weight'])
+        well_attend_weight = float(request.form['well_attend_weight'])
         group_weight = float(request.form['group_weight'])
         allow_multi_teacher = 1 if request.form.get('allow_multi_teacher') else 0
         balance_teacher_load = 1 if request.form.get('balance_teacher_load') else 0
@@ -330,13 +335,13 @@ def config():
                      allow_repeats=?, max_repeats=?,
                      prefer_consecutive=?, allow_consecutive=?, consecutive_weight=?,
                      require_all_subjects=?, use_attendance_priority=?, attendance_weight=?,
-                     group_weight=?, allow_multi_teacher=?, balance_teacher_load=?, balance_weight=?
-                    WHERE id=1""",
+                     group_weight=?, well_attend_weight=?, allow_multi_teacher=?, balance_teacher_load=?, balance_weight=?
+                     WHERE id=1""",
                   (slots_per_day, slot_duration, json.dumps(start_times), min_lessons,
                    max_lessons, t_min_lessons, t_max_lessons,
                    allow_repeats, max_repeats, prefer_consecutive,
                    allow_consecutive, consecutive_weight, require_all_subjects,
-                   use_attendance_priority, attendance_weight, group_weight,
+                   use_attendance_priority, attendance_weight, group_weight, well_attend_weight,
                    allow_multi_teacher, balance_teacher_load, balance_weight))
         # update subjects
         subj_ids = request.form.getlist('subject_id')
@@ -680,6 +685,7 @@ def generate_schedule(target_date=None):
     use_attendance_priority = bool(cfg['use_attendance_priority'])
     attendance_weight = cfg['attendance_weight']
     group_weight = cfg['group_weight']
+    well_attend_weight = cfg['well_attend_weight']
     allow_multi_teacher = bool(cfg['allow_multi_teacher'])
     balance_teacher_load = bool(cfg['balance_teacher_load'])
     balance_weight = cfg['balance_weight']
@@ -711,6 +717,8 @@ def generate_schedule(target_date=None):
                 attendance_pct.setdefault(sid, {})[subj] = perc
                 if perc < min_map.get(subj, 0):
                     subject_weights[(sid, subj)] = 1 + attendance_weight
+                else:
+                    subject_weights[(sid, subj)] = well_attend_weight
         for g in groups:
             gid = g['id']
             gsubs = json.loads(g['subjects'])
@@ -724,7 +732,7 @@ def generate_schedule(target_date=None):
                 if med < min_map.get(subj, 0):
                     weight = 1 + attendance_weight
                 else:
-                    weight = 1
+                    weight = well_attend_weight
                 subject_weights[(offset + gid, subj)] = weight
 
     model, vars_, assumptions = build_model(
