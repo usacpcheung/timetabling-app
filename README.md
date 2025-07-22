@@ -6,14 +6,15 @@ A local-first, browser-based school timetabling application built with **Python 
 
 ## 💡 Key Features
 
-- Configure teachers, students and lesson constraints
+- Configure teachers, students, subjects and groups through a web form
+- Mark teachers unavailable in specific slots or assign fixed lessons
 - Specify teachers that individual students should avoid
-- Generate optimized, conflict-free timetables
-- Simple web interface, no external database setup
-- Attendance report showing how often each student attended each subject. History
-  is tied to the numeric `student_id`; deleting a student and re-adding one with
-  the same name creates a new ID and past attendance is not merged.
-- Delete saved timetables individually or clear them all at once.
+- Generate optimized timetables using OR-Tools CP-SAT
+- Record and view attendance history for each student and subject
+- Bias scheduling based on past attendance percentages
+- Balance teacher workloads and limit total lessons
+- Manage groups for joint lessons with adjustable weighting
+- Delete or clear saved timetables through the interface
 
 ## 📦 Project Structure
 

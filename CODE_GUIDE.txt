@@ -1,47 +1,40 @@
-This document gives a high level walkthrough of the Python code found in this
-project.  It is aimed at beginners who want to understand the overall flow.
+This guide walks through the code in this project at a beginner friendly level. It is intended to show how the pieces fit together so you can modify the app or use it as a learning resource.
 
 app.py
 ------
-``app.py`` contains the Flask web application.  At the top the SQLite database
-is initialised and helper functions such as ``get_db`` (opens a connection) and
-``init_db`` (creates tables and inserts defaults) are defined.  The file then
-defines a number of route functions using ``@app.route``:
+``app.py`` implements the Flask web server and all database access. When the file is executed it calls ``init_db()`` which creates the SQLite tables and inserts some starter data if the database file does not exist. Key helper functions are:
 
-* ``index`` – home page with buttons to generate or view a timetable.
-* ``config`` – form where you edit teachers, students, subjects and other
-  settings.  When submitted this data is written to the database.
-* ``generate`` – triggered when the user wants a new timetable.  It calls
-  ``generate_schedule`` which builds the CP-SAT model and saves the results.
-* ``timetable`` – displays a saved timetable for a chosen date.
-* ``attendance`` – shows how many lessons each student attended.
-* ``manage_timetables``/``delete_timetables`` – let you remove saved timetables.
-* ``reset_db`` – recreates the database with the starter data.
+* ``get_db()`` – opens a database connection and configures rows to behave like dictionaries. Each request uses this to talk to the database.
+* ``init_db()`` – creates tables such as ``teachers`` and ``students`` and inserts default rows if they are empty. This function also performs any necessary migrations when new columns are added in later versions of the code.
 
-``generate_schedule`` is the heart of the application.  It loads all relevant
-data from the database, constructs the optimisation model (using
-``build_model`` in ``cp_sat_timetable.py``) and then stores the returned
-schedule along with attendance logs.  If the model is infeasible the user is
-shown which constraint group caused the issue.
+Route functions decorated with ``@app.route`` handle the HTTP requests sent from the browser:
+
+* ``index`` – simple landing page with links to the other actions and forms to generate or view a timetable.
+* ``config`` – long form that lets the user manage teachers, students, groups, subjects and general settings. The route handles both ``GET`` (display the current values) and ``POST`` (save submitted changes) requests. The majority of the validation logic lives here.
+* ``generate`` – endpoint used when the user presses *Generate Timetable*. It calls ``generate_schedule`` and redirects back to the index page when done.
+* ``check_timetable`` – small AJAX helper used on the index page to warn if a timetable for a given date already exists.
+* ``timetable`` – displays the timetable grid for a selected date. It also highlights any subjects each student missed.
+* ``attendance`` – summarises attendance information by counting how many times each student attended each subject.
+* ``manage_timetables`` / ``delete_timetables`` – pages that list saved timetables and allow the user to delete individual dates or clear everything.
+* ``reset_db`` – convenience route to remove the database file and recreate the default data.
+
+The heavy lifting happens in ``generate_schedule``. This function reads all configuration data from the database, builds the CP-SAT model by calling ``build_model`` in ``cp_sat_timetable.py`` and then saves the returned assignments and attendance logs. If the solver reports that no schedule is possible, the unsatisfied constraint groups are flashed to the user so they know which settings caused the issue.
 
 cp_sat_timetable.py
 -------------------
-This module holds the optimisation logic.  ``build_model`` creates a
-``cp_model.CpModel`` instance and populates it with variables representing all
-possible lessons.  Numerous constraints are added to enforce things like:
+This module isolates the OR-Tools logic from the web code. ``build_model`` constructs a ``cp_model.CpModel`` object and fills it with decision variables. Each variable represents a possible lesson for a particular student, teacher, subject and slot. Constraints are added to ensure:
 
-* Teachers and students can only be in one place at a time.
-* Optional limits on repeat lessons and consecutive slots.
-* Minimum and maximum lesson counts for both teachers and students.
-* Optional objective terms to balance teacher workload or encourage groups.
+* No teacher or student is booked in two places at once.
+* Optional limits on repeated lessons ("Max repeats" and consecutive slots).
+* Minimum and maximum numbers of lessons for both teachers and students.
+* Groups share lessons using pseudo student ids so the solver treats them like single students.
+* Optional objective terms encourage consecutive repeats, group lessons or balanced teacher workloads.
 
-The function returns the model, the variable dictionary and optional assumption
-literals used to diagnose conflicts.  ``solve_and_print`` runs the solver and
-extracts the chosen assignments.
+The function can also attach assumption indicators to major constraint groups. When enabled, these indicators help explain which group caused the model to be infeasible.
+
+``solve_and_print`` runs the solver and extracts the assignments that were set to ``True``. If the model was infeasible and assumptions were used, it returns the names of the conflicting groups.
 
 Static files and templates
 --------------------------
-The ``static/`` folder contains a small stylesheet and a JavaScript file used on
-the configuration page.  The ``templates/`` directory provides HTML templates
-for the different pages rendered by Flask.
+The ``static/`` directory contains ``style.css`` and ``config.js``. The CSS file provides minimal styling for the pages. ``config.js`` adds interactivity to the configuration form (updating dropdowns, generating slot time fields and showing warnings). The ``templates/`` directory contains Jinja2 templates for the HTML pages served by Flask. Each template mixes HTML with small snippets of Python-like code to insert values from the routes.
 

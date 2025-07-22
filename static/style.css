@@ -1,8 +1,10 @@
+/* Basic styles for the timetable app - kept simple for clarity */
 body {
     font-family: Arial, sans-serif;
     margin: 2em;
 }
 
+/* Tables use a collapsed border so the grid looks tidy */
 table {
     border-collapse: collapse;
 }
@@ -12,6 +14,7 @@ td, th {
     border: 1px solid #999;
     text-align: center;
 }
+/* Simple styling for error messages */
 
 .flashes {
     list-style: none;
