@@ -13,6 +13,9 @@
         <h1 class="text-2xl font-semibold mb-4 text-center">Welcome to the Timetabling App</h1>
         <ul class="flex justify-center text-sm font-medium text-center text-gray-500 border-b border-gray-200 dark:text-gray-400 dark:border-gray-700 mb-6" role="tablist">
             <li class="me-2">
+                <a href="{{ url_for('index') }}" class="inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-gray-600 hover:border-gray-300 dark:hover:text-gray-300">Home</a>
+            </li>
+            <li class="me-2">
                 <a href="{{ url_for('config') }}" class="inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-gray-600 hover:border-gray-300 dark:hover:text-gray-300">Edit Configuration</a>
             </li>
             <li class="me-2">
@@ -41,7 +44,7 @@
         </div>
         <div class="bg-white rounded-lg shadow p-4">
             <h2 class="text-lg font-medium mb-2">View Timetable</h2>
-            <form action="{{ url_for('timetable') }}" method="get" class="mb-2">
+            <form action="{{ url_for('index') }}" method="get" class="mb-2">
                 <label class="block mb-2">Date:
                     <div class="relative">
                         <div class="absolute inset-y-0 start-0 flex items-center ps-3.5 pointer-events-none">
@@ -56,6 +59,44 @@
             </form>
         </div>
         </div>
+        {% if show_timetable %}
+        <div class="mt-6">
+            <h2 class="text-lg font-medium mb-2 text-center">Timetable for {{ date }}</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm text-left text-gray-500 dark:text-gray-400">
+                    <thead class="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
+                        <tr>
+                            <th scope="col" class="px-4 py-2">Slot</th>
+                            {% for t in teachers %}
+                            <th scope="col" class="px-4 py-2">{{ t['name'] }}<br>{{ ', '.join(json.loads(t['subjects'])) }}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for slot in slots %}
+                        {% set label = slot_labels[slot] %}
+                        <tr class="bg-white border-b dark:bg-gray-800 dark:border-gray-700">
+                            <th scope="row" class="px-4 py-2 font-medium text-gray-900 whitespace-nowrap dark:text-white">
+                                Slot {{ slot + 1 }}<br>{{ label.start }}-{{ label.end }}
+                            </th>
+                            {% for t in teachers %}
+                            <td class="px-4 py-2">{{ grid[slot][t['id']] or '' }}</td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% if missing %}
+            <h3 class="text-lg font-medium mt-4">Unscheduled Subjects</h3>
+            <ul class="list-disc list-inside">
+                {% for sid, subs in missing.items() %}
+                <li>{{ student_names[sid] }}: {{ ', '.join(subs) }}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+        </div>
+        {% endif %}
         <!-- Form posts to /generate; JavaScript warns if a timetable already exists -->
     </div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.3.0/flowbite.min.js"></script>

@@ -275,7 +275,25 @@ def index():
     The page contains small forms to generate a new timetable or view an
     existing one and links to the configuration and attendance pages.
     """
-    return render_template('index.html', today=date.today().isoformat())
+    selected = request.args.get('date')
+    context = {'today': date.today().isoformat()}
+    if selected:
+        data = get_timetable_data(selected)
+        (sel_date, slots, teachers, grid, missing,
+         student_names, slot_labels, has_rows) = data
+        context.update({
+            'show_timetable': True,
+            'date': sel_date,
+            'slots': slots,
+            'teachers': teachers,
+            'grid': grid,
+            'missing': missing,
+            'student_names': student_names,
+            'slot_labels': slot_labels,
+            'has_rows': has_rows,
+            'json': json
+        })
+    return render_template('index.html', **context)
 
 
 @app.route('/config', methods=['GET', 'POST'])
@@ -837,47 +855,13 @@ def generate_schedule(target_date=None):
     conn.close()
 
 
-@app.route('/generate', methods=['POST'])
-def generate():
-    """Process the Generate Timetable form.
-
-    The selected date is passed to generate_schedule and the browser is
-    redirected back to the index page once complete. Existing timetables can
-    be overwritten when the user confirms the prompt.
-    """
-    gen_date = request.form.get('date') or date.today().isoformat()
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('SELECT 1 FROM timetable WHERE date=? LIMIT 1', (gen_date,))
-    exists = c.fetchone() is not None
-    conn.close()
-    if exists and not request.form.get('confirm'):
-        flash('Timetable already exists for that date.', 'error')
-        return redirect(url_for('index'))
-    if exists:
-        conn = get_db()
-        conn.execute('DELETE FROM timetable WHERE date=?', (gen_date,))
-        conn.commit()
-        conn.close()
-    generate_schedule(gen_date)
-    return redirect(url_for('timetable', date=gen_date))
-
-
-@app.route('/timetable')
-def timetable():
-    """Render a grid of the lessons scheduled for a particular date.
-
-    Each column shows a teacher while each row represents a time slot. The
-    page also lists any subjects that could not be scheduled for active
-    students.
-    """
-    target_date = request.args.get('date')
+def get_timetable_data(target_date):
+    """Return timetable grid data for the given date."""
     conn = get_db()
     c = conn.cursor()
     c.execute('SELECT * FROM config WHERE id=1')
     cfg = c.fetchone()
     slots = cfg['slots_per_day']
-
     try:
         slot_times = json.loads(cfg['slot_start_times']) if cfg['slot_start_times'] else []
     except Exception:
@@ -904,6 +888,7 @@ def timetable():
         c.execute('SELECT DISTINCT date FROM timetable ORDER BY date DESC LIMIT 1')
         row = c.fetchone()
         target_date = row['date'] if row else date.today().isoformat()
+
     c.execute('''SELECT t.slot, te.name as teacher,
                         COALESCE(s.name, sa.name) as student,
                         g.name as group_name, t.subject, t.group_id, t.teacher_id, t.student_id
@@ -927,10 +912,6 @@ def timetable():
         student_names.setdefault(row['id'], row['name'])
     conn.close()
 
-    if not rows:
-        flash('No timetable available. Generate one from the home page.', 'error')
-
-    # build grid [slot][teacher] => assignment description
     grid = {slot: {te['id']: None for te in teachers} for slot in range(slots)}
     for r in rows:
         tid = r['teacher_id']
@@ -942,7 +923,6 @@ def timetable():
             desc = f"{r['student']} ({r['subject']})"
         grid[r['slot']][tid] = desc
 
-    # determine unscheduled subjects for each active student
     assigned = {s['id']: set() for s in student_rows}
     for r in rows:
         subj = r['subject']
@@ -960,8 +940,51 @@ def timetable():
         if miss:
             missing[s['id']] = sorted(miss)
 
-    return render_template('timetable.html', slots=range(slots), teachers=teachers,
-                           grid=grid, json=json, date=target_date,
+    has_rows = bool(rows)
+    return target_date, range(slots), teachers, grid, missing, student_names, slot_labels, has_rows
+
+
+@app.route('/generate', methods=['POST'])
+def generate():
+    """Process the Generate Timetable form.
+
+    The selected date is passed to generate_schedule and the browser is
+    redirected back to the index page once complete. Existing timetables can
+    be overwritten when the user confirms the prompt.
+    """
+    gen_date = request.form.get('date') or date.today().isoformat()
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT 1 FROM timetable WHERE date=? LIMIT 1', (gen_date,))
+    exists = c.fetchone() is not None
+    conn.close()
+    if exists and not request.form.get('confirm'):
+        flash('Timetable already exists for that date.', 'error')
+        return redirect(url_for('index'))
+    if exists:
+        conn = get_db()
+        conn.execute('DELETE FROM timetable WHERE date=?', (gen_date,))
+        conn.commit()
+        conn.close()
+    generate_schedule(gen_date)
+    return redirect(url_for('index', date=gen_date))
+
+
+@app.route('/timetable')
+def timetable():
+    """Render a grid of the lessons scheduled for a particular date.
+
+    Each column shows a teacher while each row represents a time slot. The
+    page also lists any subjects that could not be scheduled for active
+    students.
+    """
+    target_date = request.args.get('date')
+    (t_date, slots, teachers, grid,
+     missing, student_names, slot_labels, has_rows) = get_timetable_data(target_date)
+    if not has_rows:
+        flash('No timetable available. Generate one from the home page.', 'error')
+    return render_template('timetable.html', slots=slots, teachers=teachers,
+                           grid=grid, json=json, date=t_date,
                            missing=missing, student_names=student_names,
                            slot_labels=slot_labels)
 
