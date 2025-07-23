@@ -18,19 +18,20 @@
         </ul>
         <form id="generate-form" action="{{ url_for('generate') }}" method="post" data-check-url="{{ url_for('check_timetable') }}" class="mb-4">
             <label class="block mb-2">Date:
-                <input class="rounded-lg border border-gray-300 px-3 py-2 w-full" type="date" name="date" value="{{ today }}">
+                <input id="generate-date" class="rounded-lg border border-gray-300 px-3 py-2 w-full" type="text" name="date" value="{{ today }}" placeholder="Select date">
             </label>
             <button type="submit" class="w-full bg-blue-500 text-white border rounded-md px-3 py-2 hover:bg-blue-600 transition">Generate Timetable</button>
         </form>
         <form action="{{ url_for('timetable') }}" method="get" class="mb-2">
             <label class="block mb-2">Date:
-                <input class="rounded-lg border border-gray-300 px-3 py-2 w-full" type="date" name="date" value="{{ today }}">
+                <input id="view-date" class="rounded-lg border border-gray-300 px-3 py-2 w-full" type="text" name="date" value="{{ today }}" placeholder="Select date">
             </label>
             <button type="submit" class="w-full bg-green-500 text-white border rounded-md px-3 py-2 hover:bg-green-600 transition">View Timetable</button>
         </form>
         <!-- Form posts to /generate; JavaScript warns if a timetable already exists -->
     </div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/flowbite/1.6.0/flowbite.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/flowbite/1.6.0/datepicker.min.js"></script>
     <script src="{{ url_for('static', filename='ui.js') }}"></script>
     <script src="{{ url_for('static', filename='main.js') }}"></script>
 </body>
