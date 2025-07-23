@@ -73,8 +73,8 @@
             <h2 class="text-lg font-medium mb-2 text-center">Timetable for {{ date }}</h2>
             {% if has_rows %}
             <div class="overflow-x-auto">
-                <table class="w-full text-sm text-left text-gray-500 dark:text-gray-400 rounded-lg border border-gray-200 overflow-hidden dark:border-gray-700">
-                    <thead class="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
+                <table class="w-full text-sm text-left text-gray-500 dark:text-gray-400 rounded-lg border border-indigo-200 overflow-hidden dark:border-indigo-700">
+                    <thead class="text-xs text-gray-700 uppercase bg-indigo-100 dark:bg-indigo-800 dark:text-gray-200">
                         <tr>
                             <th scope="col" class="px-4 py-2">Slot</th>
                             {% for t in teachers %}
@@ -85,7 +85,7 @@
                     <tbody>
                         {% for slot in slots %}
                         {% set label = slot_labels[slot] %}
-                        <tr class="bg-gray-50 border-b dark:bg-gray-800 dark:border-gray-700">
+                        <tr class="bg-indigo-50 border-b border-indigo-100 dark:bg-indigo-900 dark:border-indigo-700">
                             <th scope="row" class="px-4 py-2 font-medium text-gray-900 whitespace-nowrap dark:text-white">
                                 Slot {{ slot + 1 }}<br>{{ label.start }}-{{ label.end }}
                             </th>
