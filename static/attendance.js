@@ -8,6 +8,6 @@ document.addEventListener('DOMContentLoaded', () => {
             table: "w-full text-sm text-left text-emerald-700"
         }
     };
-    new simpleDatatables.DataTable('#active-table', options);
-    new simpleDatatables.DataTable('#deleted-table', options);
+    new DataTable('#active-table', options);
+    new DataTable('#deleted-table', options);
 });
