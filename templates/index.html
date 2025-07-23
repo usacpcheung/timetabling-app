@@ -22,16 +22,16 @@
         {% endwith %}
         <ul class="flex justify-center text-sm font-medium text-center text-gray-500 border-b border-gray-200 dark:text-gray-400 dark:border-gray-700 mb-6" role="tablist">
             <li class="me-2">
-                <a href="{{ url_for('index') }}" class="inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-indigo-600 hover:border-indigo-300 dark:hover:text-indigo-300">Home</a>
+                <a href="{{ url_for('index') }}" class="inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-emerald-600 hover:border-emerald-300 dark:hover:text-emerald-300">Home</a>
             </li>
             <li class="me-2">
-                <a href="{{ url_for('config') }}" class="inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-indigo-600 hover:border-indigo-300 dark:hover:text-indigo-300">Edit Configuration</a>
+                <a href="{{ url_for('config') }}" class="inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-emerald-600 hover:border-emerald-300 dark:hover:text-emerald-300">Edit Configuration</a>
             </li>
             <li class="me-2">
-                <a href="{{ url_for('attendance') }}" class="inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-indigo-600 hover:border-indigo-300 dark:hover:text-indigo-300">View Attendance</a>
+                <a href="{{ url_for('attendance') }}" class="inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-emerald-600 hover:border-emerald-300 dark:hover:text-emerald-300">View Attendance</a>
             </li>
             <li class="me-2">
-                <a href="{{ url_for('manage_timetables') }}" class="inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-indigo-600 hover:border-indigo-300 dark:hover:text-indigo-300">Manage Timetables</a>
+                <a href="{{ url_for('manage_timetables') }}" class="inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-emerald-600 hover:border-emerald-300 dark:hover:text-emerald-300">Manage Timetables</a>
             </li>
         </ul>
         <div class="grid gap-6 md:grid-cols-2">
@@ -48,7 +48,7 @@
                         <input datepicker datepicker-format="yyyy-mm-dd" datepicker-autohide="true" id="generate-date" class="border border-gray-300 rounded-lg block w-full ps-10 p-2.5" type="text" name="date" value="{{ today }}" placeholder="Select date">
                     </div>
                 </label>
-            <button type="submit" class="w-full bg-indigo-500 text-white border rounded-md px-3 py-2 hover:bg-indigo-600 transition">Generate Timetable</button>
+            <button type="submit" class="w-full bg-emerald-500 text-white border rounded-md px-3 py-2 hover:bg-emerald-600 transition">Generate Timetable</button>
             </form>
         </div>
         <div class="bg-white rounded-lg shadow p-4">
@@ -64,7 +64,7 @@
                         <input datepicker datepicker-format="yyyy-mm-dd" datepicker-autohide="true" id="view-date" class="border border-gray-300 rounded-lg block w-full ps-10 p-2.5" type="text" name="date" value="{{ today }}" placeholder="Select date">
                     </div>
                 </label>
-            <button type="submit" class="w-full bg-indigo-500 text-white border rounded-md px-3 py-2 hover:bg-indigo-600 transition">View Timetable</button>
+            <button type="submit" class="w-full bg-emerald-500 text-white border rounded-md px-3 py-2 hover:bg-emerald-600 transition">View Timetable</button>
             </form>
         </div>
         </div>
@@ -73,24 +73,24 @@
             <h2 class="text-lg font-medium mb-2 text-center">Timetable for {{ date }}</h2>
             {% if has_rows %}
             <div class="overflow-x-auto">
-                <table class="w-full text-sm text-left text-gray-500 dark:text-gray-400 rounded-lg border border-indigo-200 overflow-hidden dark:border-indigo-700">
-                    <thead class="text-xs text-gray-700 uppercase bg-indigo-100 dark:bg-indigo-800 dark:text-gray-200">
+                <table class="w-full text-sm text-left text-gray-500 dark:text-gray-400 rounded-lg border border-emerald-200 overflow-hidden dark:border-emerald-700">
+                    <thead class="text-xs text-gray-700 uppercase bg-emerald-100 dark:bg-emerald-800 dark:text-gray-200">
                         <tr>
-                            <th scope="col" class="px-4 py-2 border border-indigo-200 dark:border-indigo-700">Slot</th>
+                            <th scope="col" class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">Slot</th>
                             {% for t in teachers %}
-                            <th scope="col" class="px-4 py-2 border border-indigo-200 dark:border-indigo-700">{{ t['name'] }}<br>{{ ', '.join(json.loads(t['subjects'])) }}</th>
+                            <th scope="col" class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">{{ t['name'] }}<br>{{ ', '.join(json.loads(t['subjects'])) }}</th>
                             {% endfor %}
                         </tr>
                     </thead>
                     <tbody>
                         {% for slot in slots %}
                         {% set label = slot_labels[slot] %}
-                        <tr class="bg-white border-b border-indigo-100 dark:bg-indigo-900 dark:border-indigo-700">
-                            <th scope="row" class="px-4 py-2 font-medium text-gray-900 whitespace-nowrap border border-indigo-200 dark:border-indigo-700 dark:text-white">
+                        <tr class="bg-white border-b border-emerald-100 dark:bg-emerald-900 dark:border-emerald-700">
+                            <th scope="row" class="px-4 py-2 font-medium text-gray-900 whitespace-nowrap border border-emerald-200 dark:border-emerald-700 dark:text-white">
                                 Slot {{ slot + 1 }}<br>{{ label.start }}-{{ label.end }}
                             </th>
                             {% for t in teachers %}
-                            <td class="px-4 py-2 border border-indigo-200 dark:border-indigo-700">{{ grid[slot][t['id']] or '' }}</td>
+                            <td class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">{{ grid[slot][t['id']] or '' }}</td>
                             {% endfor %}
                         </tr>
                         {% endfor %}
