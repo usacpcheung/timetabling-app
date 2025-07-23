@@ -62,4 +62,45 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
     }
+
+    function setupTableSearch(tableId, searchId) {
+        const input = document.getElementById(searchId);
+        const table = document.getElementById(tableId);
+        if (!input || !table) return;
+        input.addEventListener('input', function () {
+            const filter = input.value.toLowerCase();
+            const rows = table.querySelectorAll('tbody tr');
+            rows.forEach(row => {
+                row.style.display = row.textContent.toLowerCase().includes(filter) ? '' : 'none';
+            });
+        });
+    }
+
+    function setupSortableTable(tableId) {
+        const table = document.getElementById(tableId);
+        if (!table) return;
+        table.querySelectorAll('th[data-sort]').forEach((header, idx) => {
+            header.classList.add('cursor-pointer');
+            header.addEventListener('click', () => {
+                const tbody = table.querySelector('tbody');
+                const rows = Array.from(tbody.querySelectorAll('tr'));
+                const asc = header.dataset.asc !== 'true';
+                header.dataset.asc = asc;
+                rows.sort((a, b) => {
+                    const aText = a.children[idx].textContent.trim();
+                    const bText = b.children[idx].textContent.trim();
+                    return asc ? aText.localeCompare(bText) : bText.localeCompare(aText);
+                });
+                tbody.innerHTML = '';
+                rows.forEach(r => tbody.appendChild(r));
+            });
+        });
+    }
+
+    setupTableSearch('timetables-table', 'timetables-search');
+    setupSortableTable('timetables-table');
+    setupTableSearch('attendance-active-table', 'attendance-active-search');
+    setupSortableTable('attendance-active-table');
+    setupTableSearch('attendance-deleted-table', 'attendance-deleted-search');
+    setupSortableTable('attendance-deleted-table');
 });

@@ -28,19 +28,28 @@
         <h1 class="text-2xl font-semibold mb-4 text-center">Attendance Report</h1>
         <h2 class="text-lg font-medium mb-2">Active Students</h2>
         <div class="relative overflow-x-auto shadow-md sm:rounded-lg mb-6">
-            <table class="w-full text-sm text-left text-gray-500 dark:text-gray-400">
+            <div class="p-4">
+                <label for="attendance-active-search" class="sr-only">Search</label>
+                <div class="relative mt-1">
+                    <div class="absolute inset-y-0 start-0 flex items-center ps-3 pointer-events-none">
+                        <svg aria-hidden="true" class="w-5 h-5 text-gray-500" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M10 2a8 8 0 105.293 14.293l2.853 2.854a1 1 0 001.414-1.414l-2.854-2.853A8 8 0 0010 2zM4 10a6 6 0 1111.999.002A6 6 0 014 10z" clip-rule="evenodd"/></svg>
+                    </div>
+                    <input type="text" id="attendance-active-search" class="block w-80 p-2 ps-10 text-sm text-gray-900 border border-gray-300 rounded-lg bg-gray-50" placeholder="Search">
+                </div>
+            </div>
+            <table id="attendance-active-table" class="w-full text-sm text-left text-gray-500 dark:text-gray-400">
                 <thead class="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
                     <tr>
-                        <th scope="col" class="px-6 py-3">Student</th>
-                        <th scope="col" class="px-6 py-3">Subject</th>
-                        <th scope="col" class="px-6 py-3">Lessons</th>
-                        <th scope="col" class="px-6 py-3">Percentage</th>
+                        <th scope="col" class="px-6 py-3" data-sort="name">Student</th>
+                        <th scope="col" class="px-6 py-3" data-sort="subject">Subject</th>
+                        <th scope="col" class="px-6 py-3" data-sort="lessons">Lessons</th>
+                        <th scope="col" class="px-6 py-3" data-sort="percentage">Percentage</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
                     {% for sid, info in active_attendance.items() %}
                         {% for subject, stats in info.subjects.items() %}
-                    <tr class="bg-white border-b dark:bg-gray-800 dark:border-gray-700">
+                    <tr class="odd:bg-white even:bg-gray-50 dark:odd:bg-gray-800 dark:even:bg-gray-700">
                         <th scope="row" class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap dark:text-white">{{ info.name }}</th>
                         <td class="px-6 py-4">{{ subject }}</td>
                         <td class="px-6 py-4">{{ stats.count }}</td>
@@ -54,21 +63,30 @@
 
         <h2 class="text-lg font-medium mb-2">Deleted Students</h2>
         <div class="relative overflow-x-auto shadow-md sm:rounded-lg">
-            <table class="w-full text-sm text-left text-gray-500 dark:text-gray-400">
+            <div class="p-4">
+                <label for="attendance-deleted-search" class="sr-only">Search</label>
+                <div class="relative mt-1">
+                    <div class="absolute inset-y-0 start-0 flex items-center ps-3 pointer-events-none">
+                        <svg aria-hidden="true" class="w-5 h-5 text-gray-500" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M10 2a8 8 0 105.293 14.293l2.853 2.854a1 1 0 001.414-1.414l-2.854-2.853A8 8 0 0010 2zM4 10a6 6 0 1111.999.002A6 6 0 014 10z" clip-rule="evenodd"/></svg>
+                    </div>
+                    <input type="text" id="attendance-deleted-search" class="block w-80 p-2 ps-10 text-sm text-gray-900 border border-gray-300 rounded-lg bg-gray-50" placeholder="Search">
+                </div>
+            </div>
+            <table id="attendance-deleted-table" class="w-full text-sm text-left text-gray-500 dark:text-gray-400">
                 <thead class="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
                     <tr>
-                        <th scope="col" class="px-6 py-3">Student</th>
-                        <th scope="col" class="px-6 py-3">Subject</th>
-                        <th scope="col" class="px-6 py-3">Lessons</th>
-                        <th scope="col" class="px-6 py-3">Percentage</th>
-                        <th scope="col" class="px-6 py-3">First Date</th>
-                        <th scope="col" class="px-6 py-3">Last Date</th>
+                        <th scope="col" class="px-6 py-3" data-sort="name">Student</th>
+                        <th scope="col" class="px-6 py-3" data-sort="subject">Subject</th>
+                        <th scope="col" class="px-6 py-3" data-sort="lessons">Lessons</th>
+                        <th scope="col" class="px-6 py-3" data-sort="percentage">Percentage</th>
+                        <th scope="col" class="px-6 py-3" data-sort="first">First Date</th>
+                        <th scope="col" class="px-6 py-3" data-sort="last">Last Date</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
                     {% for sid, info in deleted_attendance.items() %}
                         {% for subject, stats in info.subjects.items() %}
-                    <tr class="bg-white border-b dark:bg-gray-800 dark:border-gray-700">
+                    <tr class="odd:bg-white even:bg-gray-50 dark:odd:bg-gray-800 dark:even:bg-gray-700">
                         <th scope="row" class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap dark:text-white">{{ info.name }}</th>
                         <td class="px-6 py-4">{{ subject }}</td>
                         <td class="px-6 py-4">{{ stats.count }}</td>
