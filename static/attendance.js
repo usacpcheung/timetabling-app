@@ -1,4 +1,10 @@
 document.addEventListener('DOMContentLoaded', () => {
-    new DataTable('#active-table', { searchable: true, sortable: true });
-    new DataTable('#deleted-table', { searchable: true, sortable: true });
+    const options = {
+        searchable: true,
+        sortable: true,
+        perPage: 10,
+        perPageSelect: [5, 10, 15, 20],
+    };
+    new DataTable('#active-table', options);
+    new DataTable('#deleted-table', options);
 });
