@@ -5,21 +5,47 @@
     <meta charset="UTF-8">
     <title>Configuration</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.3.0/flowbite.min.css">
 </head>
-<body>
-    <h1>Configuration</h1>
-    {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-    <ul id="flash-messages" class="flashes">
-        {% for category, msg in messages %}
-        <li class="{{ category }}">{{ msg }}</li>
-        {% endfor %}
-    </ul>
-    {% endif %}
-    {% endwith %}
-    <form method="post">
+<body class="bg-emerald-50 min-h-screen">
+    <div class="max-w-2xl mx-auto mt-10 p-6">
+        <h1 class="text-2xl text-emerald-900 font-semibold mb-4 text-center">Configuration</h1>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        <ul id="flash-messages" class="flashes mb-4 text-center">
+            {% for category, msg in messages %}
+            <li class="{{ category }}">{{ msg }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+        {% endwith %}
+        <ul class="flex justify-center text-sm font-medium text-center text-emerald-700 border-b border-emerald-200 dark:text-emerald-300 dark:border-emerald-700 mb-6" role="tablist">
+            <li class="me-2">
+                <a href="{{ url_for('index') }}" class="inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-emerald-600 hover:border-emerald-300 dark:hover:text-emerald-300">Home</a>
+            </li>
+            <li class="me-2">
+                <a href="{{ url_for('config') }}" class="inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-emerald-600 hover:border-emerald-300 dark:hover:text-emerald-300">Edit Configuration</a>
+            </li>
+            <li class="me-2">
+                <a href="{{ url_for('attendance') }}" class="inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-emerald-600 hover:border-emerald-300 dark:hover:text-emerald-300">View Attendance</a>
+            </li>
+            <li class="me-2">
+                <a href="{{ url_for('manage_timetables') }}" class="inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-emerald-600 hover:border-emerald-300 dark:hover:text-emerald-300">Manage Timetables</a>
+            </li>
+        </ul>
+        <form method="post">
+        <div id="config-accordion" data-accordion="collapse" class="mb-6">
+        <h2 id="general-heading">
+            <button type="button" class="flex items-center justify-between w-full p-4 font-medium text-left text-emerald-700 border border-b-0 border-emerald-200 dark:text-emerald-300 dark:border-emerald-700" data-accordion-target="#general-body" aria-expanded="true" aria-controls="general-body">
+                General
+                <svg data-accordion-icon class="w-3 h-3 shrink-0"></svg>
+            </button>
+        </h2>
+        <div id="general-body" class="hidden">
+            <div class="p-5 border border-b-0 border-emerald-200 dark:border-emerald-700 space-y-2">
         <fieldset>
-            <legend>General</legend>
+            <legend class="sr-only">General</legend>
             <label>Slots per day: <input type="number" name="slots_per_day" value="{{ config['slots_per_day'] }}"></label><br>
             <label>Slot duration (minutes): <input type="number" name="slot_duration" value="{{ config['slot_duration'] }}"></label><br>
             <div id="slot-times">
@@ -34,28 +60,28 @@
             <label>Min lessons per teacher: <input type="number" name="teacher_min_lessons" value="{{ config['teacher_min_lessons'] }}"></label><br>
             <label>Max lessons per teacher: <input type="number" name="teacher_max_lessons" value="{{ config['teacher_max_lessons'] }}"></label><br>
             <label>Allow repeated lessons?
-                <input type="checkbox" name="allow_repeats" {% if config['allow_repeats'] %}checked{% endif %}>
+                <input type="checkbox" name="allow_repeats" class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500 dark:focus:ring-emerald-500 dark:ring-offset-emerald-800 focus:ring-2 dark:bg-emerald-700 dark:border-emerald-600" {% if config['allow_repeats'] %}checked{% endif %}>
             </label><br>
             <label>Allow different teachers per subject?
-                <input type="checkbox" name="allow_multi_teacher" {% if config['allow_multi_teacher'] %}checked{% endif %}>
+                <input type="checkbox" name="allow_multi_teacher" class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500 dark:focus:ring-emerald-500 dark:ring-offset-emerald-800 focus:ring-2 dark:bg-emerald-700 dark:border-emerald-600" {% if config['allow_multi_teacher'] %}checked{% endif %}>
             </label><br>
             <label>Max repeats per teacher/subject:
                 <input type="number" name="max_repeats" value="{{ config['max_repeats'] }}" min="1">
             </label><br>
             <label>Allow consecutive repeat slots?
-                <input type="checkbox" name="allow_consecutive" {% if config['allow_consecutive'] %}checked{% endif %}>
+                <input type="checkbox" name="allow_consecutive" class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500 dark:focus:ring-emerald-500 dark:ring-offset-emerald-800 focus:ring-2 dark:bg-emerald-700 dark:border-emerald-600" {% if config['allow_consecutive'] %}checked{% endif %}>
             </label><br>
             <label>Prefer consecutive repeats?
-                <input type="checkbox" name="prefer_consecutive" {% if config['prefer_consecutive'] %}checked{% endif %}>
+                <input type="checkbox" name="prefer_consecutive" class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500 dark:focus:ring-emerald-500 dark:ring-offset-emerald-800 focus:ring-2 dark:bg-emerald-700 dark:border-emerald-600" {% if config['prefer_consecutive'] %}checked{% endif %}>
             </label><br>
             <label>Consecutive preference weight:
                 <input type="number" name="consecutive_weight" value="{{ config['consecutive_weight'] }}" min="1">
             </label><br>
             <label>Require all subjects?
-                <input type="checkbox" name="require_all_subjects" {% if config['require_all_subjects'] %}checked{% endif %}>
+                <input type="checkbox" name="require_all_subjects" class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500 dark:focus:ring-emerald-500 dark:ring-offset-emerald-800 focus:ring-2 dark:bg-emerald-700 dark:border-emerald-600" {% if config['require_all_subjects'] %}checked{% endif %}>
             </label><br>
             <label>Use attendance priority?
-                <input type="checkbox" name="use_attendance_priority" {% if config['use_attendance_priority'] %}checked{% endif %}>
+                <input type="checkbox" name="use_attendance_priority" class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500 dark:focus:ring-emerald-500 dark:ring-offset-emerald-800 focus:ring-2 dark:bg-emerald-700 dark:border-emerald-600" {% if config['use_attendance_priority'] %}checked{% endif %}>
             </label><br>
             <label>Attendance weight:
                 <input type="number" name="attendance_weight" value="{{ config['attendance_weight'] }}" min="1">
@@ -67,30 +93,50 @@
                 <input type="number" name="group_weight" value="{{ config['group_weight'] }}" min="1" step="0.1">
             </label><br>
             <label>Balance teacher load?
-                <input type="checkbox" name="balance_teacher_load" {% if config['balance_teacher_load'] %}checked{% endif %}>
+                <input type="checkbox" name="balance_teacher_load" class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500 dark:focus:ring-emerald-500 dark:ring-offset-emerald-800 focus:ring-2 dark:bg-emerald-700 dark:border-emerald-600" {% if config['balance_teacher_load'] %}checked{% endif %}>
             </label><br>
             <label>Balance weight:
                 <input type="number" name="balance_weight" value="{{ config['balance_weight'] }}" min="1">
             </label><br>
         </fieldset>
+            </div>
+        </div>
+        <h2 id="subjects-heading">
+            <button type="button" class="flex items-center justify-between w-full p-4 font-medium text-left text-emerald-700 border border-b-0 border-emerald-200 dark:text-emerald-300 dark:border-emerald-700" data-accordion-target="#subjects-body" aria-expanded="false" aria-controls="subjects-body">
+                Subjects
+                <svg data-accordion-icon class="w-3 h-3 shrink-0"></svg>
+            </button>
+        </h2>
+        <div id="subjects-body" class="hidden">
+            <div class="p-5 border border-b-0 border-emerald-200 dark:border-emerald-700 space-y-2">
         <fieldset>
             <legend>Subjects</legend>
             {% for sub in subjects %}
             <input type="hidden" name="subject_id" value="{{ sub['id'] }}">
             <label>Name: <input type="text" name="subject_name_{{ sub['id'] }}" value="{{ sub['name'] }}"></label>
             <label>Min %: <input type="number" name="subject_min_{{ sub['id'] }}" value="{{ sub['min_percentage'] if sub['min_percentage'] is not none else 0 }}" min="0" max="100"></label>
-            <label>Delete? <input type="checkbox" name="subject_delete" value="{{ sub['id'] }}"></label><br>
+            <label>Delete? <input type="checkbox" name="subject_delete" value="{{ sub['id'] }}" class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500 dark:focus:ring-emerald-500 dark:ring-offset-emerald-800 focus:ring-2 dark:bg-emerald-700 dark:border-emerald-600"></label><br>
             {% endfor %}
             <label>New Subject: <input type="text" name="new_subject_name"></label>
             <label>Min %: <input type="number" name="new_subject_min" min="0" max="100"></label><br>
         </fieldset>
+            </div>
+        </div>
+        <h2 id="teachers-heading">
+            <button type="button" class="flex items-center justify-between w-full p-4 font-medium text-left text-emerald-700 border border-b-0 border-emerald-200 dark:text-emerald-300 dark:border-emerald-700" data-accordion-target="#teachers-body" aria-expanded="false" aria-controls="teachers-body">
+                Teachers
+                <svg data-accordion-icon class="w-3 h-3 shrink-0"></svg>
+            </button>
+        </h2>
+        <div id="teachers-body" class="hidden">
+            <div class="p-5 border border-b-0 border-emerald-200 dark:border-emerald-700 space-y-2">
         <fieldset>
             <legend>Teachers</legend>
             {% for t in teachers %}
             <input type="hidden" name="teacher_id" value="{{ t['id'] }}">
             <label>Name: <input type="text" name="teacher_name_{{ t['id'] }}" value="{{ t['name'] }}"></label>
             <label>Subjects:
-                <select multiple name="teacher_subjects_{{ t['id'] }}">
+                <select multiple name="teacher_subjects_{{ t['id'] }}" class="border border-emerald-300 rounded-lg">
                     {% for sub in subjects %}
                     <option value="{{ sub['name'] }}" {% if sub['name'] in json.loads(t['subjects']) %}selected{% endif %}>{{ sub['name'] }}</option>
                     {% endfor %}
@@ -98,11 +144,11 @@
             </label>
             <label>Min: <input type="number" name="teacher_min_{{ t['id'] }}" value="{{ t['min_lessons'] if t['min_lessons'] is not none else '' }}"></label>
             <label>Max: <input type="number" name="teacher_max_{{ t['id'] }}" value="{{ t['max_lessons'] if t['max_lessons'] is not none else '' }}"></label>
-            <label>Delete? <input type="checkbox" name="teacher_delete_{{ t['id'] }}" value="1"></label><br>
+            <label>Delete? <input type="checkbox" name="teacher_delete_{{ t['id'] }}" value="1" class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500 dark:focus:ring-emerald-500 dark:ring-offset-emerald-800 focus:ring-2 dark:bg-emerald-700 dark:border-emerald-600"></label><br>
             {% endfor %}
             <label>New Name: <input type="text" name="new_teacher_name"></label>
             <label>Subjects:
-                <select multiple name="new_teacher_subjects">
+                <select multiple name="new_teacher_subjects" class="border border-emerald-300 rounded-lg">
                     {% for sub in subjects %}
                     <option value="{{ sub['name'] }}">{{ sub['name'] }}</option>
                     {% endfor %}
@@ -111,97 +157,137 @@
             <label>Min: <input type="number" name="new_teacher_min"></label>
             <label>Max: <input type="number" name="new_teacher_max"></label><br>
         </fieldset>
+            </div>
+        </div>
+        <h2 id="students-heading">
+            <button type="button" class="flex items-center justify-between w-full p-4 font-medium text-left text-emerald-700 border border-b-0 border-emerald-200 dark:text-emerald-300 dark:border-emerald-700" data-accordion-target="#students-body" aria-expanded="false" aria-controls="students-body">
+                Students
+                <svg data-accordion-icon class="w-3 h-3 shrink-0"></svg>
+            </button>
+        </h2>
+        <div id="students-body" class="hidden">
+            <div class="p-5 border border-b-0 border-emerald-200 dark:border-emerald-700 space-y-2">
         <fieldset>
             <legend>Students</legend>
             {% for s in students %}
             <input type="hidden" name="student_id" value="{{ s['id'] }}">
             <label>Name: <input type="text" name="student_name_{{ s['id'] }}" value="{{ s['name'] }}"></label>
             <label>Subjects:
-                <select multiple name="student_subjects_{{ s['id'] }}">
+                <select multiple name="student_subjects_{{ s['id'] }}" class="border border-emerald-300 rounded-lg">
                     {% for sub in subjects %}
                     <option value="{{ sub['name'] }}" {% if sub['name'] in json.loads(s['subjects']) %}selected{% endif %}>{{ sub['name'] }}</option>
                     {% endfor %}
                 </select>
             </label>
-            <label>Needs lessons? <input type="checkbox" name="student_active_{{ s['id'] }}" value="1" {% if s['active'] %}checked{% endif %}></label>
+            <label>Needs lessons? <input type="checkbox" name="student_active_{{ s['id'] }}" value="1" class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500 dark:focus:ring-emerald-500 dark:ring-offset-emerald-800 focus:ring-2 dark:bg-emerald-700 dark:border-emerald-600" {% if s['active'] %}checked{% endif %}></label>
             <label>Forbidden Teachers:
-                <select multiple name="student_block_{{ s['id'] }}">
+                <select multiple name="student_block_{{ s['id'] }}" class="border border-emerald-300 rounded-lg">
                     {% for t in teachers %}
                     <option value="{{ t['id'] }}" {% if t['id'] in block_map.get(s['id'], []) %}selected{% endif %}>{{ t['name'] }}</option>
                     {% endfor %}
                 </select>
             </label>
-            <label>Delete? <input type="checkbox" name="student_delete_{{ s['id'] }}" value="1"></label><br>
+            <label>Delete? <input type="checkbox" name="student_delete_{{ s['id'] }}" value="1" class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500 dark:focus:ring-emerald-500 dark:ring-offset-emerald-800 focus:ring-2 dark:bg-emerald-700 dark:border-emerald-600"></label><br>
             {% endfor %}
             <label>New Name: <input type="text" name="new_student_name"></label>
             <label>Subjects:
-                <select multiple name="new_student_subjects">
+                <select multiple name="new_student_subjects" class="border border-emerald-300 rounded-lg">
                     {% for sub in subjects %}
                     <option value="{{ sub['name'] }}">{{ sub['name'] }}</option>
                     {% endfor %}
                 </select>
             </label>
             <label>Forbidden Teachers:
-                <select multiple name="new_student_block">
+                <select multiple name="new_student_block" class="border border-emerald-300 rounded-lg">
                     {% for t in teachers %}
                     <option value="{{ t['id'] }}">{{ t['name'] }}</option>
                     {% endfor %}
                 </select>
             </label><br>
         </fieldset>
+            </div>
+        </div>
+        <h2 id="groups-heading">
+            <button type="button" class="flex items-center justify-between w-full p-4 font-medium text-left text-emerald-700 border border-b-0 border-emerald-200 dark:text-emerald-300 dark:border-emerald-700" data-accordion-target="#groups-body" aria-expanded="false" aria-controls="groups-body">
+                Groups
+                <svg data-accordion-icon class="w-3 h-3 shrink-0"></svg>
+            </button>
+        </h2>
+        <div id="groups-body" class="hidden">
+            <div class="p-5 border border-b-0 border-emerald-200 dark:border-emerald-700 space-y-2">
         <fieldset>
             <legend>Groups</legend>
             {% for g in groups %}
             <input type="hidden" name="group_id" value="{{ g['id'] }}">
             <label>Name: <input type="text" name="group_name_{{ g['id'] }}" value="{{ g['name'] }}"></label>
             <label>Subjects:
-                <select multiple name="group_subjects_{{ g['id'] }}">
+                <select multiple name="group_subjects_{{ g['id'] }}" class="border border-emerald-300 rounded-lg">
                     {% for sub in subjects %}
                     <option value="{{ sub['name'] }}" {% if sub['name'] in json.loads(g['subjects']) %}selected{% endif %}>{{ sub['name'] }}</option>
                     {% endfor %}
                 </select>
             </label>
             <label>Members:
-                <select multiple name="group_members_{{ g['id'] }}">
+                <select multiple name="group_members_{{ g['id'] }}" class="border border-emerald-300 rounded-lg">
                     {% for s in students %}
                     <option value="{{ s['id'] }}" {% if s['id'] in group_map.get(g['id'], []) %}selected{% endif %}>{{ s['name'] }}</option>
                     {% endfor %}
                 </select>
             </label>
-            <label>Delete? <input type="checkbox" name="group_delete" value="{{ g['id'] }}"></label><br>
+            <label>Delete? <input type="checkbox" name="group_delete" value="{{ g['id'] }}" class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500 dark:focus:ring-emerald-500 dark:ring-offset-emerald-800 focus:ring-2 dark:bg-emerald-700 dark:border-emerald-600"></label><br>
             {% endfor %}
             <label>New Group Name: <input type="text" name="new_group_name"></label>
             <label>Subjects:
-                <select multiple name="new_group_subjects">
+                <select multiple name="new_group_subjects" class="border border-emerald-300 rounded-lg">
                     {% for sub in subjects %}
                     <option value="{{ sub['name'] }}">{{ sub['name'] }}</option>
                     {% endfor %}
                 </select>
             </label>
             <label>Members:
-                <select multiple name="new_group_members">
+                <select multiple name="new_group_members" class="border border-emerald-300 rounded-lg">
                     {% for s in students %}
                     <option value="{{ s['id'] }}">{{ s['name'] }}</option>
                     {% endfor %}
                 </select>
             </label><br>
         </fieldset>
+            </div>
+        </div>
+        <h2 id="unavail-heading">
+            <button type="button" class="flex items-center justify-between w-full p-4 font-medium text-left text-emerald-700 border border-b-0 border-emerald-200 dark:text-emerald-300 dark:border-emerald-700" data-accordion-target="#unavail-body" aria-expanded="false" aria-controls="unavail-body">
+                Teacher Unavailability
+                <svg data-accordion-icon class="w-3 h-3 shrink-0"></svg>
+            </button>
+        </h2>
+        <div id="unavail-body" class="hidden">
+            <div class="p-5 border border-b-0 border-emerald-200 dark:border-emerald-700 space-y-2">
         <fieldset>
             <legend>Teacher Unavailability</legend>
             {% for u in unavailable %}
             <input type="hidden" name="unavail_id" value="{{ u['id'] }}">
             <span>{{ u['teacher_name'] }} - Slot {{ u['slot'] + 1 }}</span>
-            <label>Delete? <input type="checkbox" name="unavail_delete" value="{{ u['id'] }}"></label><br>
+            <label>Delete? <input type="checkbox" name="unavail_delete" value="{{ u['id'] }}" class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500 dark:focus:ring-emerald-500 dark:ring-offset-emerald-800 focus:ring-2 dark:bg-emerald-700 dark:border-emerald-600"></label><br>
             {% endfor %}
             <label>Teacher:
-                <select name="new_unavail_teacher" id="new_unavail_teacher">
+                <select name="new_unavail_teacher" id="new_unavail_teacher" class="border border-emerald-300 rounded-lg">
                     {% for t in teachers %}
                     <option value="{{ t['id'] }}">{{ t['name'] }}</option>
                     {% endfor %}
                 </select>
             </label>
-            <label>Slot: <input type="number" name="new_unavail_slot" id="new_unavail_slot" min="1" max="{{ config['slots_per_day'] }}"></label><br>
+            <label>Slot: <input type="number" name="new_unavail_slot" id="new_unavail_slot" min="1" max="{{ config['slots_per_day'] }}" class="border border-emerald-300 rounded-lg"></label><br>
         </fieldset>
+            </div>
+        </div>
+        <h2 id="assign-heading">
+            <button type="button" class="flex items-center justify-between w-full p-4 font-medium text-left text-emerald-700 border border-b-0 border-emerald-200 dark:text-emerald-300 dark:border-emerald-700" data-accordion-target="#assign-body" aria-expanded="false" aria-controls="assign-body">
+                Fixed Assignments
+                <svg data-accordion-icon class="w-3 h-3 shrink-0"></svg>
+            </button>
+        </h2>
+        <div id="assign-body" class="hidden">
+            <div class="p-5 border border-b-0 border-emerald-200 dark:border-emerald-700 space-y-2">
         <fieldset>
             <legend>Fixed Assignments</legend>
             {% for a in assignments %}
@@ -210,10 +296,10 @@
                 {% if a['student_name'] %}{{ a['student_name'] }}{% else %}{{ a['group_name'] }}{% endif %} -
                 {{ a['subject'] }} with {{ a['teacher_name'] }} at Slot {{ a['slot'] + 1 }}
             </span>
-            <label>Delete? <input type="checkbox" name="assign_delete" value="{{ a['id'] }}"></label><br>
+            <label>Delete? <input type="checkbox" name="assign_delete" value="{{ a['id'] }}" class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500 dark:focus:ring-emerald-500 dark:ring-offset-emerald-800 focus:ring-2 dark:bg-emerald-700 dark:border-emerald-600"></label><br>
             {% endfor %}
             <label>Student:
-                <select name="new_assign_student" id="new_assign_student">
+                <select name="new_assign_student" id="new_assign_student" class="border border-emerald-300 rounded-lg">
                     <option value="">-- None --</option>
                     {% for s in students %}
                     <option value="{{ s['id'] }}">{{ s['name'] }}</option>
@@ -221,7 +307,7 @@
                 </select>
             </label>
             <label>Group:
-                <select name="new_assign_group" id="new_assign_group">
+                <select name="new_assign_group" id="new_assign_group" class="border border-emerald-300 rounded-lg">
                     <option value="">-- None --</option>
                     {% for g in groups %}
                     <option value="{{ g['id'] }}">{{ g['name'] }}</option>
@@ -229,24 +315,27 @@
                 </select>
             </label>
             <label>Teacher:
-                <select name="new_assign_teacher" id="new_assign_teacher">
+                <select name="new_assign_teacher" id="new_assign_teacher" class="border border-emerald-300 rounded-lg">
                     {% for t in teachers %}
                     <option value="{{ t['id'] }}">{{ t['name'] }}</option>
                     {% endfor %}
                 </select>
             </label>
             <label>Subject:
-                <select name="new_assign_subject" id="new_assign_subject">
+                <select name="new_assign_subject" id="new_assign_subject" class="border border-emerald-300 rounded-lg">
                     <option value="">-- Select --</option>
                 </select>
             </label>
             <label>Slot:
-                <select name="new_assign_slot" id="new_assign_slot" data-total-slots="{{ config['slots_per_day'] }}">
+                <select name="new_assign_slot" id="new_assign_slot" data-total-slots="{{ config['slots_per_day'] }}" class="border border-emerald-300 rounded-lg">
                     <option value="">-- Select --</option>
                 </select>
             </label><br>
         </fieldset>
-        <button type="submit">Save</button>
+            </div>
+        </div>
+        </div>
+        <button type="submit" class="bg-emerald-500 text-white border rounded-md px-3 py-2 hover:bg-emerald-600 transition">Save</button>
     </form>
 
     <form method="post" action="{{ url_for('reset_db') }}" id="reset-db-form">
