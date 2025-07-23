@@ -281,8 +281,11 @@ def index():
         data = get_timetable_data(selected)
         (sel_date, slots, teachers, grid, missing,
          student_names, slot_labels, has_rows) = data
+        if not has_rows:
+            flash('No timetable available. Generate one from the home page.',
+                  'error')
         context.update({
-            'show_timetable': True,
+            'show_timetable': has_rows,
             'date': sel_date,
             'slots': slots,
             'teachers': teachers,
