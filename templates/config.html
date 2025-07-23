@@ -51,7 +51,7 @@
             <div id="slot-times">
                 {% for i in range(config['slots_per_day']) %}
                 <label>Slot {{ i + 1 }} start:
-                    <input type="time" name="slot_start_{{ i + 1 }}" value="{{ slot_times[i] if slot_times|length > i else '' }}" class="border border-emerald-300 rounded-lg p-1 text-sm">
+                    <input type="time" name="slot_start_{{ i + 1 }}" value="{{ slot_times[i] if slot_times|length > i else '' }}" class="bg-gray-50 border border-emerald-300 text-gray-900 text-sm rounded-lg focus:ring-emerald-500 focus:border-emerald-500 p-2.5">
                 </label><br>
                 {% endfor %}
             </div>
@@ -351,6 +351,7 @@
     <script id="slot-times-data" type="application/json">{{ slot_times | tojson }}</script>
     <script src="{{ url_for('static', filename='config.js') }}"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.3.0/flowbite.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.3.0/datepicker.min.js"></script>
     <script src="{{ url_for('static', filename='ui.js') }}"></script>
     <script src="{{ url_for('static', filename='main.js') }}"></script>
 </body>
