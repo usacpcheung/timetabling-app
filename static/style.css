@@ -1,7 +1,6 @@
 /* Basic styles for the timetable app - kept simple for clarity */
 body {
     font-family: Arial, sans-serif;
-    margin: 2em;
 }
 
 /* Tables use a collapsed border so the grid looks tidy */
