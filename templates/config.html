@@ -391,10 +391,9 @@
         <button type="submit" class="w-full bg-emerald-500 text-white border rounded-md px-3 py-2 hover:bg-emerald-600 transition">Save</button>
     </form>
 
-    <form method="post" action="{{ url_for('reset_db') }}" id="reset-db-form">
-        <button type="submit">Reset Database</button>
+    <form method="post" action="{{ url_for('reset_db') }}" id="reset-db-form" class="mt-4">
+        <button type="submit" class="w-full bg-red-500 text-white border rounded-md px-3 py-2 hover:bg-red-600 transition">Reset Database</button>
     </form>
-    <p><a href="{{ url_for('index') }}">Back to Home</a></p>
     <script id="teacher-data" type="application/json">{{ teacher_map | tojson }}</script>
     <script id="student-data" type="application/json">{{ student_map | tojson }}</script>
     <!-- JSON blobs provide data for the JavaScript code below -->
