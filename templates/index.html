@@ -20,18 +20,18 @@
         </ul>
         {% endif %}
         {% endwith %}
-        <ul class="flex justify-center text-lg font-semibold text-center text-emerald-700 border-b border-emerald-200 dark:text-emerald-300 dark:border-emerald-700 mb-6" role="tablist">
+        <ul class="flex justify-center text-lg text-center text-emerald-700 border-b border-emerald-200 dark:text-emerald-300 dark:border-emerald-700 mb-6" role="tablist">
             <li class="me-2">
-                <a href="{{ url_for('index') }}" class="inline-block p-4 border-b-2 rounded-t-lg text-lg font-semibold {% if request.endpoint == 'index' %}border-emerald-500 text-emerald-700{% else %}border-transparent hover:text-emerald-600 hover:border-emerald-300 dark:hover:text-emerald-300{% endif %}">Home</a>
+                <a href="{{ url_for('index') }}" class="inline-block p-4 border-b-2 rounded-t-lg text-lg {% if request.endpoint == 'index' %}border-emerald-500 text-emerald-700{% else %}border-transparent hover:text-emerald-600 hover:border-emerald-300 dark:hover:text-emerald-300{% endif %}">Home</a>
             </li>
             <li class="me-2">
-                <a href="{{ url_for('config') }}" class="inline-block p-4 border-b-2 rounded-t-lg text-lg font-semibold {% if request.endpoint == 'config' %}border-emerald-500 text-emerald-700{% else %}border-transparent hover:text-emerald-600 hover:border-emerald-300 dark:hover:text-emerald-300{% endif %}">Edit Configuration</a>
+                <a href="{{ url_for('config') }}" class="inline-block p-4 border-b-2 rounded-t-lg text-lg {% if request.endpoint == 'config' %}border-emerald-500 text-emerald-700{% else %}border-transparent hover:text-emerald-600 hover:border-emerald-300 dark:hover:text-emerald-300{% endif %}">Edit Configuration</a>
             </li>
             <li class="me-2">
-                <a href="{{ url_for('attendance') }}" class="inline-block p-4 border-b-2 rounded-t-lg text-lg font-semibold {% if request.endpoint == 'attendance' %}border-emerald-500 text-emerald-700{% else %}border-transparent hover:text-emerald-600 hover:border-emerald-300 dark:hover:text-emerald-300{% endif %}">View Attendance</a>
+                <a href="{{ url_for('attendance') }}" class="inline-block p-4 border-b-2 rounded-t-lg text-lg {% if request.endpoint == 'attendance' %}border-emerald-500 text-emerald-700{% else %}border-transparent hover:text-emerald-600 hover:border-emerald-300 dark:hover:text-emerald-300{% endif %}">View Attendance</a>
             </li>
             <li class="me-2">
-                <a href="{{ url_for('manage_timetables') }}" class="inline-block p-4 border-b-2 rounded-t-lg text-lg font-semibold {% if request.endpoint == 'manage_timetables' %}border-emerald-500 text-emerald-700{% else %}border-transparent hover:text-emerald-600 hover:border-emerald-300 dark:hover:text-emerald-300{% endif %}">Manage Timetables</a>
+                <a href="{{ url_for('manage_timetables') }}" class="inline-block p-4 border-b-2 rounded-t-lg text-lg {% if request.endpoint == 'manage_timetables' %}border-emerald-500 text-emerald-700{% else %}border-transparent hover:text-emerald-600 hover:border-emerald-300 dark:hover:text-emerald-300{% endif %}">Manage Timetables</a>
             </li>
         </ul>
         <div class="grid gap-6 md:grid-cols-2">
@@ -48,7 +48,7 @@
                         <input datepicker datepicker-format="yyyy-mm-dd" datepicker-autohide="true" id="generate-date" class="border border-emerald-300 rounded-lg block w-full ps-10 p-2.5" type="text" name="date" value="{{ today }}" placeholder="Select date">
                     </div>
                 </label>
-            <button type="submit" class="w-full bg-emerald-500 text-white border rounded-md px-3 py-2 hover:bg-emerald-600 transition">Generate Timetable</button>
+            <button type="submit" class="w-full bg-emerald-500 text-white border rounded-md px-3 py-2 hover:bg-emerald-600 transition">Generate</button>
             </form>
         </div>
         <div class="bg-white rounded-lg shadow p-4">
@@ -64,7 +64,7 @@
                         <input datepicker datepicker-format="yyyy-mm-dd" datepicker-autohide="true" id="view-date" class="border border-emerald-300 rounded-lg block w-full ps-10 p-2.5" type="text" name="date" value="{{ today }}" placeholder="Select date">
                     </div>
                 </label>
-            <button type="submit" class="w-full bg-emerald-500 text-white border rounded-md px-3 py-2 hover:bg-emerald-600 transition">View Timetable</button>
+            <button type="submit" class="w-full bg-emerald-500 text-white border rounded-md px-3 py-2 hover:bg-emerald-600 transition">View</button>
             </form>
         </div>
         </div>
