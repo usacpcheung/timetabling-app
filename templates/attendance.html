@@ -6,6 +6,7 @@
     <title>Attendance Report</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/simple-datatables@9.0.3/dist/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.3.0/flowbite.min.css">
 </head>
 <body class="bg-emerald-50 min-h-screen">
@@ -27,7 +28,7 @@
         </ul>
         <h2 class="text-lg font-medium mb-2">Active Students</h2>
         <div class="overflow-x-auto mb-6">
-        <table class="w-full text-sm text-left text-emerald-700 dark:text-emerald-300 rounded-lg border border-emerald-200 overflow-hidden dark:border-emerald-700">
+        <table id="active-table" class="w-full text-sm text-left text-emerald-700 dark:text-emerald-300 rounded-lg border border-emerald-200 overflow-hidden dark:border-emerald-700">
             <thead class="text-xs text-emerald-800 uppercase bg-emerald-100 dark:bg-emerald-800 dark:text-emerald-200">
                 <tr>
                     <th scope="col" class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">Student</th>
@@ -53,7 +54,7 @@
 
         <h2 class="text-lg font-medium mb-2">Deleted Students</h2>
         <div class="overflow-x-auto mb-6">
-        <table class="w-full text-sm text-left text-emerald-700 dark:text-emerald-300 rounded-lg border border-emerald-200 overflow-hidden dark:border-emerald-700">
+        <table id="deleted-table" class="w-full text-sm text-left text-emerald-700 dark:text-emerald-300 rounded-lg border border-emerald-200 overflow-hidden dark:border-emerald-700">
             <thead class="text-xs text-emerald-800 uppercase bg-emerald-100 dark:bg-emerald-800 dark:text-emerald-200">
                 <tr>
                     <th scope="col" class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">Student</th>
@@ -81,8 +82,10 @@
         </table>
         </div>
     </div>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.3.0/flowbite.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/simple-datatables@9.0.3" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.3.0/flowbite.min.js"></script> 
     <script src="{{ url_for('static', filename='ui.js') }}"></script>
     <script src="{{ url_for('static', filename='main.js') }}"></script>
+    <script src="{{ url_for('static', filename='attendance.js') }}" defer></script>
 </body>
 </html>
