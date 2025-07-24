@@ -77,7 +77,11 @@ document.addEventListener('DOMContentLoaded', function () {
             const input = document.createElement('input');
             input.type = 'time';
             input.name = 'slot_start_' + (i + 1);
-            input.value = times[i] || '08:30';
+            input.value = times[i] || '00:00';
+
+            // fix the flowbite class not apply correctly issue
+            input.className = 'border border-emerald-300 rounded-lg p-2.5 w-full';
+
             label.appendChild(input);
             slotTimesContainer.appendChild(label);
             slotTimesContainer.appendChild(document.createElement('br'));
