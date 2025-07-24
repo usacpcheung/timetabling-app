@@ -5,9 +5,8 @@
     <meta charset="UTF-8">
     <title>Attendance Report</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/simple-datatables@9.0.3/dist/style.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.3.0/flowbite.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@4.1.11/index.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flowbite@3.1.2/dist/flowbite.min.css">
 </head>
 <body class="bg-emerald-50 min-h-screen">
     <div class="max-w-4xl mx-auto mt-10 p-6">
@@ -28,23 +27,51 @@
         </ul>
         <h2 class="text-lg font-medium mb-2">Active Students</h2>
         <div class="overflow-x-auto mb-6">
-        <table id="active-table" class="w-full text-sm text-left text-emerald-700 dark:text-emerald-300 rounded-lg border border-emerald-200 overflow-hidden dark:border-emerald-700">
-            <thead class="text-xs text-emerald-800 uppercase bg-emerald-100 dark:bg-emerald-800 dark:text-emerald-200">
+        <table id="active-table">
+            <thead>
                 <tr>
-                    <th scope="col" class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">Student</th>
-                    <th scope="col" class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">Subject</th>
-                    <th scope="col" class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">Lessons</th>
-                    <th scope="col" class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">Percentage</th>
+                    <th scope="col" class="px-4 py-2">
+                        <span class="flex items-center">
+                            Student
+                            <svg class="w-4 h-4 ms-1" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+                                <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m8 15 4 4 4-4m0-6-4-4-4 4"/>
+                            </svg>
+                        </span>
+                    </th>
+                    <th scope="col" class="px-4 py-2">
+                        <span class="flex items-center">
+                            Subject
+                            <svg class="w-4 h-4 ms-1" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+                                <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m8 15 4 4 4-4m0-6-4-4-4 4"/>
+                            </svg>
+                        </span>
+                    </th>
+                    <th scope="col" class="px-4 py-2">
+                        <span class="flex items-center">
+                            Lessons
+                            <svg class="w-4 h-4 ms-1" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+                                <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m8 15 4 4 4-4m0-6-4-4-4 4"/>
+                            </svg>
+                        </span>
+                    </th>
+                    <th scope="col" class="px-4 py-2">
+                        <span class="flex items-center">
+                            Percentage
+                            <svg class="w-4 h-4 ms-1" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+                                <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m8 15 4 4 4-4m0-6-4-4-4 4"/>
+                            </svg>
+                        </span>
+                    </th>
                 </tr>
             </thead>
             <tbody>
                 {% for sid, info in active_attendance.items() %}
                     {% for subject, stats in info.subjects.items() %}
-                <tr class="bg-white border-b border-emerald-100 dark:bg-emerald-900 dark:border-emerald-700">
-                    <td class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">{{ info.name }}</td>
-                    <td class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">{{ subject }}</td>
-                    <td class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">{{ stats.count }}</td>
-                    <td class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">{{ '%.2f'|format(stats.percentage) }}%</td>
+                <tr>
+                    <td class="px-4 py-2">{{ info.name }}</td>
+                    <td class="px-4 py-2">{{ subject }}</td>
+                    <td class="px-4 py-2">{{ stats.count }}</td>
+                    <td class="px-4 py-2">{{ '%.2f'|format(stats.percentage) }}%</td>
                 </tr>
                     {% endfor %}
                 {% endfor %}
@@ -54,27 +81,69 @@
 
         <h2 class="text-lg font-medium mb-2">Deleted Students</h2>
         <div class="overflow-x-auto mb-6">
-        <table id="deleted-table" class="w-full text-sm text-left text-emerald-700 dark:text-emerald-300 rounded-lg border border-emerald-200 overflow-hidden dark:border-emerald-700">
-            <thead class="text-xs text-emerald-800 uppercase bg-emerald-100 dark:bg-emerald-800 dark:text-emerald-200">
+        <table id="deleted-table">
+            <thead>
                 <tr>
-                    <th scope="col" class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">Student</th>
-                    <th scope="col" class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">Subject</th>
-                    <th scope="col" class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">Lessons</th>
-                    <th scope="col" class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">Percentage</th>
-                    <th scope="col" class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">First Date</th>
-                    <th scope="col" class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">Last Date</th>
+                    <th scope="col" class="px-4 py-2">
+                        <span class="flex items-center">
+                            Student
+                            <svg class="w-4 h-4 ms-1" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+                                <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m8 15 4 4 4-4m0-6-4-4-4 4"/>
+                            </svg>
+                        </span>
+                    </th>
+                    <th scope="col" class="px-4 py-2">
+                        <span class="flex items-center">
+                            Subject
+                            <svg class="w-4 h-4 ms-1" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+                                <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m8 15 4 4 4-4m0-6-4-4-4 4"/>
+                            </svg>
+                        </span>
+                    </th>
+                    <th scope="col" class="px-4 py-2">
+                        <span class="flex items-center">
+                            Lessons
+                            <svg class="w-4 h-4 ms-1" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+                                <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m8 15 4 4 4-4m0-6-4-4-4 4"/>
+                            </svg>
+                        </span>
+                    </th>
+                    <th scope="col" class="px-4 py-2">
+                        <span class="flex items-center">
+                            Percentage
+                            <svg class="w-4 h-4 ms-1" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+                                <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m8 15 4 4 4-4m0-6-4-4-4 4"/>
+                            </svg>
+                        </span>
+                    </th>
+                    <th scope="col" class="px-4 py-2">
+                        <span class="flex items-center">
+                            First Date
+                            <svg class="w-4 h-4 ms-1" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+                                <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m8 15 4 4 4-4m0-6-4-4-4 4"/>
+                            </svg>
+                        </span>
+                    </th>
+                    <th scope="col" class="px-4 py-2">
+                        <span class="flex items-center">
+                            Last Date
+                            <svg class="w-4 h-4 ms-1" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+                                <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m8 15 4 4 4-4m0-6-4-4-4 4"/>
+                            </svg>
+                        </span>
+                    </th>
                 </tr>
             </thead>
             <tbody>
                 {% for sid, info in deleted_attendance.items() %}
                     {% for subject, stats in info.subjects.items() %}
-                <tr class="bg-white border-b border-emerald-100 dark:bg-emerald-900 dark:border-emerald-700">
-                    <td class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">{{ info.name }}</td>
-                    <td class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">{{ subject }}</td>
-                    <td class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">{{ stats.count }}</td>
-                    <td class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">{{ '%.2f'|format(stats.percentage) }}%</td>
-                    <td class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">{{ info.first_date }}</td>
-                    <td class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">{{ info.last_date }}</td>
+                <tr>
+                    <td class="px-4 py-2">{{ info.name }}</td>
+                    <td class="px-4 py-2">{{ subject }}</td>
+                    <td class="px-4 py-2">{{ stats.count }}</td>
+                    <td class="px-4 py-2">{{ '%.2f'|format(stats.percentage) }}%</td>
+                    <td class="px-4 py-2">{{ info.first_date }}</td>
+                    <td class="px-4 py-2">{{ info.last_date }}</td>
                 </tr>
                     {% endfor %}
                 {% endfor %}
@@ -83,7 +152,7 @@
         </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/simple-datatables@9.0.3" defer></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.3.0/flowbite.min.js"></script> 
+    <script src="https://cdn.jsdelivr.net/npm/flowbite@3.1.2/dist/flowbite.min.js" defer></script>
     <script src="{{ url_for('static', filename='ui.js') }}"></script>
     <script src="{{ url_for('static', filename='main.js') }}"></script>
     <script src="{{ url_for('static', filename='attendance.js') }}" defer></script>
