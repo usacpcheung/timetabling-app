@@ -7,22 +7,23 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.3.0/flowbite.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='flowbite-accordion-selectinput-fix.css') }}">
 </head>
 <body class="bg-emerald-50 min-h-screen">
     <div class="max-w-4xl mx-auto mt-10 p-6">
     <h1 class="text-2xl text-emerald-900 font-semibold mb-4 text-center">Configuration</h1>
-    <ul class="flex justify-center text-lg font-semibold text-center text-emerald-700 border-b border-emerald-200 dark:text-emerald-300 dark:border-emerald-700 mb-6" role="tablist">
+    <ul class="flex justify-center text-lg text-center text-emerald-700 border-b border-emerald-200 dark:text-emerald-300 dark:border-emerald-700 mb-6" role="tablist">
         <li class="me-2">
-            <a href="{{ url_for('index') }}" class="inline-block p-4 border-b-2 rounded-t-lg text-lg font-semibold {% if request.endpoint == 'index' %}border-emerald-500 text-emerald-700{% else %}border-transparent hover:text-emerald-600 hover:border-emerald-300 dark:hover:text-emerald-300{% endif %}">Home</a>
+            <a href="{{ url_for('index') }}" class="inline-block p-4 border-b-2 rounded-t-lg text-lg {% if request.endpoint == 'index' %}border-emerald-500 text-emerald-700{% else %}border-transparent hover:text-emerald-600 hover:border-emerald-300 dark:hover:text-emerald-300{% endif %}">Home</a>
         </li>
         <li class="me-2">
-            <a href="{{ url_for('config') }}" class="inline-block p-4 border-b-2 rounded-t-lg text-lg font-semibold {% if request.endpoint == 'config' %}border-emerald-500 text-emerald-700{% else %}border-transparent hover:text-emerald-600 hover:border-emerald-300 dark:hover:text-emerald-300{% endif %}">Edit Configuration</a>
+            <a href="{{ url_for('config') }}" class="inline-block p-4 border-b-2 rounded-t-lg text-lg {% if request.endpoint == 'config' %}border-emerald-500 text-emerald-700{% else %}border-transparent hover:text-emerald-600 hover:border-emerald-300 dark:hover:text-emerald-300{% endif %}">Edit Configuration</a>
         </li>
         <li class="me-2">
-            <a href="{{ url_for('attendance') }}" class="inline-block p-4 border-b-2 rounded-t-lg text-lg font-semibold {% if request.endpoint == 'attendance' %}border-emerald-500 text-emerald-700{% else %}border-transparent hover:text-emerald-600 hover:border-emerald-300 dark:hover:text-emerald-300{% endif %}">View Attendance</a>
+            <a href="{{ url_for('attendance') }}" class="inline-block p-4 border-b-2 rounded-t-lg text-lg {% if request.endpoint == 'attendance' %}border-emerald-500 text-emerald-700{% else %}border-transparent hover:text-emerald-600 hover:border-emerald-300 dark:hover:text-emerald-300{% endif %}">View Attendance</a>
         </li>
         <li class="me-2">
-            <a href="{{ url_for('manage_timetables') }}" class="inline-block p-4 border-b-2 rounded-t-lg text-lg font-semibold {% if request.endpoint == 'manage_timetables' %}border-emerald-500 text-emerald-700{% else %}border-transparent hover:text-emerald-600 hover:border-emerald-300 dark:hover:text-emerald-300{% endif %}">Manage Timetables</a>
+            <a href="{{ url_for('manage_timetables') }}" class="inline-block p-4 border-b-2 rounded-t-lg text-lg {% if request.endpoint == 'manage_timetables' %}border-emerald-500 text-emerald-700{% else %}border-transparent hover:text-emerald-600 hover:border-emerald-300 dark:hover:text-emerald-300{% endif %}">Manage Timetables</a>
         </li>
     </ul>
     {% with messages = get_flashed_messages(with_categories=true) %}
@@ -35,7 +36,7 @@
     {% endif %}
     {% endwith %}
 <form method="post" class="space-y-6">
-<div id="config-accordion" data-accordion="collapse" data-active-classes="bg-emerald-300 text-emerald-900" class="mb-4">
+<div id="config-accordion" data-accordion="open" data-active-classes="bg-emerald-300 text-emerald-900" class="mb-4">
     <!-- General settings -->
     <h2 id="heading-general">
         <button type="button" class="flex items-center justify-between w-full p-4 font-medium text-left border border-b-0 border-emerald-200 rounded-t-xl hover:bg-emerald-300"
