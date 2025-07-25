@@ -6,8 +6,8 @@
     <title>Configuration</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.3.0/flowbite.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='flowbite-accordion-selectinput-fix.css') }}">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@4.1.11/index.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flowbite@3.1.2/dist/flowbite.min.css">
 </head>
 <body class="bg-emerald-50 min-h-screen">
     <div class="max-w-4xl mx-auto mt-10 p-6">
@@ -36,7 +36,7 @@
     {% endif %}
     {% endwith %}
 <form method="post" class="space-y-6">
-<div id="config-accordion" data-accordion="open" data-active-classes="bg-emerald-300" class="mb-4">
+<div id="config-accordion" data-accordion="open" data-active-classes="bg-emerald-300" data-inactive-classes="text-grey-900" class="mb-4">
     <!-- General settings -->
     <h2 id="heading-general">
         <button type="button" class="flex items-center justify-between w-full p-4 font-medium text-left border border-b-0 border-emerald-200 rounded-t-xl hover:bg-emerald-300"
@@ -413,6 +413,6 @@
     <script src="{{ url_for('static', filename='ui.js') }}"></script>
     <script src="{{ url_for('static', filename='main.js') }}"></script>
     </div>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.3.0/flowbite.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flowbite@3.1.2/dist/flowbite.min.js"></script>
 </body>
 </html>
