@@ -1,4 +1,4 @@
-// UI component initialisation for Tailwind/Flowbite
+// Initialise Flowbite components used by the templates
 
 document.addEventListener('DOMContentLoaded', function () {
     if (window.initFlowbite) {
