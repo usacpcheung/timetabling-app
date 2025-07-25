@@ -1,3 +1,5 @@
+// Enhance attendance tables with pagination and search
+
 document.addEventListener("DOMContentLoaded", () => {
   const table1 = document.getElementById("active-table");
   if (table1 && window.simpleDatatables) {

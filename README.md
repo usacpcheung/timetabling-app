@@ -19,14 +19,17 @@ A local-first, browser-based school timetabling application built with **Python 
 ## 📦 Project Structure
 
 ```
-README.md
-CODE_GUIDE.txt
-app.py
-cp_sat_timetable.py
-static/
-    style.css
-    config.js
-templates/
+app.py                          # Flask routes and database setup
+cp_sat_timetable.py             # OR-Tools model creation and solving helpers
+CODE_GUIDE.txt                  # Walkthrough of the code for beginners
+static/                         # Front-end scripts and styles
+    attendance.js               # Data table initialisation on attendance page
+    config.js                   # Dynamic form behaviour for configuration
+    main.js                     # Confirmation prompts and timetable checks
+    ui.js                       # Initialises Flowbite UI components
+    style.css                   # Basic styling shared by all pages
+    flowbite-accordion-selectinput-fix.css  # Workaround for a Flowbite bug
+templates/                      # HTML templates rendered by Flask
     index.html
     config.html
     timetable.html

@@ -1,3 +1,4 @@
+/* Fix Flowbite select inputs inside accordions */
 /* accordion-fix.css */
 [data-accordion] select {
   background-image: none !important;

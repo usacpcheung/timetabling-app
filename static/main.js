@@ -1,4 +1,4 @@
-// Site-wide JavaScript helpers
+// Site-wide JavaScript helpers for prompts and timetable checks
 
 document.addEventListener('DOMContentLoaded', function () {
     // Timetable overwrite check on the index page
