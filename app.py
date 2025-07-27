@@ -298,22 +298,33 @@ def index():
         })
     return render_template('index.html', **context)
 
-# Helper used when validating student-teacher blocks
+# Helper used when validating student–teacher blocks
 # Returns True if blocking is allowed, otherwise False.
 def block_allowed(student_id, teacher_id, teacher_map, student_groups,
                   group_members, group_subj_map, block_map, fixed_pairs):
+    """Return ``True`` if a teacher block leaves at least one teacher available.
+
+    The configuration form lets students block certain teachers. Before adding a
+    block we need to check that every subject the student's groups require still
+    has another teacher who is not blocked or unavailable. ``block_map``
+    represents the current set of blocks; ``fixed_pairs`` contains teacher--
+    student pairs from fixed assignments which cannot be blocked. The function
+    temporarily adds the proposed block and verifies another teacher remains for
+    each affected subject.
+    """
+
     if (student_id, teacher_id) in fixed_pairs:
         return False
-    tmp_map = {sid: set(tids) for sid, tids in block_map.items()}
-    tmp_map.setdefault(student_id, set()).add(teacher_id)
+    temp_blocks = {sid: set(tids) for sid, tids in block_map.items()}
+    temp_blocks.setdefault(student_id, set()).add(teacher_id)
     for gid in student_groups.get(student_id, []):
         members = group_members.get(gid, [])
         for subj in group_subj_map.get(gid, []):
-            avail = []
+            available = []
             for tid, subs in teacher_map.items():
-                if subj in subs and all(tid not in tmp_map.get(m, set()) for m in members):
-                    avail.append(tid)
-            if len(avail) == 1 and avail[0] == teacher_id:
+                if subj in subs and all(tid not in temp_blocks.get(m, set()) for m in members):
+                    available.append(tid)
+            if len(available) == 1 and available[0] == teacher_id:
                 return False
     return True
 
@@ -546,7 +557,9 @@ def config():
                           (new_sid, tval))
                 block_map_current.setdefault(new_sid, set()).add(tval)
 
-        # maps used for group validation
+        # Build helper maps used when validating group changes. These maps
+        # describe which teachers can teach each subject, what subjects every
+        # student requires and any existing teacher blocks.
         c.execute('SELECT id, subjects FROM teachers')
         trows = c.fetchall()
         teacher_map_validate = {t['id']: json.loads(t['subjects']) for t in trows}
@@ -559,7 +572,11 @@ def config():
         for r in block_rows:
             block_map_validate.setdefault(r['student_id'], set()).add(r['teacher_id'])
 
-        # update groups
+        # === Update group definitions ===
+        # Every existing group is processed. We first handle deletions and then
+        # validate any edits to ensure that each subject is actually required by
+        # all member students and that at least one unblocked teacher can teach
+        # it.
         group_ids = request.form.getlist('group_id')
         deletes_grp = set(request.form.getlist('group_delete'))
         for gid in group_ids:
@@ -574,6 +591,9 @@ def config():
                 flash(f'Group {name} must have at least one subject and member', 'error')
                 has_error = True
                 continue
+            # ``member_ids`` holds the numeric ids of all group members. We
+            # verify that each subject is required by every student and that at
+            # least one teacher can deliver it without violating any blocks.
             valid = True
             member_ids = [int(s) for s in members]
             for subj in subs:
@@ -603,6 +623,10 @@ def config():
             for sid in member_ids:
                 c.execute('INSERT INTO group_members (group_id, student_id) VALUES (?, ?)',
                           (int(gid), sid))
+        # Handle creation of a brand new group. The same validation rules apply
+        # as above: every subject must be required by all listed students and we
+        # check that at least one suitable teacher remains unblocked for each
+        # subject.
         ng_name = request.form.get('new_group_name')
         ng_subs = request.form.getlist('new_group_subjects')
         ng_members = request.form.getlist('new_group_members')

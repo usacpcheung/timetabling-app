@@ -1,11 +1,21 @@
-import os, sys
+"""Tests for the ``block_allowed`` helper in :mod:`app`.
+
+These tests create a temporary database and verify that students cannot block a
+teacher if doing so would conflict with an existing fixed assignment.
+"""
+
+import os
+import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
 import sqlite3
 import json
 import app
 
 
 def setup_db(tmp_path):
+    """Initialise and return a database connection for testing."""
     db_path = tmp_path / "test.db"
     app.DB_PATH = str(db_path)
     app.init_db()
@@ -15,6 +25,7 @@ def setup_db(tmp_path):
 
 
 def test_block_teacher_fixed_assignment(tmp_path, monkeypatch):
+    """A student cannot block a teacher with a fixed assignment."""
     conn = setup_db(tmp_path)
     # teacher 1 teaches Math, student 1 requires Math
     conn.execute(

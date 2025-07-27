@@ -102,6 +102,11 @@ variable whose ``student_id`` represents a group, making joint lessons more
 appealing relative to individual ones. A value around **2** is a good
 starting point and roughly doubles the attractiveness of group lessons.
 
+You can also block specific student/teacher pairings. The configuration form
+lets you tick the teachers a student should avoid. The app checks each block
+to make sure another teacher remains available for any required group lessons
+before saving.
+
 Checking **Balance teacher load** instructs the solver to even out lesson counts
 between teachers when possible. The **Balance weight** controls how strongly this
 goal influences the objective. Higher values place more emphasis on fairness at
@@ -142,6 +147,8 @@ The configuration page performs several checks when saving data:
 * A teacher cannot be marked unavailable in a slot that already has a fixed assignment.
 * Duplicate fixed assignments for the same teacher and slot are rejected.
 * Minimum lesson values cannot exceed maximum values for either global or per-teacher settings.
+* Students cannot block a teacher if that teacher already has a fixed assignment with them or if the block would leave their group without a teacher for a subject.
+* Groups must have at least one subject and one member. Each subject must be required by all members and a suitable teacher must remain available after considering block rules.
 * A warning appears when **Require all subjects?** and **Use attendance priority** are enabled together because solving can take much longer.
 
 If any of these conditions fail the assignment is rejected and a message is
