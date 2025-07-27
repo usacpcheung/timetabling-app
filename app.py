@@ -298,6 +298,25 @@ def index():
         })
     return render_template('index.html', **context)
 
+# Helper used when validating student-teacher blocks
+# Returns True if blocking is allowed, otherwise False.
+def block_allowed(student_id, teacher_id, teacher_map, student_groups,
+                  group_members, group_subj_map, block_map, fixed_pairs):
+    if (student_id, teacher_id) in fixed_pairs:
+        return False
+    tmp_map = {sid: set(tids) for sid, tids in block_map.items()}
+    tmp_map.setdefault(student_id, set()).add(teacher_id)
+    for gid in student_groups.get(student_id, []):
+        members = group_members.get(gid, [])
+        for subj in group_subj_map.get(gid, []):
+            avail = []
+            for tid, subs in teacher_map.items():
+                if subj in subs and all(tid not in tmp_map.get(m, set()) for m in members):
+                    avail.append(tid)
+            if len(avail) == 1 and avail[0] == teacher_id:
+                return False
+    return True
+
 
 @app.route('/config', methods=['GET', 'POST'])
 def config():
@@ -442,10 +461,42 @@ def config():
                 c.execute('INSERT INTO teachers (name, subjects, min_lessons, max_lessons) VALUES (?, ?, ?, ?)',
                           (new_tname, subj_json, min_val, max_val))
 
+        # load current groups and fixed assignments for block validation
+        c.execute('SELECT id, subjects FROM teachers')
+        trows = c.fetchall()
+        teacher_map_block = {t['id']: json.loads(t['subjects']) for t in trows}
+        c.execute('SELECT group_id, student_id FROM group_members')
+        gm_rows = c.fetchall()
+        group_members_block = {}
+        student_groups_block = {}
+        for gm in gm_rows:
+            group_members_block.setdefault(gm['group_id'], []).append(gm['student_id'])
+            student_groups_block.setdefault(gm['student_id'], []).append(gm['group_id'])
+        c.execute('SELECT id, subjects FROM groups')
+        g_rows = c.fetchall()
+        group_subj_map_block = {g['id']: json.loads(g['subjects']) for g in g_rows}
+        c.execute('SELECT student_id, teacher_id FROM student_teacher_block')
+        br_rows = c.fetchall()
+        block_map_current = {}
+        for r in br_rows:
+            block_map_current.setdefault(r['student_id'], set()).add(r['teacher_id'])
+        c.execute('SELECT teacher_id, student_id FROM fixed_assignments WHERE student_id IS NOT NULL')
+        fr_rows = c.fetchall()
+        fixed_pairs = {(r['student_id'], r['teacher_id']) for r in fr_rows}
         # update students
         student_ids = request.form.getlist('student_id')
         for sid in student_ids:
             if request.form.get(f'student_delete_{sid}'):
+                # prevent deletion while student belongs to any group
+                c.execute('''SELECT g.name FROM group_members gm
+                             JOIN groups g ON gm.group_id = g.id
+                             WHERE gm.student_id=?''', (int(sid),))
+                rows = c.fetchall()
+                if rows:
+                    names = ', '.join(r['name'] for r in rows)
+                    flash(f'Remove student from groups first: {names}', 'error')
+                    has_error = True
+                    continue
                 c.execute('SELECT name FROM students WHERE id=?', (int(sid),))
                 row = c.fetchone()
                 if row:
@@ -462,9 +513,18 @@ def config():
                           (name, subj_json, active, int(sid)))
                 blocks = request.form.getlist(f'student_block_{sid}')
                 c.execute('DELETE FROM student_teacher_block WHERE student_id=?', (int(sid),))
+                block_map_current[int(sid)] = set()
                 for tid in blocks:
+                    tval = int(tid)
+                    if not block_allowed(int(sid), tval, teacher_map_block, student_groups_block,
+                                           group_members_block, group_subj_map_block,
+                                           block_map_current, fixed_pairs):
+                        flash('Cannot block selected teacher for student', 'error')
+                        has_error = True
+                        continue
                     c.execute('INSERT INTO student_teacher_block (student_id, teacher_id) VALUES (?, ?)',
-                              (int(sid), int(tid)))
+                              (int(sid), tval))
+                    block_map_current.setdefault(int(sid), set()).add(tval)
         new_sname = request.form.get('new_student_name')
         new_ssubs = request.form.getlist('new_student_subjects')
         new_blocks = request.form.getlist('new_student_block')
@@ -473,9 +533,31 @@ def config():
             c.execute('INSERT INTO students (name, subjects, active) VALUES (?, ?, 1)',
                       (new_sname, subj_json))
             new_sid = c.lastrowid
+            block_map_current[new_sid] = set()
             for tid in new_blocks:
+                tval = int(tid)
+                if not block_allowed(new_sid, tval, teacher_map_block, student_groups_block,
+                                       group_members_block, group_subj_map_block,
+                                       block_map_current, fixed_pairs):
+                    flash('Cannot block selected teacher for student', 'error')
+                    has_error = True
+                    continue
                 c.execute('INSERT INTO student_teacher_block (student_id, teacher_id) VALUES (?, ?)',
-                          (new_sid, int(tid)))
+                          (new_sid, tval))
+                block_map_current.setdefault(new_sid, set()).add(tval)
+
+        # maps used for group validation
+        c.execute('SELECT id, subjects FROM teachers')
+        trows = c.fetchall()
+        teacher_map_validate = {t['id']: json.loads(t['subjects']) for t in trows}
+        c.execute('SELECT id, subjects FROM students')
+        srows = c.fetchall()
+        student_subj_map = {s['id']: set(json.loads(s['subjects'])) for s in srows}
+        c.execute('SELECT student_id, teacher_id FROM student_teacher_block')
+        block_rows = c.fetchall()
+        block_map_validate = {}
+        for r in block_rows:
+            block_map_validate.setdefault(r['student_id'], set()).add(r['teacher_id'])
 
         # update groups
         group_ids = request.form.getlist('group_id')
@@ -484,26 +566,75 @@ def config():
             if gid in deletes_grp:
                 c.execute('DELETE FROM groups WHERE id=?', (int(gid),))
                 c.execute('DELETE FROM group_members WHERE group_id=?', (int(gid),))
-            else:
-                name = request.form.get(f'group_name_{gid}')
-                subs = request.form.getlist(f'group_subjects_{gid}')
-                members = request.form.getlist(f'group_members_{gid}')
-                c.execute('UPDATE groups SET name=?, subjects=? WHERE id=?',
-                          (name, json.dumps(subs), int(gid)))
-                c.execute('DELETE FROM group_members WHERE group_id=?', (int(gid),))
-                for sid in members:
-                    c.execute('INSERT INTO group_members (group_id, student_id) VALUES (?, ?)',
-                              (int(gid), int(sid)))
+                continue
+            name = request.form.get(f'group_name_{gid}')
+            subs = request.form.getlist(f'group_subjects_{gid}')
+            members = request.form.getlist(f'group_members_{gid}')
+            if not subs or not members:
+                flash(f'Group {name} must have at least one subject and member', 'error')
+                has_error = True
+                continue
+            valid = True
+            member_ids = [int(s) for s in members]
+            for subj in subs:
+                for sid in member_ids:
+                    if subj not in student_subj_map.get(sid, set()):
+                        flash(f'Student does not require {subj} in group {name}', 'error')
+                        has_error = True
+                        valid = False
+                        break
+                if not valid:
+                    break
+                ok = False
+                for tid, tsubs in teacher_map_validate.items():
+                    if subj in tsubs and all(tid not in block_map_validate.get(mid, set()) for mid in member_ids):
+                        ok = True
+                        break
+                if not ok:
+                    flash(f'No teacher available for {subj} in group {name}', 'error')
+                    has_error = True
+                    valid = False
+                    break
+            if not valid:
+                continue
+            c.execute('UPDATE groups SET name=?, subjects=? WHERE id=?',
+                      (name, json.dumps(subs), int(gid)))
+            c.execute('DELETE FROM group_members WHERE group_id=?', (int(gid),))
+            for sid in member_ids:
+                c.execute('INSERT INTO group_members (group_id, student_id) VALUES (?, ?)',
+                          (int(gid), sid))
         ng_name = request.form.get('new_group_name')
         ng_subs = request.form.getlist('new_group_subjects')
         ng_members = request.form.getlist('new_group_members')
         if ng_name and ng_subs and ng_members:
-            c.execute('INSERT INTO groups (name, subjects) VALUES (?, ?)',
-                      (ng_name, json.dumps(ng_subs)))
-            gid = c.lastrowid
-            for sid in ng_members:
-                c.execute('INSERT INTO group_members (group_id, student_id) VALUES (?, ?)',
-                          (gid, int(sid)))
+            member_ids = [int(s) for s in ng_members]
+            valid = True
+            for subj in ng_subs:
+                for sid in member_ids:
+                    if subj not in student_subj_map.get(sid, set()):
+                        flash(f'Student does not require {subj} in group {ng_name}', 'error')
+                        has_error = True
+                        valid = False
+                        break
+                if not valid:
+                    break
+                ok = False
+                for tid, tsubs in teacher_map_validate.items():
+                    if subj in tsubs and all(tid not in block_map_validate.get(mid, set()) for mid in member_ids):
+                        ok = True
+                        break
+                if not ok:
+                    flash(f'No teacher available for {subj} in group {ng_name}', 'error')
+                    has_error = True
+                    valid = False
+                    break
+            if valid:
+                c.execute('INSERT INTO groups (name, subjects) VALUES (?, ?)',
+                          (ng_name, json.dumps(ng_subs)))
+                gid = c.lastrowid
+                for sid in member_ids:
+                    c.execute('INSERT INTO group_members (group_id, student_id) VALUES (?, ?)',
+                              (gid, sid))
 
         # update teacher unavailability
         unavail_ids = request.form.getlist('unavail_id')
