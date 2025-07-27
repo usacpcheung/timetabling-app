@@ -35,6 +35,8 @@ templates/                      # HTML templates rendered by Flask
     timetable.html
     attendance.html
     manage_timetables.html
+tests/                          # Unit tests demonstrating key behaviours
+    test_block_rules.py         # Verifies teacher blocking logic
 ```
 
 ## ▶️ Running
