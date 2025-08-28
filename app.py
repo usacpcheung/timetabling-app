@@ -1219,6 +1219,83 @@ def manage_timetables():
     return render_template('manage_timetables.html', dates=dates)
 
 
+@app.route('/edit_timetable/<date>', methods=['GET', 'POST'])
+def edit_timetable(date):
+    """Allow manual editing of a saved timetable for a given date."""
+    conn = get_db()
+    c = conn.cursor()
+
+    if request.method == 'POST':
+        action = request.form.get('action')
+        if action == 'delete':
+            entry_id = request.form.get('entry_id')
+            if entry_id:
+                c.execute('DELETE FROM timetable WHERE id=? AND date=?', (entry_id, date))
+                conn.commit()
+                flash('Lesson deleted.', 'info')
+        elif action == 'add':
+            slot = request.form.get('slot')
+            teacher_id = request.form.get('teacher')
+            subject = request.form.get('subject')
+            student_group = request.form.get('student_group')
+            if slot is not None and teacher_id and subject and student_group:
+                slot = int(slot)
+                teacher_id = int(teacher_id)
+                student_id = None
+                group_id = None
+                if student_group.startswith('s'):
+                    student_id = int(student_group[1:])
+                elif student_group.startswith('g'):
+                    group_id = int(student_group[1:])
+                c.execute(
+                    'INSERT INTO timetable (student_id, group_id, teacher_id, subject, slot, date) '
+                    'VALUES (?, ?, ?, ?, ?, ?)',
+                    (student_id, group_id, teacher_id, subject, slot, date),
+                )
+                conn.commit()
+                flash('Lesson added.', 'info')
+        conn.close()
+        return redirect(url_for('edit_timetable', date=date))
+
+    c.execute(
+        '''SELECT timetable.id, timetable.slot, timetable.subject,
+                  students.name AS student_name,
+                  groups.name AS group_name,
+                  teachers.name AS teacher_name
+           FROM timetable
+           LEFT JOIN students ON timetable.student_id = students.id
+           LEFT JOIN groups ON timetable.group_id = groups.id
+           LEFT JOIN teachers ON timetable.teacher_id = teachers.id
+           WHERE timetable.date=?
+           ORDER BY timetable.slot''',
+        (date,),
+    )
+    lessons = c.fetchall()
+
+    c.execute('SELECT id, name FROM students')
+    students = c.fetchall()
+    c.execute('SELECT id, name FROM groups')
+    groups = c.fetchall()
+    c.execute('SELECT id, name FROM teachers')
+    teachers = c.fetchall()
+    c.execute('SELECT name FROM subjects')
+    subjects = [r['name'] for r in c.fetchall()]
+    conf = c.execute('SELECT slots_per_day FROM config').fetchone()
+    slots = range(conf['slots_per_day'] if conf else 0)
+
+    conn.close()
+    return render_template(
+        'edit_timetable.html',
+        date=date,
+        lessons=lessons,
+        students=students,
+        groups=groups,
+        teachers=teachers,
+        subjects=subjects,
+        slots=slots,
+    )
+
+
 @app.route('/delete_timetables', methods=['POST'])
 def delete_timetables():
     """Handle form submissions to remove saved timetables.

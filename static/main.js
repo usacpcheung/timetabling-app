@@ -62,4 +62,13 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
     }
+
+    const lessonDeleteForms = document.querySelectorAll('.delete-lesson-form');
+    lessonDeleteForms.forEach(function (form) {
+        form.addEventListener('submit', function (e) {
+            if (!confirm('Delete this lesson?')) {
+                e.preventDefault();
+            }
+        });
+    });
 });

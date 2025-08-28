@@ -41,6 +41,7 @@
                     <thead class="text-xs text-emerald-800 uppercase bg-emerald-100 dark:bg-emerald-800 dark:text-emerald-200">
                         <tr>
                             <th scope="col" class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">Date</th>
+                            <th scope="col" class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">Edit</th>
                             <th scope="col" class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">Select</th>
                         </tr>
                     </thead>
@@ -48,6 +49,9 @@
                         {% for d in dates %}
                         <tr class="bg-white border-b border-emerald-100 dark:bg-emerald-900 dark:border-emerald-700">
                             <td class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">{{ d }}</td>
+                            <td class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">
+                                <a href="{{ url_for('edit_timetable', date=d) }}" class="text-emerald-600 hover:underline">Edit</a>
+                            </td>
                             <td class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">
                                 <input type="checkbox" name="dates" value="{{ d }}" class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500 dark:focus:ring-emerald-500 dark:ring-offset-emerald-800 focus:ring-2 dark:bg-emerald-700 dark:border-emerald-600">
                             </td>
