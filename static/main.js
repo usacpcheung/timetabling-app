@@ -73,14 +73,19 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     const addButtons = document.querySelectorAll('.add-lesson-btn');
-    const slotSelect = document.getElementById('slot-select');
-    const teacherSelect = document.getElementById('teacher-select');
+    const slotInput = document.getElementById('slot-input');
+    const teacherInput = document.getElementById('teacher-input');
+    const modalEl = document.getElementById('add-modal');
     const addForm = document.getElementById('add-form');
+    let modal = null;
+    if (modalEl && typeof Modal !== 'undefined') {
+        modal = new Modal(modalEl);
+    }
     addButtons.forEach(function (btn) {
         btn.addEventListener('click', function () {
-            if (slotSelect) slotSelect.value = btn.dataset.slot;
-            if (teacherSelect) teacherSelect.value = btn.dataset.teacher;
-            if (addForm) addForm.scrollIntoView({ behavior: 'smooth' });
+            if (slotInput) slotInput.value = btn.dataset.slot;
+            if (teacherInput) teacherInput.value = btn.dataset.teacher;
+            if (modal) modal.show();
         });
     });
 });
