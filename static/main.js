@@ -71,4 +71,16 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
     });
+
+    const addButtons = document.querySelectorAll('.add-lesson-btn');
+    const slotSelect = document.getElementById('slot-select');
+    const teacherSelect = document.getElementById('teacher-select');
+    const addForm = document.getElementById('add-form');
+    addButtons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            if (slotSelect) slotSelect.value = btn.dataset.slot;
+            if (teacherSelect) teacherSelect.value = btn.dataset.teacher;
+            if (addForm) addForm.scrollIntoView({ behavior: 'smooth' });
+        });
+    });
 });

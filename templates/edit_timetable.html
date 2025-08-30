@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.3.0/flowbite.min.css">
 </head>
 <body class="bg-emerald-50 min-h-screen">
-    <div class="max-w-4xl mx-auto mt-10 p-6">
+    <div class="max-w-5xl mx-auto mt-10 p-6">
         <h1 class="text-2xl text-emerald-900 font-semibold mb-4 text-center">Edit Timetable for {{ date }}</h1>
         {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
@@ -19,48 +19,63 @@
         </ul>
         {% endif %}
         {% endwith %}
+
         <div class="overflow-x-auto mb-6">
             <table class="w-full text-sm text-left text-emerald-700 dark:text-emerald-300 rounded-lg border border-emerald-200 overflow-hidden dark:border-emerald-700">
                 <thead class="text-xs text-emerald-800 uppercase bg-emerald-100 dark:bg-emerald-800 dark:text-emerald-200">
                     <tr>
                         <th class="px-4 py-2 border">Slot</th>
-                        <th class="px-4 py-2 border">Student/Group</th>
-                        <th class="px-4 py-2 border">Subject</th>
-                        <th class="px-4 py-2 border">Teacher</th>
-                        <th class="px-4 py-2 border">Action</th>
+                        {% for t in teachers %}
+                        <th class="px-4 py-2 border">{{ t['name'] }}</th>
+                        {% endfor %}
                     </tr>
                 </thead>
                 <tbody>
-                {% for lesson in lessons %}
+                {% for slot in slots %}
+                    {% set label = slot_labels[slot] %}
                     <tr class="bg-white border-b border-emerald-100 dark:bg-emerald-900 dark:border-emerald-700">
-                        <td class="px-4 py-2 border">{{ lesson['slot'] + 1 }}</td>
-                        <td class="px-4 py-2 border">{{ lesson['student_name'] or lesson['group_name'] }}</td>
-                        <td class="px-4 py-2 border">{{ lesson['subject'] }}</td>
-                        <td class="px-4 py-2 border">{{ lesson['teacher_name'] }}</td>
-                        <td class="px-4 py-2 border">
-                            <form method="post" class="delete-lesson-form inline">
-                                <input type="hidden" name="action" value="delete">
-                                <input type="hidden" name="entry_id" value="{{ lesson['id'] }}">
-                                <button type="submit" class="text-red-600 hover:underline">Delete</button>
-                            </form>
-                        </td>
+                        <td class="px-4 py-2 border">Slot {{ slot + 1 }}<br>{{ label.start }}-{{ label.end }}</td>
+                        {% for t in teachers %}
+                            {% set entry = grid[slot][t['id']] %}
+                            <td class="px-4 py-2 border align-top">
+                                {% if entry %}
+                                    <div>{{ entry.desc }}</div>
+                                    <form method="post" class="delete-lesson-form mt-1">
+                                        <input type="hidden" name="action" value="delete">
+                                        <input type="hidden" name="entry_id" value="{{ entry.id }}">
+                                        <button type="submit" class="text-red-600 hover:underline text-xs">Delete</button>
+                                    </form>
+                                {% else %}
+                                    <button type="button" class="text-blue-600 hover:underline text-xs add-lesson-btn" data-slot="{{ slot }}" data-teacher="{{ t['id'] }}">Add</button>
+                                {% endif %}
+                            </td>
+                        {% endfor %}
                     </tr>
                 {% endfor %}
                 </tbody>
             </table>
         </div>
-        <form method="post" class="mb-4">
+
+        <form method="post" class="mb-4" id="add-form">
             <input type="hidden" name="action" value="add">
-            <div class="grid grid-cols-5 gap-2 mb-4">
+            <div class="grid grid-cols-4 gap-2 mb-4">
                 <div>
                     <label class="block text-sm font-medium">Slot</label>
-                    <select name="slot" class="border rounded w-full p-1">
+                    <select name="slot" id="slot-select" class="border rounded w-full p-1">
                     {% for s in slots %}
                         <option value="{{ s }}">{{ s + 1 }}</option>
                     {% endfor %}
                     </select>
                 </div>
-                <div class="col-span-2">
+                <div>
+                    <label class="block text-sm font-medium">Teacher</label>
+                    <select name="teacher" id="teacher-select" class="border rounded w-full p-1">
+                    {% for t in teachers %}
+                        <option value="{{ t['id'] }}">{{ t['name'] }}</option>
+                    {% endfor %}
+                    </select>
+                </div>
+                <div>
                     <label class="block text-sm font-medium">Student/Group</label>
                     <select name="student_group" class="border rounded w-full p-1">
                         {% for s in students %}
@@ -79,22 +94,17 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div>
-                    <label class="block text-sm font-medium">Teacher</label>
-                    <select name="teacher" class="border rounded w-full p-1">
-                        {% for t in teachers %}
-                        <option value="{{ t['id'] }}">{{ t['name'] }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
             </div>
             <button type="submit" class="bg-emerald-500 text-white border rounded-md px-3 py-2 hover:bg-emerald-600 transition">Save</button>
             <a href="{{ url_for('manage_timetables') }}" class="ml-2 text-emerald-700 hover:underline">Discard</a>
         </form>
+
         <p class="text-center"><a href="{{ url_for('manage_timetables') }}" class="text-emerald-700 hover:underline">Back to Manage Timetables</a></p>
     </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.3.0/flowbite.min.js"></script>
     <script src="{{ url_for('static', filename='ui.js') }}"></script>
     <script src="{{ url_for('static', filename='main.js') }}"></script>
 </body>
 </html>
+

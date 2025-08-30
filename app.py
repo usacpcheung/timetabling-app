@@ -1257,37 +1257,64 @@ def edit_timetable(date):
         conn.close()
         return redirect(url_for('edit_timetable', date=date))
 
+    # Fetch config to determine slot count and labels
+    conf = c.execute('SELECT * FROM config WHERE id=1').fetchone()
+    slots = range(conf['slots_per_day'] if conf else 0)
+    slot_labels = []
+    if conf:
+        try:
+            slot_times = json.loads(conf['slot_start_times']) if conf['slot_start_times'] else []
+        except Exception:
+            slot_times = []
+        last_start = None
+        for i in range(conf['slots_per_day']):
+            if i < len(slot_times):
+                try:
+                    h, m = map(int, slot_times[i].split(':'))
+                    start = h * 60 + m
+                except Exception:
+                    start = (last_start + conf['slot_duration']) if last_start is not None else 8 * 60 + 30
+            else:
+                start = (last_start + conf['slot_duration']) if last_start is not None else 8 * 60 + 30
+            end = start + conf['slot_duration']
+            slot_labels.append({'start': f"{start // 60:02d}:{start % 60:02d}",
+                                'end': f"{end // 60:02d}:{end % 60:02d}"})
+            last_start = start
+
+    # Teachers for columns
+    c.execute('SELECT id, name FROM teachers')
+    teachers = c.fetchall()
+
+    # Existing lessons with teacher id for grid placement
     c.execute(
-        '''SELECT timetable.id, timetable.slot, timetable.subject,
-                  students.name AS student_name,
-                  groups.name AS group_name,
-                  teachers.name AS teacher_name
-           FROM timetable
-           LEFT JOIN students ON timetable.student_id = students.id
-           LEFT JOIN groups ON timetable.group_id = groups.id
-           LEFT JOIN teachers ON timetable.teacher_id = teachers.id
-           WHERE timetable.date=?
-           ORDER BY timetable.slot''',
+        '''SELECT t.id, t.slot, t.subject, t.teacher_id, t.student_id, t.group_id,
+                  s.name AS student_name, g.name AS group_name
+           FROM timetable t
+           LEFT JOIN students s ON t.student_id = s.id
+           LEFT JOIN groups g ON t.group_id = g.id
+           WHERE t.date=?''',
         (date,),
     )
     lessons = c.fetchall()
+
+    grid = {slot: {t['id']: None for t in teachers} for slot in slots}
+    for les in lessons:
+        desc = f"{les['student_name'] or les['group_name']} ({les['subject']})"
+        grid[les['slot']][les['teacher_id']] = {'id': les['id'], 'desc': desc}
 
     c.execute('SELECT id, name FROM students')
     students = c.fetchall()
     c.execute('SELECT id, name FROM groups')
     groups = c.fetchall()
-    c.execute('SELECT id, name FROM teachers')
-    teachers = c.fetchall()
     c.execute('SELECT name FROM subjects')
     subjects = [r['name'] for r in c.fetchall()]
-    conf = c.execute('SELECT slots_per_day FROM config').fetchone()
-    slots = range(conf['slots_per_day'] if conf else 0)
 
     conn.close()
     return render_template(
         'edit_timetable.html',
         date=date,
-        lessons=lessons,
+        grid=grid,
+        slot_labels=slot_labels,
         students=students,
         groups=groups,
         teachers=teachers,
