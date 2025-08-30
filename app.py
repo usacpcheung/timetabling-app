@@ -1230,6 +1230,38 @@ def edit_timetable(date):
         if action == 'delete':
             entry_id = request.form.get('entry_id')
             if entry_id:
+                # fetch lesson details to adjust attendance log
+                c.execute(
+                    'SELECT student_id, group_id, subject FROM timetable WHERE id=? AND date=?',
+                    (entry_id, date),
+                )
+                row = c.fetchone()
+                if row:
+                    subj = row['subject']
+                    if row['student_id'] is not None:
+                        sid = row['student_id']
+                        c.execute(
+                            'SELECT rowid FROM attendance_log WHERE student_id=? AND subject=? AND date=? LIMIT 1',
+                            (sid, subj, date),
+                        )
+                        r = c.fetchone()
+                        if r:
+                            c.execute('DELETE FROM attendance_log WHERE rowid=?', (r['rowid'],))
+                    elif row['group_id'] is not None:
+                        gid = row['group_id']
+                        members = c.execute(
+                            'SELECT student_id FROM group_members WHERE group_id=?',
+                            (gid,),
+                        ).fetchall()
+                        for m in members:
+                            sid = m['student_id']
+                            c.execute(
+                                'SELECT rowid FROM attendance_log WHERE student_id=? AND subject=? AND date=? LIMIT 1',
+                                (sid, subj, date),
+                            )
+                            r = c.fetchone()
+                            if r:
+                                c.execute('DELETE FROM attendance_log WHERE rowid=?', (r['rowid'],))
                 c.execute('DELETE FROM timetable WHERE id=? AND date=?', (entry_id, date))
                 conn.commit()
                 flash('Lesson deleted.', 'info')
@@ -1252,6 +1284,42 @@ def edit_timetable(date):
                     'VALUES (?, ?, ?, ?, ?, ?)',
                     (student_id, group_id, teacher_id, subject, slot, date),
                 )
+                # record attendance for the new lesson
+                if student_id is not None:
+                    c.execute('SELECT name FROM students WHERE id=?', (student_id,))
+                    r = c.fetchone()
+                    if r:
+                        name = r['name']
+                    else:
+                        c.execute('SELECT name FROM students_archive WHERE id=?', (student_id,))
+                        r = c.fetchone()
+                        name = r['name'] if r else ''
+                    c.execute(
+                        'INSERT INTO attendance_log (student_id, student_name, subject, date) VALUES (?, ?, ?, ?)',
+                        (student_id, name, subject, date),
+                    )
+                elif group_id is not None:
+                    members = c.execute(
+                        'SELECT student_id FROM group_members WHERE group_id=?',
+                        (group_id,),
+                    ).fetchall()
+                    rows = []
+                    for m in members:
+                        sid = m['student_id']
+                        c.execute('SELECT name FROM students WHERE id=?', (sid,))
+                        r = c.fetchone()
+                        if r:
+                            name = r['name']
+                        else:
+                            c.execute('SELECT name FROM students_archive WHERE id=?', (sid,))
+                            r = c.fetchone()
+                            name = r['name'] if r else ''
+                        rows.append((sid, name, subject, date))
+                    if rows:
+                        c.executemany(
+                            'INSERT INTO attendance_log (student_id, student_name, subject, date) VALUES (?, ?, ?, ?)',
+                            rows,
+                        )
                 conn.commit()
                 flash('Lesson added.', 'info')
         conn.close()
