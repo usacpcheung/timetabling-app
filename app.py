@@ -1219,6 +1219,179 @@ def manage_timetables():
     return render_template('manage_timetables.html', dates=dates)
 
 
+@app.route('/edit_timetable/<date>', methods=['GET', 'POST'])
+def edit_timetable(date):
+    """Allow manual editing of a saved timetable for a given date."""
+    conn = get_db()
+    c = conn.cursor()
+
+    if request.method == 'POST':
+        action = request.form.get('action')
+        if action == 'delete':
+            entry_id = request.form.get('entry_id')
+            if entry_id:
+                # fetch lesson details to adjust attendance log
+                c.execute(
+                    'SELECT student_id, group_id, subject FROM timetable WHERE id=? AND date=?',
+                    (entry_id, date),
+                )
+                row = c.fetchone()
+                if row:
+                    subj = row['subject']
+                    if row['student_id'] is not None:
+                        sid = row['student_id']
+                        c.execute(
+                            'SELECT rowid FROM attendance_log WHERE student_id=? AND subject=? AND date=? LIMIT 1',
+                            (sid, subj, date),
+                        )
+                        r = c.fetchone()
+                        if r:
+                            c.execute('DELETE FROM attendance_log WHERE rowid=?', (r['rowid'],))
+                    elif row['group_id'] is not None:
+                        gid = row['group_id']
+                        members = c.execute(
+                            'SELECT student_id FROM group_members WHERE group_id=?',
+                            (gid,),
+                        ).fetchall()
+                        for m in members:
+                            sid = m['student_id']
+                            c.execute(
+                                'SELECT rowid FROM attendance_log WHERE student_id=? AND subject=? AND date=? LIMIT 1',
+                                (sid, subj, date),
+                            )
+                            r = c.fetchone()
+                            if r:
+                                c.execute('DELETE FROM attendance_log WHERE rowid=?', (r['rowid'],))
+                c.execute('DELETE FROM timetable WHERE id=? AND date=?', (entry_id, date))
+                conn.commit()
+                flash('Lesson deleted.', 'info')
+        elif action == 'add':
+            slot = request.form.get('slot')
+            teacher_id = request.form.get('teacher')
+            subject = request.form.get('subject')
+            student_group = request.form.get('student_group')
+            if slot is not None and teacher_id and subject and student_group:
+                slot = int(slot)
+                teacher_id = int(teacher_id)
+                student_id = None
+                group_id = None
+                if student_group.startswith('s'):
+                    student_id = int(student_group[1:])
+                elif student_group.startswith('g'):
+                    group_id = int(student_group[1:])
+                c.execute(
+                    'INSERT INTO timetable (student_id, group_id, teacher_id, subject, slot, date) '
+                    'VALUES (?, ?, ?, ?, ?, ?)',
+                    (student_id, group_id, teacher_id, subject, slot, date),
+                )
+                # record attendance for the new lesson
+                if student_id is not None:
+                    c.execute('SELECT name FROM students WHERE id=?', (student_id,))
+                    r = c.fetchone()
+                    if r:
+                        name = r['name']
+                    else:
+                        c.execute('SELECT name FROM students_archive WHERE id=?', (student_id,))
+                        r = c.fetchone()
+                        name = r['name'] if r else ''
+                    c.execute(
+                        'INSERT INTO attendance_log (student_id, student_name, subject, date) VALUES (?, ?, ?, ?)',
+                        (student_id, name, subject, date),
+                    )
+                elif group_id is not None:
+                    members = c.execute(
+                        'SELECT student_id FROM group_members WHERE group_id=?',
+                        (group_id,),
+                    ).fetchall()
+                    rows = []
+                    for m in members:
+                        sid = m['student_id']
+                        c.execute('SELECT name FROM students WHERE id=?', (sid,))
+                        r = c.fetchone()
+                        if r:
+                            name = r['name']
+                        else:
+                            c.execute('SELECT name FROM students_archive WHERE id=?', (sid,))
+                            r = c.fetchone()
+                            name = r['name'] if r else ''
+                        rows.append((sid, name, subject, date))
+                    if rows:
+                        c.executemany(
+                            'INSERT INTO attendance_log (student_id, student_name, subject, date) VALUES (?, ?, ?, ?)',
+                            rows,
+                        )
+                conn.commit()
+                flash('Lesson added.', 'info')
+        conn.close()
+        return redirect(url_for('edit_timetable', date=date))
+
+    # Fetch config to determine slot count and labels
+    conf = c.execute('SELECT * FROM config WHERE id=1').fetchone()
+    slots = range(conf['slots_per_day'] if conf else 0)
+    slot_labels = []
+    if conf:
+        try:
+            slot_times = json.loads(conf['slot_start_times']) if conf['slot_start_times'] else []
+        except Exception:
+            slot_times = []
+        last_start = None
+        for i in range(conf['slots_per_day']):
+            if i < len(slot_times):
+                try:
+                    h, m = map(int, slot_times[i].split(':'))
+                    start = h * 60 + m
+                except Exception:
+                    start = (last_start + conf['slot_duration']) if last_start is not None else 8 * 60 + 30
+            else:
+                start = (last_start + conf['slot_duration']) if last_start is not None else 8 * 60 + 30
+            end = start + conf['slot_duration']
+            slot_labels.append({'start': f"{start // 60:02d}:{start % 60:02d}",
+                                'end': f"{end // 60:02d}:{end % 60:02d}"})
+            last_start = start
+
+    # Teachers for columns
+    c.execute('SELECT id, name FROM teachers')
+    teachers = c.fetchall()
+
+    # Existing lessons with teacher id for grid placement
+    c.execute(
+        '''SELECT t.id, t.slot, t.subject, t.teacher_id, t.student_id, t.group_id,
+                  COALESCE(s.name, sa.name) AS student_name, g.name AS group_name
+           FROM timetable t
+           LEFT JOIN students s ON t.student_id = s.id
+           LEFT JOIN students_archive sa ON t.student_id = sa.id
+           LEFT JOIN groups g ON t.group_id = g.id
+           WHERE t.date=?''',
+        (date,),
+    )
+    lessons = c.fetchall()
+
+    grid = {slot: {t['id']: None for t in teachers} for slot in slots}
+    for les in lessons:
+        desc = f"{les['student_name'] or les['group_name']} ({les['subject']})"
+        grid[les['slot']][les['teacher_id']] = {'id': les['id'], 'desc': desc}
+
+    c.execute('SELECT id, name FROM students')
+    students = c.fetchall()
+    c.execute('SELECT id, name FROM groups')
+    groups = c.fetchall()
+    c.execute('SELECT name FROM subjects')
+    subjects = [r['name'] for r in c.fetchall()]
+
+    conn.close()
+    return render_template(
+        'edit_timetable.html',
+        date=date,
+        grid=grid,
+        slot_labels=slot_labels,
+        students=students,
+        groups=groups,
+        teachers=teachers,
+        subjects=subjects,
+        slots=slots,
+    )
+
+
 @app.route('/delete_timetables', methods=['POST'])
 def delete_timetables():
     """Handle form submissions to remove saved timetables.

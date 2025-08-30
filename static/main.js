@@ -62,4 +62,30 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
     }
+
+    const lessonDeleteForms = document.querySelectorAll('.delete-lesson-form');
+    lessonDeleteForms.forEach(function (form) {
+        form.addEventListener('submit', function (e) {
+            if (!confirm('Delete this lesson?')) {
+                e.preventDefault();
+            }
+        });
+    });
+
+    const addButtons = document.querySelectorAll('.add-lesson-btn');
+    const slotInput = document.getElementById('slot-input');
+    const teacherInput = document.getElementById('teacher-input');
+    const modalEl = document.getElementById('add-modal');
+    const addForm = document.getElementById('add-form');
+    let modal = null;
+    if (modalEl && typeof Modal !== 'undefined') {
+        modal = new Modal(modalEl);
+    }
+    addButtons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            if (slotInput) slotInput.value = btn.dataset.slot;
+            if (teacherInput) teacherInput.value = btn.dataset.teacher;
+            if (modal) modal.show();
+        });
+    });
 });

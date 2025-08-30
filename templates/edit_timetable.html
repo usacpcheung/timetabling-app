@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Edit Timetable</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.3.0/flowbite.min.css">
+</head>
+<body class="bg-emerald-50 min-h-screen">
+    <div class="max-w-5xl mx-auto mt-10 p-6">
+        <h1 class="text-2xl text-emerald-900 font-semibold mb-4 text-center">Edit Timetable for {{ date }}</h1>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        <ul class="flashes mb-4 text-center">
+            {% for category, msg in messages %}
+            <li class="{{ category }}">{{ msg }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+        {% endwith %}
+
+        <div class="overflow-x-auto mb-6">
+            <table class="w-full text-sm text-left text-emerald-700 dark:text-emerald-300 rounded-lg border border-emerald-200 overflow-hidden dark:border-emerald-700">
+                <thead class="text-xs text-emerald-800 uppercase bg-emerald-100 dark:bg-emerald-800 dark:text-emerald-200">
+                    <tr>
+                        <th class="px-4 py-2 border">Slot</th>
+                        {% for t in teachers %}
+                        <th class="px-4 py-2 border">{{ t['name'] }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                {% for slot in slots %}
+                    {% set label = slot_labels[slot] %}
+                    <tr class="bg-white border-b border-emerald-100 dark:bg-emerald-900 dark:border-emerald-700">
+                        <td class="px-4 py-2 border">Slot {{ slot + 1 }}<br>{{ label.start }}-{{ label.end }}</td>
+                        {% for t in teachers %}
+                            {% set entry = grid[slot][t['id']] %}
+                            <td class="px-4 py-2 border align-top">
+                                {% if entry %}
+                                    <div>{{ entry.desc }}</div>
+                                    <form method="post" class="delete-lesson-form mt-1">
+                                        <input type="hidden" name="action" value="delete">
+                                        <input type="hidden" name="entry_id" value="{{ entry.id }}">
+                                        <button type="submit" class="text-red-600 hover:underline text-xs">Delete</button>
+                                    </form>
+                                {% else %}
+                                    <button type="button" class="text-blue-600 hover:underline text-xs add-lesson-btn" data-slot="{{ slot }}" data-teacher="{{ t['id'] }}">Add</button>
+                                {% endif %}
+                            </td>
+                        {% endfor %}
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <p class="text-center"><a href="{{ url_for('manage_timetables') }}" class="text-emerald-700 hover:underline">Back to Manage Timetables</a></p>
+    </div>
+
+    <!-- Modal for adding lessons -->
+    <div id="add-modal" tabindex="-1" class="hidden overflow-y-auto overflow-x-hidden fixed top-0 right-0 left-0 z-50 justify-center items-center w-full md:inset-0 h-[calc(100%-1rem)] max-h-full">
+      <div class="relative p-4 w-full max-w-md max-h-full">
+        <div class="relative bg-white rounded-lg shadow dark:bg-gray-700">
+          <div class="p-6">
+            <form method="post" id="add-form">
+              <input type="hidden" name="action" value="add">
+              <input type="hidden" name="slot" id="slot-input">
+              <input type="hidden" name="teacher" id="teacher-input">
+              <div class="mb-4">
+                <label class="block text-sm font-medium mb-1">Student/Group</label>
+                <select name="student_group" class="border rounded w-full p-1">
+                    {% for s in students %}
+                    <option value="s{{ s['id'] }}">Student: {{ s['name'] }}</option>
+                    {% endfor %}
+                    {% for g in groups %}
+                    <option value="g{{ g['id'] }}">Group: {{ g['name'] }}</option>
+                    {% endfor %}
+                </select>
+              </div>
+              <div class="mb-4">
+                <label class="block text-sm font-medium mb-1">Subject</label>
+                <select name="subject" class="border rounded w-full p-1">
+                    {% for sub in subjects %}
+                    <option value="{{ sub }}">{{ sub }}</option>
+                    {% endfor %}
+                </select>
+              </div>
+              <div class="flex justify-end">
+                <button type="submit" class="bg-emerald-500 text-white border rounded-md px-3 py-2 hover:bg-emerald-600 transition">Save</button>
+                <button type="button" data-modal-hide="add-modal" class="ml-2 text-emerald-700 hover:underline">Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.3.0/flowbite.min.js"></script>
+    <script src="{{ url_for('static', filename='ui.js') }}"></script>
+    <script src="{{ url_for('static', filename='main.js') }}"></script>
+</body>
+</html>
+
