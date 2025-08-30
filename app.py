@@ -1288,9 +1288,10 @@ def edit_timetable(date):
     # Existing lessons with teacher id for grid placement
     c.execute(
         '''SELECT t.id, t.slot, t.subject, t.teacher_id, t.student_id, t.group_id,
-                  s.name AS student_name, g.name AS group_name
+                  COALESCE(s.name, sa.name) AS student_name, g.name AS group_name
            FROM timetable t
            LEFT JOIN students s ON t.student_id = s.id
+           LEFT JOIN students_archive sa ON t.student_id = sa.id
            LEFT JOIN groups g ON t.group_id = g.id
            WHERE t.date=?''',
         (date,),
