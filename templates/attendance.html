@@ -7,22 +7,30 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@4.1.11/index.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flowbite@3.1.2/dist/flowbite.min.css">
+    <style>
+        body.attendance-page { background-color: #ecfdf5; }
+        .attendance-page .title-color { color: #064e3b; }
+        .attendance-page .tab-menu { color: #047857; border-color: #a7f3d0; }
+        .attendance-page .tab-menu a { border-color: transparent; }
+        .attendance-page .tab-menu a:hover { color: #059669; border-color: #6ee7b7; }
+        .attendance-page .tab-menu a.active { border-color: #10b981; color: #047857; }
+    </style>
 </head>
-<body class="bg-emerald-50 min-h-screen">
+<body class="attendance-page min-h-screen">
     <div class="max-w-4xl mx-auto mt-10 p-6">
-        <h1 class="text-2xl text-emerald-900 font-semibold mb-4 text-center">Attendance Report</h1>
-        <ul class="flex justify-center text-lg text-center text-emerald-700 border-b border-emerald-200 dark:text-emerald-300 dark:border-emerald-700 mb-6" role="tablist">
+        <h1 class="text-2xl font-semibold mb-4 text-center title-color">Attendance Report</h1>
+        <ul class="flex justify-center text-lg text-center border-b mb-6 tab-menu" role="tablist">
             <li class="me-2">
-                <a href="{{ url_for('index') }}" class="inline-block p-4 border-b-2 rounded-t-lg text-lg {% if request.endpoint == 'index' %}border-emerald-500 text-emerald-700{% else %}border-transparent hover:text-emerald-600 hover:border-emerald-300 dark:hover:text-emerald-300{% endif %}">Home</a>
+                <a href="{{ url_for('index') }}" class="inline-block p-4 border-b-2 rounded-t-lg text-lg {% if request.endpoint == 'index' %}active{% else %}inactive{% endif %}">Home</a>
             </li>
             <li class="me-2">
-                <a href="{{ url_for('config') }}" class="inline-block p-4 border-b-2 rounded-t-lg text-lg {% if request.endpoint == 'config' %}border-emerald-500 text-emerald-700{% else %}border-transparent hover:text-emerald-600 hover:border-emerald-300 dark:hover:text-emerald-300{% endif %}">Edit Configuration</a>
+                <a href="{{ url_for('config') }}" class="inline-block p-4 border-b-2 rounded-t-lg text-lg {% if request.endpoint == 'config' %}active{% else %}inactive{% endif %}">Edit Configuration</a>
             </li>
             <li class="me-2">
-                <a href="{{ url_for('attendance') }}" class="inline-block p-4 border-b-2 rounded-t-lg text-lg {% if request.endpoint == 'attendance' %}border-emerald-500 text-emerald-700{% else %}border-transparent hover:text-emerald-600 hover:border-emerald-300 dark:hover:text-emerald-300{% endif %}">View Attendance</a>
+                <a href="{{ url_for('attendance') }}" class="inline-block p-4 border-b-2 rounded-t-lg text-lg {% if request.endpoint == 'attendance' %}active{% else %}inactive{% endif %}">View Attendance</a>
             </li>
             <li class="me-2">
-                <a href="{{ url_for('manage_timetables') }}" class="inline-block p-4 border-b-2 rounded-t-lg text-lg {% if request.endpoint == 'manage_timetables' %}border-emerald-500 text-emerald-700{% else %}border-transparent hover:text-emerald-600 hover:border-emerald-300 dark:hover:text-emerald-300{% endif %}">Manage Timetables</a>
+                <a href="{{ url_for('manage_timetables') }}" class="inline-block p-4 border-b-2 rounded-t-lg text-lg {% if request.endpoint == 'manage_timetables' %}active{% else %}inactive{% endif %}">Manage Timetables</a>
             </li>
         </ul>
         <h2 class="text-lg font-medium mb-2">Active Students</h2>
