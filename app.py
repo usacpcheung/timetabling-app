@@ -896,9 +896,10 @@ def generate_schedule(target_date=None):
             row['student_id'] = offset + row['group_id']
         assignments_fixed.append(row)
 
-    # clear previous timetable and attendance logs for the target date
+    # clear previous timetable, attendance logs, and worksheet assignments for the target date
     c.execute('DELETE FROM timetable WHERE date=?', (target_date,))
     c.execute('DELETE FROM attendance_log WHERE date=?', (target_date,))
+    c.execute('DELETE FROM worksheets WHERE date=?', (target_date,))
 
     # Build and solve CP-SAT model
     allow_repeats = bool(cfg['allow_repeats'])
@@ -1148,6 +1149,8 @@ def generate():
     if exists:
         conn = get_db()
         conn.execute('DELETE FROM timetable WHERE date=?', (gen_date,))
+        conn.execute('DELETE FROM attendance_log WHERE date=?', (gen_date,))
+        conn.execute('DELETE FROM worksheets WHERE date=?', (gen_date,))
         conn.commit()
         conn.close()
     generate_schedule(gen_date)
@@ -1501,6 +1504,7 @@ def delete_timetables():
     if request.form.get('clear_all'):
         c.execute('DELETE FROM timetable')
         c.execute('DELETE FROM attendance_log')
+        c.execute('DELETE FROM worksheets')
         conn.commit()
         conn.close()
         flash('All timetables deleted.', 'info')
@@ -1511,6 +1515,7 @@ def delete_timetables():
         for d in dates:
             c.execute('DELETE FROM timetable WHERE date=?', (d,))
             c.execute('DELETE FROM attendance_log WHERE date=?', (d,))
+            c.execute('DELETE FROM worksheets WHERE date=?', (d,))
         conn.commit()
         conn.close()
         flash(f'Deleted timetables for {len(dates)} date(s).', 'info')
