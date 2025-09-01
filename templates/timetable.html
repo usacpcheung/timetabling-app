@@ -40,7 +40,11 @@
         {% for sid, subs in missing.items() %}
         <li>{{ student_names[sid] }}:
             {% for item in subs %}
+                {% if item.today %}
+                <span class="worksheet-assigned">{{ item.subject }} ({{ item.count }})</span>{% if not loop.last %}, {% endif %}
+                {% else %}
                 {{ item.subject }} ({{ item.count }}){% if not loop.last %}, {% endif %}
+                {% endif %}
             {% endfor %}
         </li>
         {% endfor %}

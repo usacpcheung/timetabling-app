@@ -1118,7 +1118,12 @@ def get_timetable_data(target_date):
                     (s['id'], subj, target_date),
                 )
                 count = c.fetchone()[0]
-                subj_list.append({'subject': subj, 'count': count})
+                c.execute(
+                    'SELECT 1 FROM worksheets WHERE student_id=? AND subject=? AND date=?',
+                    (s['id'], subj, target_date),
+                )
+                has_today = c.fetchone() is not None
+                subj_list.append({'subject': subj, 'count': count, 'today': has_today})
             missing[s['id']] = subj_list
 
     conn.close()

@@ -21,3 +21,11 @@ td, th {
     color: red;
 }
 
+/* Highlight subjects with worksheets on the selected date */
+.worksheet-assigned {
+    background-color: #A7F3D0; /* emerald-200 */
+    color: #065F46; /* emerald-800 */
+    border-radius: 4px;
+    padding: 0 4px;
+}
+
