@@ -677,8 +677,8 @@ def config():
         for uid in unavail_ids:
             if uid in del_unav:
                 c.execute('DELETE FROM teacher_unavailable WHERE id=?', (int(uid),))
-        nu_teacher = request.form.get('new_unavail_teacher')
-        nu_slot = request.form.get('new_unavail_slot')
+        nu_teachers = [int(t) for t in request.form.getlist('new_unavail_teacher')]
+        nu_slots = [int(s) - 1 for s in request.form.getlist('new_unavail_slot')]
 
         c.execute('SELECT teacher_id, slot FROM teacher_unavailable')
         unav = c.fetchall()
@@ -687,19 +687,19 @@ def config():
         fixed = c.fetchall()
         fixed_set = {(f['teacher_id'], f['slot']) for f in fixed}
 
-        if nu_teacher and nu_slot:
-            tid = int(nu_teacher)
-            slot = int(nu_slot) - 1
-            if (tid, slot) in fixed_set:
-                flash('Cannot mark slot unavailable: fixed assignment exists', 'error')
-                has_error = True
-            elif (tid, slot) in unav_set:
-                flash('Teacher already unavailable in that slot', 'error')
-                has_error = True
-            else:
-                c.execute('INSERT INTO teacher_unavailable (teacher_id, slot) VALUES (?, ?)',
-                          (tid, slot))
-                unav_set.add((tid, slot))
+        if nu_teachers and nu_slots:
+            for tid in nu_teachers:
+                for slot in nu_slots:
+                    if (tid, slot) in fixed_set:
+                        flash('Cannot mark slot unavailable: fixed assignment exists', 'error')
+                        has_error = True
+                    elif (tid, slot) in unav_set:
+                        flash('Teacher already unavailable in that slot', 'error')
+                        has_error = True
+                    else:
+                        c.execute('INSERT INTO teacher_unavailable (teacher_id, slot) VALUES (?, ?)',
+                                  (tid, slot))
+                        unav_set.add((tid, slot))
 
         # update fixed assignments
         assign_ids = request.form.getlist('assign_id')
@@ -741,7 +741,7 @@ def config():
             elif (tid, slot) in fixed_set:
                 flash('Duplicate fixed assignment for that slot', 'error')
                 has_error = True
-            elif na_group:
+            elif na_group and (group_weight > 0 or not na_student):
                 gid = int(na_group)
                 if na_subject not in group_subj.get(gid, []):
                     flash('Group does not require the selected subject', 'error')
