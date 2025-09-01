@@ -24,7 +24,7 @@ def test_inactive_student_listed_in_missing(tmp_path):
     conn.commit()
     conn.close()
 
-    _, _, _, _, missing, _, _, _ = app.get_timetable_data('2024-01-01')
+    _, _, _, _, missing, _, _, _, _ = app.get_timetable_data('2024-01-01')
     assert sid in missing
     subjects = {item['subject'] for item in missing[sid]}
     assert subjects == {'Math', 'English'}
@@ -52,7 +52,7 @@ def test_worksheet_counts_separate_by_id(tmp_path):
     conn.commit()
     conn.close()
 
-    _, _, _, _, missing, _, _, _ = app.get_timetable_data('2024-01-03')
+    _, _, _, _, missing, _, _, _, _ = app.get_timetable_data('2024-01-03')
     assert sid_new in missing
     math = next(item for item in missing[sid_new] if item['subject'] == 'Math')
     assert math['count'] == 0
