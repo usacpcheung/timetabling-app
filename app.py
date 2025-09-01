@@ -21,7 +21,15 @@ from cp_sat_timetable import build_model, solve_and_print
 
 app = Flask(__name__)
 app.secret_key = 'dev'
-DB_PATH = os.path.join(os.path.dirname(__file__), 'timetable.db')
+
+# Store the SQLite database inside a dedicated ``data`` directory.  This keeps
+# application files read-only and allows the database folder to have relaxed
+# permissions when deployed system-wide (e.g. under ``Program Files`` on
+# Windows).
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+os.makedirs(DATA_DIR, exist_ok=True)
+DB_PATH = os.path.join(DATA_DIR, "timetable.db")
 
 
 def get_db():
@@ -31,6 +39,9 @@ def get_db():
     ``row_factory`` allows rows to behave like dictionaries so template
     code can access columns by name.
     """
+    dir_ = os.path.dirname(DB_PATH)
+    if dir_:
+        os.makedirs(dir_, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn

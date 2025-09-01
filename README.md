@@ -21,6 +21,7 @@ A local-first, browser-based school timetabling application built with **Python 
 ```
 app.py                          # Flask routes and database setup
 cp_sat_timetable.py             # OR-Tools model creation and solving helpers
+data/                           # Writable directory holding the SQLite database
 CODE_GUIDE.txt                  # Walkthrough of the code for beginners
 static/                         # Front-end scripts and styles
     attendance.js               # Data table initialisation on attendance page
@@ -56,6 +57,10 @@ python app.py
 ```
 
 The app will be available at `http://localhost:5000`.
+
+The SQLite database is stored in `data/timetable.db` relative to the project
+root. When deploying on Windows for all users, ensure the `data` directory is
+writable so the application can create and update the database.
 
 ### Configuration
 
