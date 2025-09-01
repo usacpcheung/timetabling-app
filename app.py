@@ -1108,8 +1108,6 @@ def get_timetable_data(target_date):
             assigned.setdefault(r['student_id'], set()).add(subj)
     missing = {}
     for s in student_rows:
-        if not s['active']:
-            continue
         required = set(json.loads(s['subjects']))
         miss = required - assigned.get(s['id'], set())
         if miss:
@@ -1455,8 +1453,6 @@ def edit_timetable(date):
 
     missing = {}
     for s in student_rows:
-        if not s['active']:
-            continue
         required = set(json.loads(s['subjects']))
         miss = required - assigned.get(s['id'], set())
         if miss:
