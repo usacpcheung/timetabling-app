@@ -741,15 +741,7 @@ def config():
             elif (tid, slot) in fixed_set:
                 flash('Duplicate fixed assignment for that slot', 'error')
                 has_error = True
-            elif na_student:
-                sid = int(na_student)
-                if na_subject not in student_map.get(sid, []):
-                    flash('Student does not require the selected subject', 'error')
-                    has_error = True
-                else:
-                    c.execute('INSERT INTO fixed_assignments (teacher_id, student_id, group_id, subject, slot) VALUES (?, ?, ?, ?, ?)',
-                              (tid, sid, None, na_subject, slot))
-            else:
+            elif na_group:
                 gid = int(na_group)
                 if na_subject not in group_subj.get(gid, []):
                     flash('Group does not require the selected subject', 'error')
@@ -757,6 +749,14 @@ def config():
                 else:
                     c.execute('INSERT INTO fixed_assignments (teacher_id, student_id, group_id, subject, slot) VALUES (?, ?, ?, ?, ?)',
                               (tid, None, gid, na_subject, slot))
+            else:
+                sid = int(na_student)
+                if na_subject not in student_map.get(sid, []):
+                    flash('Student does not require the selected subject', 'error')
+                    has_error = True
+                else:
+                    c.execute('INSERT INTO fixed_assignments (teacher_id, student_id, group_id, subject, slot) VALUES (?, ?, ?, ?, ?)',
+                              (tid, sid, None, na_subject, slot))
 
         if has_error:
             conn.rollback()
