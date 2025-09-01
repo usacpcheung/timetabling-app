@@ -38,7 +38,11 @@
     <h2>Unscheduled Subjects</h2>
     <ul>
         {% for sid, subs in missing.items() %}
-        <li>{{ student_names[sid] }}: {{ ', '.join(subs) }}</li>
+        <li>{{ student_names[sid] }}:
+            {% for item in subs %}
+                {{ item.subject }} ({{ item.count }}){% if not loop.last %}, {% endif %}
+            {% endfor %}
+        </li>
         {% endfor %}
     </ul>
     {% endif %}
