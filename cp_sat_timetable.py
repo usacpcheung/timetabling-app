@@ -17,7 +17,8 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 group_weight=1.0, allow_multi_teacher=True,
                 balance_teacher_load=False, balance_weight=1,
                 blocked=None, student_limits=None,
-                student_repeat=None, student_unavailable=None):
+                student_repeat=None, student_unavailable=None,
+                student_multi_teacher=None):
     """Build CP-SAT model for the scheduling problem.
 
     When ``add_assumptions`` is ``True``, Boolean indicators are created for the
@@ -68,6 +69,8 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             ``allow_consecutive`` and ``prefer_consecutive``).
         student_unavailable: optional mapping ``student_id -> set(slots)`` of
             time slots where the student cannot attend lessons.
+        student_multi_teacher: optional mapping ``student_id -> bool``
+            overriding ``allow_multi_teacher`` for specific students.
 
     Returns:
         model (cp_model.CpModel): The constructed model.
@@ -246,10 +249,12 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                     model.Add(adj >= v1 + v2 - 1)
                     adjacency_vars.append(adj)
 
-    if not allow_multi_teacher:
+    if not allow_multi_teacher or student_multi_teacher:
         by_student_subject = {}
         for (sid, tid, subj, sl), var in vars_.items():
-            by_student_subject.setdefault((sid, subj), []).append(var)
+            allow_mt = student_multi_teacher.get(sid, allow_multi_teacher) if student_multi_teacher else allow_multi_teacher
+            if not allow_mt:
+                by_student_subject.setdefault((sid, subj), []).append(var)
         for key, vlist in by_student_subject.items():
             if len(vlist) > 1:
                 ct = model.Add(sum(vlist) <= 1)

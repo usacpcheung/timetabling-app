@@ -133,7 +133,8 @@ def init_db():
             allow_repeats INTEGER,
             max_repeats INTEGER,
             allow_consecutive INTEGER,
-            prefer_consecutive INTEGER
+            prefer_consecutive INTEGER,
+            allow_multi_teacher INTEGER
         )''')
     else:
         if not column_exists('students', 'active'):
@@ -150,6 +151,8 @@ def init_db():
             c.execute('ALTER TABLE students ADD COLUMN allow_consecutive INTEGER')
         if not column_exists('students', 'prefer_consecutive'):
             c.execute('ALTER TABLE students ADD COLUMN prefer_consecutive INTEGER')
+        if not column_exists('students', 'allow_multi_teacher'):
+            c.execute('ALTER TABLE students ADD COLUMN allow_multi_teacher INTEGER')
 
     if not table_exists('students_archive'):
         c.execute('''CREATE TABLE students_archive (
@@ -569,17 +572,18 @@ def config():
                 max_rep = request.form.get(f'student_max_repeats_{sid}')
                 allow_con = 1 if request.form.get(f'student_allow_consecutive_{sid}') else 0
                 prefer_con = 1 if request.form.get(f'student_prefer_consecutive_{sid}') else 0
+                allow_multi = 1 if request.form.get(f'student_multi_teacher_{sid}') else 0
                 subj_json = json.dumps(subs)
                 min_val = int(smin) if smin else None
                 max_val = int(smax) if smax else None
                 max_rep_val = int(max_rep) if max_rep else None
                 c.execute('''UPDATE students SET name=?, subjects=?, active=?,
                              min_lessons=?, max_lessons=?, allow_repeats=?,
-                             max_repeats=?, allow_consecutive=?, prefer_consecutive=?
-                             WHERE id=?''',
+                             max_repeats=?, allow_consecutive=?, prefer_consecutive=?,
+                             allow_multi_teacher=? WHERE id=?''',
                           (name, subj_json, active, min_val, max_val,
                            allow_rep, max_rep_val, allow_con, prefer_con,
-                           int(sid)))
+                           allow_multi, int(sid)))
                 slots = request.form.getlist(f'student_unavail_{sid}')
                 c.execute('DELETE FROM student_unavailable WHERE student_id=?', (int(sid),))
                 for sl in slots:
@@ -609,16 +613,17 @@ def config():
         new_max_rep = request.form.get('new_student_max_repeats')
         new_allow_con = 1 if request.form.get('new_student_allow_consecutive') else 0
         new_prefer_con = 1 if request.form.get('new_student_prefer_consecutive') else 0
+        new_allow_multi = 1 if request.form.get('new_student_multi_teacher') else 0
         if new_sname and new_ssubs:
             subj_json = json.dumps(new_ssubs)
             min_val = int(new_smin) if new_smin else None
             max_val = int(new_smax) if new_smax else None
             max_rep_val = int(new_max_rep) if new_max_rep else None
             c.execute('''INSERT INTO students (name, subjects, active, min_lessons, max_lessons,
-                      allow_repeats, max_repeats, allow_consecutive, prefer_consecutive)
-                      VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?)''',
+                      allow_repeats, max_repeats, allow_consecutive, prefer_consecutive, allow_multi_teacher)
+                      VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?)''',
                       (new_sname, subj_json, min_val, max_val, new_allow_rep,
-                       max_rep_val, new_allow_con, new_prefer_con))
+                       max_rep_val, new_allow_con, new_prefer_con, new_allow_multi))
             new_sid = c.lastrowid
             for sl in new_unav:
                 c.execute('INSERT INTO student_unavailable (student_id, slot) VALUES (?, ?)',
@@ -989,6 +994,7 @@ def generate_schedule(target_date=None):
     balance_weight = cfg['balance_weight']
     student_limits = {}
     student_repeat = {}
+    student_multi = {}
     for s in students:
         sid = s['id']
         student_limits[sid] = (
@@ -1000,6 +1006,7 @@ def generate_schedule(target_date=None):
             'allow_consecutive': bool(s['allow_consecutive']) if s['allow_consecutive'] is not None else allow_consecutive,
             'prefer_consecutive': bool(s['prefer_consecutive']) if s['prefer_consecutive'] is not None else prefer_consecutive,
         }
+        student_multi[sid] = bool(s['allow_multi_teacher']) if s['allow_multi_teacher'] is not None else allow_multi_teacher
     # Build the CP-SAT model with assumption literals so that we can obtain
     # an unsat core explaining conflicts when no timetable exists.
     # incorporate groups as pseudo students
@@ -1063,7 +1070,8 @@ def generate_schedule(target_date=None):
         blocked=block_map_sched,
         student_limits=student_limits,
         student_repeat=student_repeat,
-        student_unavailable=student_unavailable)
+        student_unavailable=student_unavailable,
+        student_multi_teacher=student_multi)
     status, assignments, core = solve_and_print(model, vars_, assumptions)
 
     # Insert solver results into DB
