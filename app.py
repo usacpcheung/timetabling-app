@@ -327,7 +327,7 @@ def index():
     if selected:
         data = get_timetable_data(selected)
         (sel_date, slots, teachers, grid, missing,
-         student_names, slot_labels, has_rows) = data
+         student_names, slot_labels, has_rows, lesson_counts) = data
         if not has_rows:
             flash('No timetable available. Generate one from the home page.',
                   'error')
@@ -341,7 +341,8 @@ def index():
             'student_names': student_names,
             'slot_labels': slot_labels,
             'has_rows': has_rows,
-            'json': json
+            'json': json,
+            'lesson_counts': lesson_counts,
         })
     return render_template('index.html', **context)
 
@@ -1195,13 +1196,16 @@ def get_timetable_data(target_date):
         grid[r['slot']][tid] = desc
 
     assigned = {s['id']: set() for s in student_rows}
+    lesson_counts = {s['id']: 0 for s in student_rows}
     for r in rows:
         subj = r['subject']
         if r['group_id']:
             for sid in group_students.get(r['group_id'], []):
                 assigned.setdefault(sid, set()).add(subj)
+                lesson_counts[sid] = lesson_counts.get(sid, 0) + 1
         elif r['student_id']:
             assigned.setdefault(r['student_id'], set()).add(subj)
+            lesson_counts[r['student_id']] = lesson_counts.get(r['student_id'], 0) + 1
     missing = {}
     for s in student_rows:
         required = set(json.loads(s['subjects']))
@@ -1225,7 +1229,8 @@ def get_timetable_data(target_date):
     conn.close()
 
     has_rows = bool(rows)
-    return target_date, range(slots), teachers, grid, missing, student_names, slot_labels, has_rows
+    return (target_date, range(slots), teachers, grid, missing,
+            student_names, slot_labels, has_rows, lesson_counts)
 
 
 @app.route('/generate', methods=['POST'])
@@ -1266,13 +1271,14 @@ def timetable():
     """
     target_date = request.args.get('date')
     (t_date, slots, teachers, grid,
-     missing, student_names, slot_labels, has_rows) = get_timetable_data(target_date)
+     missing, student_names, slot_labels, has_rows, lesson_counts) = get_timetable_data(target_date)
     if not has_rows:
         flash('No timetable available. Generate one from the home page.', 'error')
     return render_template('timetable.html', slots=slots, teachers=teachers,
                            grid=grid, json=json, date=t_date,
                            missing=missing, student_names=student_names,
-                           slot_labels=slot_labels)
+                           slot_labels=slot_labels,
+                           lesson_counts=lesson_counts)
 
 
 @app.route('/attendance')
@@ -1544,13 +1550,16 @@ def edit_timetable(date):
         student_names.setdefault(row['id'], row['name'])
 
     assigned = {s['id']: set() for s in student_rows}
+    lesson_counts = {s['id']: 0 for s in student_rows}
     for les in lessons:
         subj = les['subject']
         if les['group_id']:
             for sid in group_students.get(les['group_id'], []):
                 assigned.setdefault(sid, set()).add(subj)
+                lesson_counts[sid] = lesson_counts.get(sid, 0) + 1
         elif les['student_id']:
             assigned.setdefault(les['student_id'], set()).add(subj)
+            lesson_counts[les['student_id']] = lesson_counts.get(les['student_id'], 0) + 1
 
     missing = {}
     for s in student_rows:
@@ -1585,6 +1594,7 @@ def edit_timetable(date):
         missing=missing,
         student_names=student_names,
         slots=slots,
+        lesson_counts=lesson_counts,
     )
 
 

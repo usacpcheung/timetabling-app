@@ -60,7 +60,7 @@
         <ul class="mb-6">
             {% for sid, subs in missing.items() %}
             <li class="mb-1">
-                <strong>{{ student_names[sid] }}:</strong>
+                <strong>{{ student_names[sid] }} ({{ lesson_counts.get(sid, 0) }}):</strong>
                 {% for item in subs %}
                 <form method="post" class="inline-block ml-4 worksheet-form">
                     <input type="hidden" name="action" value="worksheet">

@@ -38,7 +38,7 @@
     <h2>Unscheduled Subjects</h2>
     <ul>
         {% for sid, subs in missing.items() %}
-        <li>{{ student_names[sid] }}:
+        <li>{{ student_names[sid] }} ({{ lesson_counts.get(sid, 0) }}):
             {% for item in subs %}
                 {% if item.today %}
                 <span class="worksheet-assigned">{{ item.subject }} ({{ item.count }})</span>{% if not loop.last %}, {% endif %}
