@@ -191,6 +191,14 @@ def init_db():
             date TEXT
         )''')
 
+    if not table_exists('worksheets'):
+        c.execute('''CREATE TABLE worksheets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER,
+            subject TEXT,
+            date TEXT
+        )''')
+
     if not table_exists('groups'):
         c.execute('''CREATE TABLE groups (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -888,9 +896,10 @@ def generate_schedule(target_date=None):
             row['student_id'] = offset + row['group_id']
         assignments_fixed.append(row)
 
-    # clear previous timetable and attendance logs for the target date
+    # clear previous timetable, attendance logs, and worksheet assignments for the target date
     c.execute('DELETE FROM timetable WHERE date=?', (target_date,))
     c.execute('DELETE FROM attendance_log WHERE date=?', (target_date,))
+    c.execute('DELETE FROM worksheets WHERE date=?', (target_date,))
 
     # Build and solve CP-SAT model
     allow_repeats = bool(cfg['allow_repeats'])
@@ -1078,8 +1087,6 @@ def get_timetable_data(target_date):
     c.execute('SELECT id, name FROM students_archive')
     for row in c.fetchall():
         student_names.setdefault(row['id'], row['name'])
-    conn.close()
-
     grid = {slot: {te['id']: None for te in teachers} for slot in range(slots)}
     for r in rows:
         tid = r['teacher_id']
@@ -1101,12 +1108,25 @@ def get_timetable_data(target_date):
             assigned.setdefault(r['student_id'], set()).add(subj)
     missing = {}
     for s in student_rows:
-        if not s['active']:
-            continue
         required = set(json.loads(s['subjects']))
         miss = required - assigned.get(s['id'], set())
         if miss:
-            missing[s['id']] = sorted(miss)
+            subj_list = []
+            for subj in sorted(miss):
+                c.execute(
+                    'SELECT COUNT(*) FROM worksheets WHERE student_id=? AND subject=? AND date<=?',
+                    (s['id'], subj, target_date),
+                )
+                count = c.fetchone()[0]
+                c.execute(
+                    'SELECT 1 FROM worksheets WHERE student_id=? AND subject=? AND date=?',
+                    (s['id'], subj, target_date),
+                )
+                has_today = c.fetchone() is not None
+                subj_list.append({'subject': subj, 'count': count, 'today': has_today})
+            missing[s['id']] = subj_list
+
+    conn.close()
 
     has_rows = bool(rows)
     return target_date, range(slots), teachers, grid, missing, student_names, slot_labels, has_rows
@@ -1132,6 +1152,8 @@ def generate():
     if exists:
         conn = get_db()
         conn.execute('DELETE FROM timetable WHERE date=?', (gen_date,))
+        conn.execute('DELETE FROM attendance_log WHERE date=?', (gen_date,))
+        conn.execute('DELETE FROM worksheets WHERE date=?', (gen_date,))
         conn.commit()
         conn.close()
     generate_schedule(gen_date)
@@ -1332,6 +1354,29 @@ def edit_timetable(date):
                         )
                 conn.commit()
                 flash('Lesson added.', 'info')
+        elif action == 'worksheet':
+            student_id = request.form.get('student_id')
+            subject = request.form.get('subject')
+            assign = request.form.get('assign')
+            if student_id and subject and assign is not None:
+                sid = int(student_id)
+                if assign == '1':
+                    c.execute(
+                        'SELECT 1 FROM worksheets WHERE student_id=? AND subject=? AND date=?',
+                        (sid, subject, date),
+                    )
+                    if c.fetchone() is None:
+                        c.execute(
+                            'INSERT INTO worksheets (student_id, subject, date) VALUES (?, ?, ?)',
+                            (sid, subject, date),
+                        )
+                else:
+                    c.execute(
+                        'DELETE FROM worksheets WHERE student_id=? AND subject=? AND date=?',
+                        (sid, subject, date),
+                    )
+                conn.commit()
+                flash('Worksheet assignment updated.', 'info')
         conn.close()
         return redirect(url_for('edit_timetable', date=date))
 
@@ -1388,6 +1433,49 @@ def edit_timetable(date):
     c.execute('SELECT name FROM subjects')
     subjects = [r['name'] for r in c.fetchall()]
 
+    # compute unassigned subjects and worksheet counts
+    c.execute('SELECT group_id, student_id FROM group_members')
+    gm_rows = c.fetchall()
+    group_students = {}
+    for gm in gm_rows:
+        group_students.setdefault(gm['group_id'], []).append(gm['student_id'])
+
+    c.execute('SELECT id, name, subjects, active FROM students')
+    student_rows = c.fetchall()
+    student_names = {s['id']: s['name'] for s in student_rows}
+    c.execute('SELECT id, name FROM students_archive')
+    for row in c.fetchall():
+        student_names.setdefault(row['id'], row['name'])
+
+    assigned = {s['id']: set() for s in student_rows}
+    for les in lessons:
+        subj = les['subject']
+        if les['group_id']:
+            for sid in group_students.get(les['group_id'], []):
+                assigned.setdefault(sid, set()).add(subj)
+        elif les['student_id']:
+            assigned.setdefault(les['student_id'], set()).add(subj)
+
+    missing = {}
+    for s in student_rows:
+        required = set(json.loads(s['subjects']))
+        miss = required - assigned.get(s['id'], set())
+        if miss:
+            subj_list = []
+            for subj in sorted(miss):
+                c.execute(
+                    'SELECT COUNT(*) FROM worksheets WHERE student_id=? AND subject=? AND date<=?',
+                    (s['id'], subj, date),
+                )
+                count = c.fetchone()[0]
+                c.execute(
+                    'SELECT 1 FROM worksheets WHERE student_id=? AND subject=? AND date=?',
+                    (s['id'], subj, date),
+                )
+                assigned_today = c.fetchone() is not None
+                subj_list.append({'subject': subj, 'count': count, 'assigned': assigned_today})
+            missing[s['id']] = subj_list
+
     conn.close()
     return render_template(
         'edit_timetable.html',
@@ -1398,6 +1486,8 @@ def edit_timetable(date):
         groups=groups,
         teachers=teachers,
         subjects=subjects,
+        missing=missing,
+        student_names=student_names,
         slots=slots,
     )
 
@@ -1415,6 +1505,7 @@ def delete_timetables():
     if request.form.get('clear_all'):
         c.execute('DELETE FROM timetable')
         c.execute('DELETE FROM attendance_log')
+        c.execute('DELETE FROM worksheets')
         conn.commit()
         conn.close()
         flash('All timetables deleted.', 'info')
@@ -1425,6 +1516,7 @@ def delete_timetables():
         for d in dates:
             c.execute('DELETE FROM timetable WHERE date=?', (d,))
             c.execute('DELETE FROM attendance_log WHERE date=?', (d,))
+            c.execute('DELETE FROM worksheets WHERE date=?', (d,))
         conn.commit()
         conn.close()
         flash(f'Deleted timetables for {len(dates)} date(s).', 'info')

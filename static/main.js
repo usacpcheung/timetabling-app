@@ -88,4 +88,16 @@ document.addEventListener('DOMContentLoaded', function () {
             if (modal) modal.show();
         });
     });
+
+    const worksheetForms = document.querySelectorAll('.worksheet-form');
+    worksheetForms.forEach(function (form) {
+        const cb = form.querySelector('input[type="checkbox"]');
+        const hidden = form.querySelector('input[name="assign"]');
+        if (cb && hidden) {
+            cb.addEventListener('change', function () {
+                hidden.value = cb.checked ? '1' : '0';
+                form.submit();
+            });
+        }
+    });
 });
