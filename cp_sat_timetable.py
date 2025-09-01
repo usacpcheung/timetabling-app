@@ -16,7 +16,9 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 require_all_subjects=True, subject_weights=None,
                 group_weight=1.0, allow_multi_teacher=True,
                 balance_teacher_load=False, balance_weight=1,
-                blocked=None):
+                blocked=None, student_limits=None,
+                student_repeat=None, student_unavailable=None,
+                student_multi_teacher=None):
     """Build CP-SAT model for the scheduling problem.
 
     When ``add_assumptions`` is ``True``, Boolean indicators are created for the
@@ -60,6 +62,15 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             teachers that cannot teach the given student. When group ids are
             included in the mapping, those restrictions apply to the entire
             group.
+        student_limits: optional mapping ``student_id -> (min, max)`` to override
+            the global student lesson limits.
+        student_repeat: optional mapping ``student_id -> dict`` specifying
+            repeat preferences (``allow_repeats``, ``max_repeats``,
+            ``allow_consecutive`` and ``prefer_consecutive``).
+        student_unavailable: optional mapping ``student_id -> set(slots)`` of
+            time slots where the student cannot attend lessons.
+        student_multi_teacher: optional mapping ``student_id -> bool``
+            overriding ``allow_multi_teacher`` for specific students.
 
     Returns:
         model (cp_model.CpModel): The constructed model.
@@ -121,6 +132,9 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
     # is scheduled exclusively through the group so individual variables are not
     # created.
     blocked = blocked or {}
+    student_limits = student_limits or {}
+    student_repeat = student_repeat or {}
+    student_unavailable = student_unavailable or {}
     for student in students:
         student_subs = set(json.loads(student['subjects']))
         forbidden = set(blocked.get(student['id'], []))
@@ -132,6 +146,8 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                         subject in member_group_subjects.get(student['id'], set())):
                     continue
                 for slot in range(slots):
+                    if slot in student_unavailable.get(student['id'], set()):
+                        continue
                     key = (student['id'], teacher['id'], subject, slot)
                     if (not add_assumptions and key not in fixed_set and
                             ((teacher['id'], slot) in unavailable_set or
@@ -178,6 +194,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         sid = student['id']
         if sid in group_ids:
             continue
+        blocked_slots = student_unavailable.get(sid, set())
         for slot in range(slots):
             possible = [var for (s, t, subj, sl), var in vars_.items()
                         if s == sid and sl == slot]
@@ -185,7 +202,12 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 if g_key[3] == slot:  # slot matches
                     possible.append(g_var)
             if possible:
-                model.Add(sum(possible) <= 1)
+                if slot in blocked_slots:
+                    ct = model.Add(sum(possible) == 0)
+                    if add_assumptions:
+                        ct.OnlyEnforceIf(assumptions['student_limits'])
+                else:
+                    model.Add(sum(possible) <= 1)
 
     # Constraint 3: limit repeats of the same student/teacher/subject combination.  Group
     # lessons are treated the same way as individual lessons and therefore their
@@ -198,19 +220,24 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
     # consecutive repeat lessons.  ``repeat_limit`` is set to 1 when repeats are
     # disallowed.
     adjacency_vars = []
-    repeat_limit = max_repeats if allow_repeats else 1
     for (sid, tid, subj), slot_map in triple_map.items():
+        cfg = student_repeat.get(sid, {})
+        allow_rep = cfg.get('allow_repeats', allow_repeats)
+        max_rep = cfg.get('max_repeats', max_repeats)
+        allow_consec_s = cfg.get('allow_consecutive', allow_consecutive)
+        prefer_consec_s = cfg.get('prefer_consecutive', prefer_consecutive)
+        repeat_limit = max_rep if allow_rep else 1
         vars_list = list(slot_map.values())
         ct = model.Add(sum(vars_list) <= repeat_limit)
         if add_assumptions:
             ct.OnlyEnforceIf(assumptions['repeat_restrictions'])
-        if not allow_consecutive and repeat_limit > 1:
+        if not allow_consec_s and repeat_limit > 1:
             for s in range(slots - 1):
                 if s in slot_map and s + 1 in slot_map:
                     ct2 = model.Add(slot_map[s] + slot_map[s + 1] <= 1)
                     if add_assumptions:
                         ct2.OnlyEnforceIf(assumptions['repeat_restrictions'])
-        if prefer_consecutive and allow_consecutive and repeat_limit > 1:
+        if prefer_consec_s and allow_consec_s and repeat_limit > 1:
             for s in range(slots - 1):
                 if s in slot_map and s + 1 in slot_map:
                     v1 = slot_map[s]
@@ -222,10 +249,12 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                     model.Add(adj >= v1 + v2 - 1)
                     adjacency_vars.append(adj)
 
-    if not allow_multi_teacher:
+    if not allow_multi_teacher or student_multi_teacher:
         by_student_subject = {}
         for (sid, tid, subj, sl), var in vars_.items():
-            by_student_subject.setdefault((sid, subj), []).append(var)
+            allow_mt = student_multi_teacher.get(sid, allow_multi_teacher) if student_multi_teacher else allow_multi_teacher
+            if not allow_mt:
+                by_student_subject.setdefault((sid, subj), []).append(var)
         for key, vlist in by_student_subject.items():
             if len(vlist) > 1:
                 ct = model.Add(sum(vlist) <= 1)
@@ -289,8 +318,9 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             total_set.add(g_var)
         total = list(total_set)
         if total:
-            ct_min = model.Add(sum(total) >= min_lessons)
-            ct_max = model.Add(sum(total) <= max_lessons)
+            min_l, max_l = student_limits.get(sid, (min_lessons, max_lessons))
+            ct_min = model.Add(sum(total) >= min_l)
+            ct_max = model.Add(sum(total) <= max_l)
             if add_assumptions:
                 ct_min.OnlyEnforceIf(assumptions['student_limits'])
                 ct_max.OnlyEnforceIf(assumptions['student_limits'])
@@ -300,7 +330,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
     # depending on the configuration options.
     weighted_sum = sum(var * var_weights.get(var, 1) for var in vars_.values())
     objective = weighted_sum
-    if prefer_consecutive and allow_consecutive and repeat_limit > 1 and adjacency_vars:
+    if adjacency_vars:
         objective += consecutive_weight * sum(adjacency_vars)
     if balance_teacher_load and teacher_load_vars:
         objective -= balance_weight * load_diff

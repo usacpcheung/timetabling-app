@@ -127,10 +127,32 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT UNIQUE,
             subjects TEXT,
-            active INTEGER DEFAULT 1
+            active INTEGER DEFAULT 1,
+            min_lessons INTEGER,
+            max_lessons INTEGER,
+            allow_repeats INTEGER,
+            max_repeats INTEGER,
+            allow_consecutive INTEGER,
+            prefer_consecutive INTEGER,
+            allow_multi_teacher INTEGER
         )''')
-    elif not column_exists('students', 'active'):
-        c.execute('ALTER TABLE students ADD COLUMN active INTEGER DEFAULT 1')
+    else:
+        if not column_exists('students', 'active'):
+            c.execute('ALTER TABLE students ADD COLUMN active INTEGER DEFAULT 1')
+        if not column_exists('students', 'min_lessons'):
+            c.execute('ALTER TABLE students ADD COLUMN min_lessons INTEGER')
+        if not column_exists('students', 'max_lessons'):
+            c.execute('ALTER TABLE students ADD COLUMN max_lessons INTEGER')
+        if not column_exists('students', 'allow_repeats'):
+            c.execute('ALTER TABLE students ADD COLUMN allow_repeats INTEGER')
+        if not column_exists('students', 'max_repeats'):
+            c.execute('ALTER TABLE students ADD COLUMN max_repeats INTEGER')
+        if not column_exists('students', 'allow_consecutive'):
+            c.execute('ALTER TABLE students ADD COLUMN allow_consecutive INTEGER')
+        if not column_exists('students', 'prefer_consecutive'):
+            c.execute('ALTER TABLE students ADD COLUMN prefer_consecutive INTEGER')
+        if not column_exists('students', 'allow_multi_teacher'):
+            c.execute('ALTER TABLE students ADD COLUMN allow_multi_teacher INTEGER')
 
     if not table_exists('students_archive'):
         c.execute('''CREATE TABLE students_archive (
@@ -152,6 +174,13 @@ def init_db():
         c.execute('''CREATE TABLE teacher_unavailable (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             teacher_id INTEGER,
+            slot INTEGER
+        )''')
+
+    if not table_exists('student_unavailable'):
+        c.execute('''CREATE TABLE student_unavailable (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER,
             slot INTEGER
         )''')
 
@@ -537,9 +566,29 @@ def config():
                 name = request.form.get(f'student_name_{sid}')
                 subs = request.form.getlist(f'student_subjects_{sid}')
                 active = 1 if request.form.get(f'student_active_{sid}') else 0
+                smin = request.form.get(f'student_min_{sid}')
+                smax = request.form.get(f'student_max_{sid}')
+                allow_rep = 1 if request.form.get(f'student_allow_repeats_{sid}') else 0
+                max_rep = request.form.get(f'student_max_repeats_{sid}')
+                allow_con = 1 if request.form.get(f'student_allow_consecutive_{sid}') else 0
+                prefer_con = 1 if request.form.get(f'student_prefer_consecutive_{sid}') else 0
+                allow_multi = 1 if request.form.get(f'student_multi_teacher_{sid}') else 0
                 subj_json = json.dumps(subs)
-                c.execute('UPDATE students SET name=?, subjects=?, active=? WHERE id=?',
-                          (name, subj_json, active, int(sid)))
+                min_val = int(smin) if smin else None
+                max_val = int(smax) if smax else None
+                max_rep_val = int(max_rep) if max_rep else None
+                c.execute('''UPDATE students SET name=?, subjects=?, active=?,
+                             min_lessons=?, max_lessons=?, allow_repeats=?,
+                             max_repeats=?, allow_consecutive=?, prefer_consecutive=?,
+                             allow_multi_teacher=? WHERE id=?''',
+                          (name, subj_json, active, min_val, max_val,
+                           allow_rep, max_rep_val, allow_con, prefer_con,
+                           allow_multi, int(sid)))
+                slots = request.form.getlist(f'student_unavail_{sid}')
+                c.execute('DELETE FROM student_unavailable WHERE student_id=?', (int(sid),))
+                for sl in slots:
+                    c.execute('INSERT INTO student_unavailable (student_id, slot) VALUES (?, ?)',
+                              (int(sid), int(sl)))
                 blocks = request.form.getlist(f'student_block_{sid}')
                 c.execute('DELETE FROM student_teacher_block WHERE student_id=?', (int(sid),))
                 block_map_current[int(sid)] = set()
@@ -557,11 +606,28 @@ def config():
         new_sname = request.form.get('new_student_name')
         new_ssubs = request.form.getlist('new_student_subjects')
         new_blocks = request.form.getlist('new_student_block')
+        new_unav = request.form.getlist('new_student_unavail')
+        new_smin = request.form.get('new_student_min')
+        new_smax = request.form.get('new_student_max')
+        new_allow_rep = 1 if request.form.get('new_student_allow_repeats') else 0
+        new_max_rep = request.form.get('new_student_max_repeats')
+        new_allow_con = 1 if request.form.get('new_student_allow_consecutive') else 0
+        new_prefer_con = 1 if request.form.get('new_student_prefer_consecutive') else 0
+        new_allow_multi = 1 if request.form.get('new_student_multi_teacher') else 0
         if new_sname and new_ssubs:
             subj_json = json.dumps(new_ssubs)
-            c.execute('INSERT INTO students (name, subjects, active) VALUES (?, ?, 1)',
-                      (new_sname, subj_json))
+            min_val = int(new_smin) if new_smin else None
+            max_val = int(new_smax) if new_smax else None
+            max_rep_val = int(new_max_rep) if new_max_rep else None
+            c.execute('''INSERT INTO students (name, subjects, active, min_lessons, max_lessons,
+                      allow_repeats, max_repeats, allow_consecutive, prefer_consecutive, allow_multi_teacher)
+                      VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?)''',
+                      (new_sname, subj_json, min_val, max_val, new_allow_rep,
+                       max_rep_val, new_allow_con, new_prefer_con, new_allow_multi))
             new_sid = c.lastrowid
+            for sl in new_unav:
+                c.execute('INSERT INTO student_unavailable (student_id, slot) VALUES (?, ?)',
+                          (new_sid, int(sl)))
             block_map_current[new_sid] = set()
             for tid in new_blocks:
                 tval = int(tid)
@@ -788,6 +854,11 @@ def config():
     block_map = {}
     for r in st_rows:
         block_map.setdefault(r['student_id'], []).append(r['teacher_id'])
+    c.execute('SELECT student_id, slot FROM student_unavailable')
+    su_rows = c.fetchall()
+    student_unavail_map = {}
+    for r in su_rows:
+        student_unavail_map.setdefault(r['student_id'], []).append(r['slot'])
     c.execute('SELECT * FROM subjects')
     subjects = c.fetchall()
     c.execute('SELECT * FROM groups')
@@ -827,7 +898,8 @@ def config():
                            unavail_map=unavail_map, assign_map=assign_map,
                            group_map=group_map, group_subj_map=group_subj_map,
                            block_map=block_map, json=json,
-                           slot_times=slot_times)
+                           slot_times=slot_times,
+                           student_unavail_map=student_unavail_map)
 
 
 def generate_schedule(target_date=None):
@@ -887,6 +959,11 @@ def generate_schedule(target_date=None):
             union.update(block_map_sched.get(m, set()))
         if union:
             block_map_sched[offset + gid] = union
+    c.execute('SELECT student_id, slot FROM student_unavailable')
+    su_rows = c.fetchall()
+    student_unavailable = {}
+    for r in su_rows:
+        student_unavailable.setdefault(r['student_id'], set()).add(r['slot'])
     c.execute('SELECT * FROM fixed_assignments')
     arows = c.fetchall()
     assignments_fixed = []
@@ -915,6 +992,21 @@ def generate_schedule(target_date=None):
     allow_multi_teacher = bool(cfg['allow_multi_teacher'])
     balance_teacher_load = bool(cfg['balance_teacher_load'])
     balance_weight = cfg['balance_weight']
+    student_limits = {}
+    student_repeat = {}
+    student_multi = {}
+    for s in students:
+        sid = s['id']
+        student_limits[sid] = (
+            s['min_lessons'] if s['min_lessons'] is not None else min_lessons,
+            s['max_lessons'] if s['max_lessons'] is not None else max_lessons)
+        student_repeat[sid] = {
+            'allow_repeats': bool(s['allow_repeats']) if s['allow_repeats'] is not None else allow_repeats,
+            'max_repeats': s['max_repeats'] if s['max_repeats'] is not None else max_repeats,
+            'allow_consecutive': bool(s['allow_consecutive']) if s['allow_consecutive'] is not None else allow_consecutive,
+            'prefer_consecutive': bool(s['prefer_consecutive']) if s['prefer_consecutive'] is not None else prefer_consecutive,
+        }
+        student_multi[sid] = bool(s['allow_multi_teacher']) if s['allow_multi_teacher'] is not None else allow_multi_teacher
     # Build the CP-SAT model with assumption literals so that we can obtain
     # an unsat core explaining conflicts when no timetable exists.
     # incorporate groups as pseudo students
@@ -975,7 +1067,11 @@ def generate_schedule(target_date=None):
         allow_multi_teacher=allow_multi_teacher,
         balance_teacher_load=balance_teacher_load,
         balance_weight=balance_weight,
-        blocked=block_map_sched)
+        blocked=block_map_sched,
+        student_limits=student_limits,
+        student_repeat=student_repeat,
+        student_unavailable=student_unavailable,
+        student_multi_teacher=student_multi)
     status, assignments, core = solve_and_print(model, vars_, assumptions)
 
     # Insert solver results into DB
