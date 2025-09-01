@@ -106,7 +106,7 @@
                 <input type="number" name="well_attend_weight" value="{{ config['well_attend_weight'] }}" min="0" step="0.1" class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
             <label class="block">Group weight:
-                <input type="number" name="group_weight" value="{{ config['group_weight'] }}" min="1" step="0.1" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                <input type="number" name="group_weight" value="{{ config['group_weight'] }}" min="0" step="0.1" class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
             <label class="flex items-center gap-2">Balance teacher load?
                 <input type="checkbox" name="balance_teacher_load" {% if config['balance_teacher_load'] %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
@@ -330,15 +330,19 @@
                 <input type="checkbox" name="unavail_delete" value="{{ u['id'] }}" class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
             </label>
             {% endfor %}
-            <label class="block">Teacher:
-                <select name="new_unavail_teacher" id="new_unavail_teacher" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+            <label class="block">Teachers:
+                <select multiple name="new_unavail_teacher" id="new_unavail_teacher" class="border border-emerald-300 rounded-lg p-2.5 w-full">
                     {% for t in teachers %}
                     <option value="{{ t['id'] }}">{{ t['name'] }}</option>
                     {% endfor %}
                 </select>
             </label>
-            <label class="block">Slot:
-                <input type="number" name="new_unavail_slot" id="new_unavail_slot" min="1" max="{{ config['slots_per_day'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+            <label class="block">Slots:
+                <select multiple name="new_unavail_slot" id="new_unavail_slot" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                    {% for i in range(1, config['slots_per_day'] + 1) %}
+                    <option value="{{ i }}">{{ i }}</option>
+                    {% endfor %}
+                </select>
             </label>
         </fieldset>
     </div>

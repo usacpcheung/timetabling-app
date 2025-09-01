@@ -8,6 +8,50 @@ document.addEventListener('DOMContentLoaded', function () {
     const subjectSelect = document.getElementById('new_assign_subject');
     const slotSelect = document.getElementById('new_assign_slot');
 
+    const accordionButtons = document.querySelectorAll('#config-accordion button[data-accordion-target]');
+    const ACC_KEY = 'config_open_panels';
+
+    function saveAccordionState() {
+        const open = Array.from(accordionButtons)
+            .map(btn => btn.getAttribute('data-accordion-target'))
+            .filter(id => {
+                const panel = document.querySelector(id);
+                return panel && !panel.classList.contains('hidden');
+            });
+        localStorage.setItem(ACC_KEY, JSON.stringify(open));
+    }
+
+    const savedRaw = localStorage.getItem(ACC_KEY);
+    if (savedRaw) {
+        const savedPanels = JSON.parse(savedRaw);
+        accordionButtons.forEach(btn => {
+            const id = btn.getAttribute('data-accordion-target');
+            const panel = document.querySelector(id);
+            if (panel) {
+                panel.classList.add('hidden');
+                btn.setAttribute('aria-expanded', 'false');
+                const icon = btn.querySelector('[data-accordion-icon]');
+                if (icon) icon.classList.remove('rotate-180');
+            }
+        });
+        savedPanels.forEach(id => {
+            const panel = document.querySelector(id);
+            const btn = document.querySelector(`#config-accordion button[data-accordion-target="${id}"]`);
+            if (panel && btn) {
+                panel.classList.remove('hidden');
+                btn.setAttribute('aria-expanded', 'true');
+                const icon = btn.querySelector('[data-accordion-icon]');
+                if (icon) icon.classList.add('rotate-180');
+            }
+        });
+    }
+
+    accordionButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            setTimeout(saveAccordionState, 0);
+        });
+    });
+
     const slotTimesDataEl = document.getElementById('slot-times-data');
     const slotTimesContainer = document.getElementById('slot-times');
     const slotsInput = document.querySelector('input[name="slots_per_day"]');
@@ -127,30 +171,36 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const unavailTeacher = document.getElementById('new_unavail_teacher');
     const unavailSlot = document.getElementById('new_unavail_slot');
-    // Display a warning when marking a slot unavailable would conflict.
+    // Display a warning when marking slots unavailable would conflict.
     function warnUnavail() {
-        const tid = unavailTeacher.value;
-        const slotVal = unavailSlot.value;
-        const slot = parseInt(slotVal, 10) - 1;
-        if (!tid || isNaN(slot)) return;
-        const fixed = assignData[tid] || [];
-        const unav = unavailData[tid] || [];
+        if (!unavailTeacher || !unavailSlot) return;
+        const tids = Array.from(unavailTeacher.selectedOptions).map(o => o.value);
+        const slots = Array.from(unavailSlot.selectedOptions).map(o => parseInt(o.value, 10) - 1);
+        if (!tids.length || !slots.length) return;
         const flashes = document.getElementById('flash-messages');
         if (!flashes) return;
-        const li = document.createElement('li');
-        li.className = 'error';
-        if (fixed.includes(slot)) {
-            li.textContent = 'Warning: fixed assignment exists in this slot.';
-        } else if (unav.includes(slot)) {
-            li.textContent = 'Slot already marked unavailable.';
-        } else {
-            return;
-        }
-        flashes.appendChild(li);
+        tids.forEach(tid => {
+            const fixed = assignData[tid] || [];
+            const unav = unavailData[tid] || [];
+            slots.forEach(slot => {
+                let msg = '';
+                if (fixed.includes(slot)) {
+                    msg = 'Warning: fixed assignment exists in this slot.';
+                } else if (unav.includes(slot)) {
+                    msg = 'Slot already marked unavailable.';
+                }
+                if (msg) {
+                    const li = document.createElement('li');
+                    li.className = 'error';
+                    li.textContent = msg;
+                    flashes.appendChild(li);
+                }
+            });
+        });
     }
     if (unavailTeacher && unavailSlot) {
         unavailTeacher.addEventListener('change', warnUnavail);
-        unavailSlot.addEventListener('input', warnUnavail);
+        unavailSlot.addEventListener('change', warnUnavail);
     }
 
     

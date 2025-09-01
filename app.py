@@ -53,6 +53,10 @@ def init_db():
     This function also performs simple migrations when new columns are added in
     later versions of the code. It is called on start-up and whenever the
     database is reset via the web interface."""
+    # ``get_db`` will create the SQLite file if it does not already exist. To
+    # distinguish a brand new database from an existing one we check for the
+    # file beforehand.
+    db_exists = os.path.exists(DB_PATH)
     conn = get_db()
     c = conn.cursor()
 
@@ -210,9 +214,10 @@ def init_db():
 
     conn.commit()
 
-    # insert defaults if tables empty
-    c.execute('SELECT COUNT(*) FROM config')
-    if c.fetchone()[0] == 0:
+    # Only insert sample data when creating a brand new database file.  If the
+    # file already exists, assume any empty tables were intentionally cleared by
+    # the user and leave them empty.
+    if not db_exists:
         start = 8 * 60 + 30
         times = []
         for i in range(8):
@@ -228,16 +233,12 @@ def init_db():
             well_attend_weight
         ) VALUES (1, 8, 30, ?, 1, 4, 1, 8, 0, 2, 0, 1, 3, 1, 0, 10, 2.0, 1, 0, 1, 1)''',
                   (json.dumps(times),))
-    c.execute('SELECT COUNT(*) FROM teachers')
-    if c.fetchone()[0] == 0:
         teachers = [
             ('Teacher A', json.dumps(['Math', 'English']), None, None),
             ('Teacher B', json.dumps(['Science']), None, None),
             ('Teacher C', json.dumps(['History']), None, None),
         ]
         c.executemany('INSERT INTO teachers (name, subjects, min_lessons, max_lessons) VALUES (?, ?, ?, ?)', teachers)
-    c.execute('SELECT COUNT(*) FROM students')
-    if c.fetchone()[0] == 0:
         students = [
             ('Student 1', json.dumps(['Math', 'English'])),
             ('Student 2', json.dumps(['Math', 'Science'])),
@@ -250,8 +251,6 @@ def init_db():
             ('Student 9', json.dumps(['English']))
         ]
         c.executemany('INSERT INTO students (name, subjects) VALUES (?, ?)', students)
-    c.execute('SELECT COUNT(*) FROM subjects')
-    if c.fetchone()[0] == 0:
         subjects = [
             ('Math', 0),
             ('English', 0),
@@ -677,8 +676,8 @@ def config():
         for uid in unavail_ids:
             if uid in del_unav:
                 c.execute('DELETE FROM teacher_unavailable WHERE id=?', (int(uid),))
-        nu_teacher = request.form.get('new_unavail_teacher')
-        nu_slot = request.form.get('new_unavail_slot')
+        nu_teachers = [int(t) for t in request.form.getlist('new_unavail_teacher')]
+        nu_slots = [int(s) - 1 for s in request.form.getlist('new_unavail_slot')]
 
         c.execute('SELECT teacher_id, slot FROM teacher_unavailable')
         unav = c.fetchall()
@@ -687,19 +686,19 @@ def config():
         fixed = c.fetchall()
         fixed_set = {(f['teacher_id'], f['slot']) for f in fixed}
 
-        if nu_teacher and nu_slot:
-            tid = int(nu_teacher)
-            slot = int(nu_slot) - 1
-            if (tid, slot) in fixed_set:
-                flash('Cannot mark slot unavailable: fixed assignment exists', 'error')
-                has_error = True
-            elif (tid, slot) in unav_set:
-                flash('Teacher already unavailable in that slot', 'error')
-                has_error = True
-            else:
-                c.execute('INSERT INTO teacher_unavailable (teacher_id, slot) VALUES (?, ?)',
-                          (tid, slot))
-                unav_set.add((tid, slot))
+        if nu_teachers and nu_slots:
+            for tid in nu_teachers:
+                for slot in nu_slots:
+                    if (tid, slot) in fixed_set:
+                        flash('Cannot mark slot unavailable: fixed assignment exists', 'error')
+                        has_error = True
+                    elif (tid, slot) in unav_set:
+                        flash('Teacher already unavailable in that slot', 'error')
+                        has_error = True
+                    else:
+                        c.execute('INSERT INTO teacher_unavailable (teacher_id, slot) VALUES (?, ?)',
+                                  (tid, slot))
+                        unav_set.add((tid, slot))
 
         # update fixed assignments
         assign_ids = request.form.getlist('assign_id')
@@ -741,15 +740,7 @@ def config():
             elif (tid, slot) in fixed_set:
                 flash('Duplicate fixed assignment for that slot', 'error')
                 has_error = True
-            elif na_student:
-                sid = int(na_student)
-                if na_subject not in student_map.get(sid, []):
-                    flash('Student does not require the selected subject', 'error')
-                    has_error = True
-                else:
-                    c.execute('INSERT INTO fixed_assignments (teacher_id, student_id, group_id, subject, slot) VALUES (?, ?, ?, ?, ?)',
-                              (tid, sid, None, na_subject, slot))
-            else:
+            elif na_group and (group_weight > 0 or not na_student):
                 gid = int(na_group)
                 if na_subject not in group_subj.get(gid, []):
                     flash('Group does not require the selected subject', 'error')
@@ -757,6 +748,14 @@ def config():
                 else:
                     c.execute('INSERT INTO fixed_assignments (teacher_id, student_id, group_id, subject, slot) VALUES (?, ?, ?, ?, ?)',
                               (tid, None, gid, na_subject, slot))
+            else:
+                sid = int(na_student)
+                if na_subject not in student_map.get(sid, []):
+                    flash('Student does not require the selected subject', 'error')
+                    has_error = True
+                else:
+                    c.execute('INSERT INTO fixed_assignments (teacher_id, student_id, group_id, subject, slot) VALUES (?, ?, ?, ?, ?)',
+                              (tid, sid, None, na_subject, slot))
 
         if has_error:
             conn.rollback()
