@@ -21,17 +21,30 @@ document.addEventListener('DOMContentLoaded', function () {
         localStorage.setItem(ACC_KEY, JSON.stringify(open));
     }
 
-    const savedPanels = JSON.parse(localStorage.getItem(ACC_KEY) || '[]');
-    savedPanels.forEach(id => {
-        const panel = document.querySelector(id);
-        const btn = document.querySelector(`#config-accordion button[data-accordion-target="${id}"]`);
-        if (panel && btn) {
-            panel.classList.remove('hidden');
-            btn.setAttribute('aria-expanded', 'true');
-            const icon = btn.querySelector('[data-accordion-icon]');
-            if (icon) icon.classList.add('rotate-180');
-        }
-    });
+    const savedRaw = localStorage.getItem(ACC_KEY);
+    if (savedRaw) {
+        const savedPanels = JSON.parse(savedRaw);
+        accordionButtons.forEach(btn => {
+            const id = btn.getAttribute('data-accordion-target');
+            const panel = document.querySelector(id);
+            if (panel) {
+                panel.classList.add('hidden');
+                btn.setAttribute('aria-expanded', 'false');
+                const icon = btn.querySelector('[data-accordion-icon]');
+                if (icon) icon.classList.remove('rotate-180');
+            }
+        });
+        savedPanels.forEach(id => {
+            const panel = document.querySelector(id);
+            const btn = document.querySelector(`#config-accordion button[data-accordion-target="${id}"]`);
+            if (panel && btn) {
+                panel.classList.remove('hidden');
+                btn.setAttribute('aria-expanded', 'true');
+                const icon = btn.querySelector('[data-accordion-icon]');
+                if (icon) icon.classList.add('rotate-180');
+            }
+        });
+    }
 
     accordionButtons.forEach(btn => {
         btn.addEventListener('click', () => {
