@@ -7,7 +7,7 @@ A local-first, browser-based school timetabling application built with **Python 
 ## 💡 Key Features
 
 - Configure teachers, students, subjects and groups through a web form
-- Mark teachers unavailable in specific slots or assign fixed lessons
+- Mark teachers unavailable in specific slots or assign fixed lessons, with batch selection for multiple teachers and slots
 - Specify teachers that individual students should avoid
 - Generate optimized timetables using OR-Tools CP-SAT
 - Record and view attendance history for each student and subject
@@ -21,6 +21,7 @@ A local-first, browser-based school timetabling application built with **Python 
 ```
 app.py                          # Flask routes and database setup
 cp_sat_timetable.py             # OR-Tools model creation and solving helpers
+data/                           # Writable directory holding the SQLite database
 CODE_GUIDE.txt                  # Walkthrough of the code for beginners
 static/                         # Front-end scripts and styles
     attendance.js               # Data table initialisation on attendance page
@@ -56,6 +57,10 @@ python app.py
 ```
 
 The app will be available at `http://localhost:5000`.
+
+The SQLite database is stored in `data/timetable.db` relative to the project
+root. When deploying on Windows for all users, ensure the `data` directory is
+writable so the application can create and update the database.
 
 ### Configuration
 
@@ -102,7 +107,9 @@ When using group lessons you can adjust **Group weight** to bias the solver
 toward scheduling them. This multiplier boosts the objective weight of any
 variable whose ``student_id`` represents a group, making joint lessons more
 appealing relative to individual ones. A value around **2** is a good
-starting point and roughly doubles the attractiveness of group lessons.
+starting point and roughly doubles the attractiveness of group lessons, while
+lower values reduce their priority. Setting the weight to **0** effectively
+suppresses group lessons entirely.
 
 You can also block specific student/teacher pairings. The configuration form
 lets you tick the teachers a student should avoid. The app checks each block

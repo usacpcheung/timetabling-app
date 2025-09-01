@@ -21,7 +21,15 @@ from cp_sat_timetable import build_model, solve_and_print
 
 app = Flask(__name__)
 app.secret_key = 'dev'
-DB_PATH = os.path.join(os.path.dirname(__file__), 'timetable.db')
+
+# Store the SQLite database inside a dedicated ``data`` directory.  This keeps
+# application files read-only and allows the database folder to have relaxed
+# permissions when deployed system-wide (e.g. under ``Program Files`` on
+# Windows).
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+os.makedirs(DATA_DIR, exist_ok=True)
+DB_PATH = os.path.join(DATA_DIR, "timetable.db")
 
 
 def get_db():
@@ -31,6 +39,9 @@ def get_db():
     ``row_factory`` allows rows to behave like dictionaries so template
     code can access columns by name.
     """
+    dir_ = os.path.dirname(DB_PATH)
+    if dir_:
+        os.makedirs(dir_, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
@@ -42,6 +53,10 @@ def init_db():
     This function also performs simple migrations when new columns are added in
     later versions of the code. It is called on start-up and whenever the
     database is reset via the web interface."""
+    # ``get_db`` will create the SQLite file if it does not already exist. To
+    # distinguish a brand new database from an existing one we check for the
+    # file beforehand.
+    db_exists = os.path.exists(DB_PATH)
     conn = get_db()
     c = conn.cursor()
 
@@ -176,6 +191,14 @@ def init_db():
             date TEXT
         )''')
 
+    if not table_exists('worksheets'):
+        c.execute('''CREATE TABLE worksheets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER,
+            subject TEXT,
+            date TEXT
+        )''')
+
     if not table_exists('groups'):
         c.execute('''CREATE TABLE groups (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -199,9 +222,10 @@ def init_db():
 
     conn.commit()
 
-    # insert defaults if tables empty
-    c.execute('SELECT COUNT(*) FROM config')
-    if c.fetchone()[0] == 0:
+    # Only insert sample data when creating a brand new database file.  If the
+    # file already exists, assume any empty tables were intentionally cleared by
+    # the user and leave them empty.
+    if not db_exists:
         start = 8 * 60 + 30
         times = []
         for i in range(8):
@@ -217,16 +241,12 @@ def init_db():
             well_attend_weight
         ) VALUES (1, 8, 30, ?, 1, 4, 1, 8, 0, 2, 0, 1, 3, 1, 0, 10, 2.0, 1, 0, 1, 1)''',
                   (json.dumps(times),))
-    c.execute('SELECT COUNT(*) FROM teachers')
-    if c.fetchone()[0] == 0:
         teachers = [
             ('Teacher A', json.dumps(['Math', 'English']), None, None),
             ('Teacher B', json.dumps(['Science']), None, None),
             ('Teacher C', json.dumps(['History']), None, None),
         ]
         c.executemany('INSERT INTO teachers (name, subjects, min_lessons, max_lessons) VALUES (?, ?, ?, ?)', teachers)
-    c.execute('SELECT COUNT(*) FROM students')
-    if c.fetchone()[0] == 0:
         students = [
             ('Student 1', json.dumps(['Math', 'English'])),
             ('Student 2', json.dumps(['Math', 'Science'])),
@@ -239,8 +259,6 @@ def init_db():
             ('Student 9', json.dumps(['English']))
         ]
         c.executemany('INSERT INTO students (name, subjects) VALUES (?, ?)', students)
-    c.execute('SELECT COUNT(*) FROM subjects')
-    if c.fetchone()[0] == 0:
         subjects = [
             ('Math', 0),
             ('English', 0),
@@ -666,8 +684,8 @@ def config():
         for uid in unavail_ids:
             if uid in del_unav:
                 c.execute('DELETE FROM teacher_unavailable WHERE id=?', (int(uid),))
-        nu_teacher = request.form.get('new_unavail_teacher')
-        nu_slot = request.form.get('new_unavail_slot')
+        nu_teachers = [int(t) for t in request.form.getlist('new_unavail_teacher')]
+        nu_slots = [int(s) - 1 for s in request.form.getlist('new_unavail_slot')]
 
         c.execute('SELECT teacher_id, slot FROM teacher_unavailable')
         unav = c.fetchall()
@@ -676,19 +694,19 @@ def config():
         fixed = c.fetchall()
         fixed_set = {(f['teacher_id'], f['slot']) for f in fixed}
 
-        if nu_teacher and nu_slot:
-            tid = int(nu_teacher)
-            slot = int(nu_slot) - 1
-            if (tid, slot) in fixed_set:
-                flash('Cannot mark slot unavailable: fixed assignment exists', 'error')
-                has_error = True
-            elif (tid, slot) in unav_set:
-                flash('Teacher already unavailable in that slot', 'error')
-                has_error = True
-            else:
-                c.execute('INSERT INTO teacher_unavailable (teacher_id, slot) VALUES (?, ?)',
-                          (tid, slot))
-                unav_set.add((tid, slot))
+        if nu_teachers and nu_slots:
+            for tid in nu_teachers:
+                for slot in nu_slots:
+                    if (tid, slot) in fixed_set:
+                        flash('Cannot mark slot unavailable: fixed assignment exists', 'error')
+                        has_error = True
+                    elif (tid, slot) in unav_set:
+                        flash('Teacher already unavailable in that slot', 'error')
+                        has_error = True
+                    else:
+                        c.execute('INSERT INTO teacher_unavailable (teacher_id, slot) VALUES (?, ?)',
+                                  (tid, slot))
+                        unav_set.add((tid, slot))
 
         # update fixed assignments
         assign_ids = request.form.getlist('assign_id')
@@ -730,15 +748,7 @@ def config():
             elif (tid, slot) in fixed_set:
                 flash('Duplicate fixed assignment for that slot', 'error')
                 has_error = True
-            elif na_student:
-                sid = int(na_student)
-                if na_subject not in student_map.get(sid, []):
-                    flash('Student does not require the selected subject', 'error')
-                    has_error = True
-                else:
-                    c.execute('INSERT INTO fixed_assignments (teacher_id, student_id, group_id, subject, slot) VALUES (?, ?, ?, ?, ?)',
-                              (tid, sid, None, na_subject, slot))
-            else:
+            elif na_group and (group_weight > 0 or not na_student):
                 gid = int(na_group)
                 if na_subject not in group_subj.get(gid, []):
                     flash('Group does not require the selected subject', 'error')
@@ -746,6 +756,14 @@ def config():
                 else:
                     c.execute('INSERT INTO fixed_assignments (teacher_id, student_id, group_id, subject, slot) VALUES (?, ?, ?, ?, ?)',
                               (tid, None, gid, na_subject, slot))
+            else:
+                sid = int(na_student)
+                if na_subject not in student_map.get(sid, []):
+                    flash('Student does not require the selected subject', 'error')
+                    has_error = True
+                else:
+                    c.execute('INSERT INTO fixed_assignments (teacher_id, student_id, group_id, subject, slot) VALUES (?, ?, ?, ?, ?)',
+                              (tid, sid, None, na_subject, slot))
 
         if has_error:
             conn.rollback()
@@ -878,9 +896,10 @@ def generate_schedule(target_date=None):
             row['student_id'] = offset + row['group_id']
         assignments_fixed.append(row)
 
-    # clear previous timetable and attendance logs for the target date
+    # clear previous timetable, attendance logs, and worksheet assignments for the target date
     c.execute('DELETE FROM timetable WHERE date=?', (target_date,))
     c.execute('DELETE FROM attendance_log WHERE date=?', (target_date,))
+    c.execute('DELETE FROM worksheets WHERE date=?', (target_date,))
 
     # Build and solve CP-SAT model
     allow_repeats = bool(cfg['allow_repeats'])
@@ -1068,8 +1087,6 @@ def get_timetable_data(target_date):
     c.execute('SELECT id, name FROM students_archive')
     for row in c.fetchall():
         student_names.setdefault(row['id'], row['name'])
-    conn.close()
-
     grid = {slot: {te['id']: None for te in teachers} for slot in range(slots)}
     for r in rows:
         tid = r['teacher_id']
@@ -1091,12 +1108,25 @@ def get_timetable_data(target_date):
             assigned.setdefault(r['student_id'], set()).add(subj)
     missing = {}
     for s in student_rows:
-        if not s['active']:
-            continue
         required = set(json.loads(s['subjects']))
         miss = required - assigned.get(s['id'], set())
         if miss:
-            missing[s['id']] = sorted(miss)
+            subj_list = []
+            for subj in sorted(miss):
+                c.execute(
+                    'SELECT COUNT(*) FROM worksheets WHERE student_id=? AND subject=? AND date<=?',
+                    (s['id'], subj, target_date),
+                )
+                count = c.fetchone()[0]
+                c.execute(
+                    'SELECT 1 FROM worksheets WHERE student_id=? AND subject=? AND date=?',
+                    (s['id'], subj, target_date),
+                )
+                has_today = c.fetchone() is not None
+                subj_list.append({'subject': subj, 'count': count, 'today': has_today})
+            missing[s['id']] = subj_list
+
+    conn.close()
 
     has_rows = bool(rows)
     return target_date, range(slots), teachers, grid, missing, student_names, slot_labels, has_rows
@@ -1122,6 +1152,8 @@ def generate():
     if exists:
         conn = get_db()
         conn.execute('DELETE FROM timetable WHERE date=?', (gen_date,))
+        conn.execute('DELETE FROM attendance_log WHERE date=?', (gen_date,))
+        conn.execute('DELETE FROM worksheets WHERE date=?', (gen_date,))
         conn.commit()
         conn.close()
     generate_schedule(gen_date)
@@ -1322,6 +1354,29 @@ def edit_timetable(date):
                         )
                 conn.commit()
                 flash('Lesson added.', 'info')
+        elif action == 'worksheet':
+            student_id = request.form.get('student_id')
+            subject = request.form.get('subject')
+            assign = request.form.get('assign')
+            if student_id and subject and assign is not None:
+                sid = int(student_id)
+                if assign == '1':
+                    c.execute(
+                        'SELECT 1 FROM worksheets WHERE student_id=? AND subject=? AND date=?',
+                        (sid, subject, date),
+                    )
+                    if c.fetchone() is None:
+                        c.execute(
+                            'INSERT INTO worksheets (student_id, subject, date) VALUES (?, ?, ?)',
+                            (sid, subject, date),
+                        )
+                else:
+                    c.execute(
+                        'DELETE FROM worksheets WHERE student_id=? AND subject=? AND date=?',
+                        (sid, subject, date),
+                    )
+                conn.commit()
+                flash('Worksheet assignment updated.', 'info')
         conn.close()
         return redirect(url_for('edit_timetable', date=date))
 
@@ -1378,6 +1433,49 @@ def edit_timetable(date):
     c.execute('SELECT name FROM subjects')
     subjects = [r['name'] for r in c.fetchall()]
 
+    # compute unassigned subjects and worksheet counts
+    c.execute('SELECT group_id, student_id FROM group_members')
+    gm_rows = c.fetchall()
+    group_students = {}
+    for gm in gm_rows:
+        group_students.setdefault(gm['group_id'], []).append(gm['student_id'])
+
+    c.execute('SELECT id, name, subjects, active FROM students')
+    student_rows = c.fetchall()
+    student_names = {s['id']: s['name'] for s in student_rows}
+    c.execute('SELECT id, name FROM students_archive')
+    for row in c.fetchall():
+        student_names.setdefault(row['id'], row['name'])
+
+    assigned = {s['id']: set() for s in student_rows}
+    for les in lessons:
+        subj = les['subject']
+        if les['group_id']:
+            for sid in group_students.get(les['group_id'], []):
+                assigned.setdefault(sid, set()).add(subj)
+        elif les['student_id']:
+            assigned.setdefault(les['student_id'], set()).add(subj)
+
+    missing = {}
+    for s in student_rows:
+        required = set(json.loads(s['subjects']))
+        miss = required - assigned.get(s['id'], set())
+        if miss:
+            subj_list = []
+            for subj in sorted(miss):
+                c.execute(
+                    'SELECT COUNT(*) FROM worksheets WHERE student_id=? AND subject=? AND date<=?',
+                    (s['id'], subj, date),
+                )
+                count = c.fetchone()[0]
+                c.execute(
+                    'SELECT 1 FROM worksheets WHERE student_id=? AND subject=? AND date=?',
+                    (s['id'], subj, date),
+                )
+                assigned_today = c.fetchone() is not None
+                subj_list.append({'subject': subj, 'count': count, 'assigned': assigned_today})
+            missing[s['id']] = subj_list
+
     conn.close()
     return render_template(
         'edit_timetable.html',
@@ -1388,6 +1486,8 @@ def edit_timetable(date):
         groups=groups,
         teachers=teachers,
         subjects=subjects,
+        missing=missing,
+        student_names=student_names,
         slots=slots,
     )
 
@@ -1405,6 +1505,7 @@ def delete_timetables():
     if request.form.get('clear_all'):
         c.execute('DELETE FROM timetable')
         c.execute('DELETE FROM attendance_log')
+        c.execute('DELETE FROM worksheets')
         conn.commit()
         conn.close()
         flash('All timetables deleted.', 'info')
@@ -1415,6 +1516,7 @@ def delete_timetables():
         for d in dates:
             c.execute('DELETE FROM timetable WHERE date=?', (d,))
             c.execute('DELETE FROM attendance_log WHERE date=?', (d,))
+            c.execute('DELETE FROM worksheets WHERE date=?', (d,))
         conn.commit()
         conn.close()
         flash(f'Deleted timetables for {len(dates)} date(s).', 'info')
