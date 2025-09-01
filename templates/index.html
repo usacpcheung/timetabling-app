@@ -101,7 +101,11 @@
             <h3 class="text-lg font-medium mt-4">Unscheduled Subjects</h3>
             <ul class="list-disc list-inside">
                 {% for sid, subs in missing.items() %}
-                <li>{{ student_names[sid] }}: {{ ', '.join(subs) }}</li>
+                <li>{{ student_names[sid] }}:
+                    {% for item in subs %}
+                        {{ item.subject }} ({{ item.count }}){% if not loop.last %}, {% endif %}
+                    {% endfor %}
+                </li>
                 {% endfor %}
             </ul>
             {% endif %}
