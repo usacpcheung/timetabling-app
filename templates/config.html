@@ -234,6 +234,38 @@
                     {% endfor %}
                 </select>
             </label>
+            <button type="button" onclick="document.getElementById('adv-{{ s['id'] }}').showModal()" class="bg-emerald-200 text-emerald-800 px-2 py-1 rounded">Advanced</button>
+            <dialog id="adv-{{ s['id'] }}" class="p-4 rounded">
+                <h3 class="text-lg mb-2">Advanced settings for {{ s['name'] }}</h3>
+                <label class="block">Blocked Slots:
+                    <select multiple name="student_unavail_{{ s['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                        {% for i in range(config['slots_per_day']) %}
+                        <option value="{{ i }}" {% if i in student_unavail_map.get(s['id'], []) %}selected{% endif %}>Slot {{ i + 1 }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label class="block">Min lessons:
+                    <input type="number" name="student_min_{{ s['id'] }}" value="{{ s['min_lessons'] if s['min_lessons'] is not none else config['min_lessons'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                </label>
+                <label class="block">Max lessons:
+                    <input type="number" name="student_max_{{ s['id'] }}" value="{{ s['max_lessons'] if s['max_lessons'] is not none else config['max_lessons'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                </label>
+                <label class="flex items-center gap-2">Allow repeated lessons?
+                    <input type="checkbox" name="student_allow_repeats_{{ s['id'] }}" {% if (s['allow_repeats'] if s['allow_repeats'] is not none else config['allow_repeats']) %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
+                </label>
+                <label class="block">Max repeats:
+                    <input type="number" name="student_max_repeats_{{ s['id'] }}" value="{{ s['max_repeats'] if s['max_repeats'] is not none else config['max_repeats'] }}" min="1" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                </label>
+                <label class="flex items-center gap-2">Allow consecutive repeats?
+                    <input type="checkbox" name="student_allow_consecutive_{{ s['id'] }}" {% if (s['allow_consecutive'] if s['allow_consecutive'] is not none else config['allow_consecutive']) %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
+                </label>
+                <label class="flex items-center gap-2">Prefer consecutive repeats?
+                    <input type="checkbox" name="student_prefer_consecutive_{{ s['id'] }}" {% if (s['prefer_consecutive'] if s['prefer_consecutive'] is not none else config['prefer_consecutive']) %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
+                </label>
+                <div class="mt-2 text-right">
+                    <button type="button" onclick="document.getElementById('adv-{{ s['id'] }}').close()" class="bg-emerald-500 text-white px-3 py-1 rounded">Close</button>
+                </div>
+            </dialog>
             <label class="flex items-center gap-2">Delete?
                 <input type="checkbox" name="student_delete_{{ s['id'] }}" value="1" class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
             </label>
@@ -255,6 +287,38 @@
                     {% endfor %}
                 </select>
             </label>
+            <button type="button" onclick="document.getElementById('adv-new').showModal()" class="bg-emerald-200 text-emerald-800 px-2 py-1 rounded">Advanced</button>
+            <dialog id="adv-new" class="p-4 rounded">
+                <h3 class="text-lg mb-2">Advanced settings for new student</h3>
+                <label class="block">Blocked Slots:
+                    <select multiple name="new_student_unavail" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                        {% for i in range(config['slots_per_day']) %}
+                        <option value="{{ i }}">Slot {{ i + 1 }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label class="block">Min lessons:
+                    <input type="number" name="new_student_min" value="{{ config['min_lessons'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                </label>
+                <label class="block">Max lessons:
+                    <input type="number" name="new_student_max" value="{{ config['max_lessons'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                </label>
+                <label class="flex items-center gap-2">Allow repeated lessons?
+                    <input type="checkbox" name="new_student_allow_repeats" {% if config['allow_repeats'] %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
+                </label>
+                <label class="block">Max repeats:
+                    <input type="number" name="new_student_max_repeats" value="{{ config['max_repeats'] }}" min="1" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                </label>
+                <label class="flex items-center gap-2">Allow consecutive repeats?
+                    <input type="checkbox" name="new_student_allow_consecutive" {% if config['allow_consecutive'] %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
+                </label>
+                <label class="flex items-center gap-2">Prefer consecutive repeats?
+                    <input type="checkbox" name="new_student_prefer_consecutive" {% if config['prefer_consecutive'] %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
+                </label>
+                <div class="mt-2 text-right">
+                    <button type="button" onclick="document.getElementById('adv-new').close()" class="bg-emerald-500 text-white px-3 py-1 rounded">Close</button>
+                </div>
+            </dialog>
         </fieldset>
     </div>
     <!-- Groups -->
