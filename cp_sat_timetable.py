@@ -18,7 +18,8 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 balance_teacher_load=False, balance_weight=1,
                 blocked=None, student_limits=None,
                 student_repeat=None, student_unavailable=None,
-                student_multi_teacher=None):
+                student_multi_teacher=None,
+                locations=None, location_restrict=None):
     """Build CP-SAT model for the scheduling problem.
 
     When ``add_assumptions`` is ``True``, Boolean indicators are created for the
@@ -71,10 +72,15 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             time slots where the student cannot attend lessons.
         student_multi_teacher: optional mapping ``student_id -> bool``
             overriding ``allow_multi_teacher`` for specific students.
+        locations: optional list of location identifiers.
+        location_restrict: mapping ``student_id -> set(location_id)`` limiting
+            the locations that may be used for that student or group.
 
     Returns:
         model (cp_model.CpModel): The constructed model.
         vars_ (dict): Mapping (student_id, teacher_id, subject, slot) -> BoolVar.
+        loc_vars (dict): Mapping (student_id, teacher_id, subject, slot,
+            location_id) -> BoolVar for location assignments.
         assumptions (dict or None): Mapping of constraint group name to the
             assumption indicator variable when ``add_assumptions`` is True.
     """
@@ -92,6 +98,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
     # certain lessons in the objective and ``var_weights`` records the weight per
     # variable for easy access later.
     vars_ = {}
+    loc_vars = {}
     subject_weights = subject_weights or {}
     var_weights = {}
 
@@ -164,6 +171,28 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                     elif add_assumptions and ((teacher['id'], slot) in unavailable_set or
                                              teacher['id'] in forbidden):
                         model.Add(vars_[key] == 0).OnlyEnforceIf(assumptions['teacher_availability'])
+
+    all_locs = locations or []
+    loc_restrict = location_restrict or {}
+    for (sid, tid, subj, sl), var in list(vars_.items()):
+        allowed = loc_restrict.get(sid, all_locs)
+        if allowed:
+            lvars = []
+            for loc in allowed:
+                lv = model.NewBoolVar(f"x_s{sid}_t{tid}_sub{subj}_sl{sl}_loc{loc}")
+                loc_vars[(sid, tid, subj, sl, loc)] = lv
+                model.Add(lv <= var)
+                lvars.append(lv)
+            model.Add(sum(lvars) == var)
+        else:
+            model.Add(var == 0)
+
+    for loc in all_locs:
+        for slot in range(slots):
+            possible = [lv for (sid, tid, subj, sl, l), lv in loc_vars.items()
+                        if l == loc and sl == slot]
+            if possible:
+                model.Add(sum(possible) <= 1)
 
     # Constraint 1: teacher availability - a teacher cannot teach more than one lesson in the same time slot.  We scan
     # all variables for each teacher/slot pair and ensure at most one is "on".
@@ -338,16 +367,17 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
 
     # Return the constructed model along with the decision variables and any
     # assumption indicators.
-    return model, vars_, assumptions
+    return model, vars_, loc_vars, assumptions
 
 
-def solve_and_print(model, vars_, assumptions=None):
+def solve_and_print(model, vars_, loc_vars, assumptions=None):
     """Run the OR-Tools solver and collect the results.
 
     Args:
         model: The ``CpModel`` instance returned by :func:`build_model`.
         vars_: Dictionary mapping tuple keys to the ``BoolVar`` decision
             variables.  The solver will decide which of these become ``True``.
+        loc_vars: Mapping including location assignment variables.
         assumptions: Optional dictionary of assumption indicators.  When the
             model is infeasible these help identify which group of constraints
             caused the problem.
@@ -355,7 +385,8 @@ def solve_and_print(model, vars_, assumptions=None):
     Returns:
         ``status``: Solver status value from OR-Tools.
         ``assignments``: List of tuples ``(student_id, teacher_id, subject,
-        slot)`` representing the selected lessons.
+        slot, location_id)`` representing the selected lessons and their
+        locations.
         ``core``: If infeasible and assumptions were used, names of the
         constraint groups that could not be satisfied.
     """
@@ -366,11 +397,14 @@ def solve_and_print(model, vars_, assumptions=None):
 
     assignments = []
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        # Pull out any variables that the solver set to ``True`` which
-        # correspond to scheduled lessons.
         for (sid, tid, subj, slot), var in vars_.items():
             if solver.BooleanValue(var):
-                assignments.append((sid, tid, subj, slot))
+                loc = None
+                for (s, t, sub, sl, l), lv in loc_vars.items():
+                    if s == sid and t == tid and sub == subj and sl == slot and solver.BooleanValue(lv):
+                        loc = l
+                        break
+                assignments.append((sid, tid, subj, slot, loc))
 
     core = []
     if status == cp_model.INFEASIBLE and assumptions:

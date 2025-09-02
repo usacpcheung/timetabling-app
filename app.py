@@ -204,6 +204,7 @@ def init_db():
             teacher_id INTEGER,
             subject TEXT,
             slot INTEGER,
+            location_id INTEGER,
             date TEXT
         )''')
     else:
@@ -211,6 +212,26 @@ def init_db():
             c.execute('ALTER TABLE timetable ADD COLUMN date TEXT')
         if not column_exists('timetable', 'group_id'):
             c.execute('ALTER TABLE timetable ADD COLUMN group_id INTEGER')
+        if not column_exists('timetable', 'location_id'):
+            c.execute('ALTER TABLE timetable ADD COLUMN location_id INTEGER')
+
+    if not table_exists('locations'):
+        c.execute('''CREATE TABLE locations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE
+        )''')
+
+    if not table_exists('student_locations'):
+        c.execute('''CREATE TABLE student_locations (
+            student_id INTEGER,
+            location_id INTEGER
+        )''')
+
+    if not table_exists('group_locations'):
+        c.execute('''CREATE TABLE group_locations (
+            group_id INTEGER,
+            location_id INTEGER
+        )''')
 
     if not table_exists('attendance_log'):
         c.execute('''CREATE TABLE attendance_log (
@@ -745,6 +766,37 @@ def config():
                     c.execute('INSERT INTO group_members (group_id, student_id) VALUES (?, ?)',
                               (gid, sid))
 
+        # update locations and restrictions
+        loc_ids = request.form.getlist('location_id')
+        del_locs = set(request.form.getlist('location_delete'))
+        for lid in loc_ids:
+            name = request.form.get(f'location_name_{lid}')
+            if lid in del_locs:
+                c.execute('DELETE FROM locations WHERE id=?', (int(lid),))
+                c.execute('DELETE FROM student_locations WHERE location_id=?', (int(lid),))
+                c.execute('DELETE FROM group_locations WHERE location_id=?', (int(lid),))
+            else:
+                c.execute('UPDATE locations SET name=? WHERE id=?', (name, int(lid)))
+        new_loc = request.form.get('new_location_name')
+        if new_loc:
+            c.execute('INSERT INTO locations (name) VALUES (?)', (new_loc,))
+
+        c.execute('SELECT id FROM students')
+        student_ids = [r['id'] for r in c.fetchall()]
+        for sid in student_ids:
+            sel = [int(x) for x in request.form.getlist(f'student_locs_{sid}')]
+            c.execute('DELETE FROM student_locations WHERE student_id=?', (sid,))
+            for lid in sel:
+                c.execute('INSERT INTO student_locations (student_id, location_id) VALUES (?, ?)', (sid, lid))
+
+        c.execute('SELECT id FROM groups')
+        group_ids = [r['id'] for r in c.fetchall()]
+        for gid in group_ids:
+            sel = [int(x) for x in request.form.getlist(f'group_locs_{gid}')]
+            c.execute('DELETE FROM group_locations WHERE group_id=?', (gid,))
+            for lid in sel:
+                c.execute('INSERT INTO group_locations (group_id, location_id) VALUES (?, ?)', (gid, lid))
+
         # update teacher unavailability
         unavail_ids = request.form.getlist('unavail_id')
         del_unav = set(request.form.getlist('unavail_delete'))
@@ -870,6 +922,18 @@ def config():
     for gm in gm_rows:
         group_map.setdefault(gm['group_id'], []).append(gm['student_id'])
     group_subj_map = {g['id']: json.loads(g['subjects']) for g in groups}
+    c.execute('SELECT * FROM locations')
+    locations = c.fetchall()
+    c.execute('SELECT student_id, location_id FROM student_locations')
+    sl_rows = c.fetchall()
+    student_loc_map = {}
+    for r in sl_rows:
+        student_loc_map.setdefault(r['student_id'], []).append(r['location_id'])
+    c.execute('SELECT group_id, location_id FROM group_locations')
+    gl_rows = c.fetchall()
+    group_loc_map = {}
+    for r in gl_rows:
+        group_loc_map.setdefault(r['group_id'], []).append(r['location_id'])
     c.execute('''SELECT u.id, u.teacher_id, u.slot, t.name as teacher_name
                  FROM teacher_unavailable u JOIN teachers t ON u.teacher_id = t.id''')
     unavailable = c.fetchall()
@@ -894,13 +958,16 @@ def config():
 
     return render_template('config.html', config=cfg, teachers=teachers,
                            students=students, subjects=subjects, groups=groups,
+                           locations=locations,
                            unavailable=unavailable, assignments=assignments,
                            teacher_map=teacher_map, student_map=student_map,
                            unavail_map=unavail_map, assign_map=assign_map,
                            group_map=group_map, group_subj_map=group_subj_map,
                            block_map=block_map, json=json,
                            slot_times=slot_times,
-                           student_unavail_map=student_unavail_map)
+                           student_unavail_map=student_unavail_map,
+                           student_loc_map=student_loc_map,
+                           group_loc_map=group_loc_map)
 
 
 def generate_schedule(target_date=None):
@@ -973,6 +1040,19 @@ def generate_schedule(target_date=None):
         if row.get('group_id'):
             row['student_id'] = offset + row['group_id']
         assignments_fixed.append(row)
+
+    c.execute('SELECT id FROM locations')
+    locations = [r['id'] for r in c.fetchall()]
+    c.execute('SELECT student_id, location_id FROM student_locations')
+    sl_rows = c.fetchall()
+    student_loc_map = {}
+    for r in sl_rows:
+        student_loc_map.setdefault(r['student_id'], set()).add(r['location_id'])
+    c.execute('SELECT group_id, location_id FROM group_locations')
+    gl_rows = c.fetchall()
+    group_loc_map = {}
+    for r in gl_rows:
+        group_loc_map.setdefault(r['group_id'], set()).add(r['location_id'])
 
     # clear previous timetable, attendance logs, and worksheet assignments for the target date
     c.execute('DELETE FROM timetable WHERE date=?', (target_date,))
@@ -1054,7 +1134,13 @@ def generate_schedule(target_date=None):
                     weight = well_attend_weight
                 subject_weights[(offset + gid, subj)] = weight
 
-    model, vars_, assumptions = build_model(
+    loc_restrict = {}
+    for sid, locs in student_loc_map.items():
+        loc_restrict[sid] = locs
+    for gid, locs in group_loc_map.items():
+        loc_restrict[offset + gid] = locs
+
+    model, vars_, loc_vars, assumptions = build_model(
         full_students, teachers, slots, min_lessons, max_lessons,
         allow_repeats=allow_repeats, max_repeats=max_repeats,
         prefer_consecutive=prefer_consecutive, allow_consecutive=allow_consecutive,
@@ -1072,34 +1158,36 @@ def generate_schedule(target_date=None):
         student_limits=student_limits,
         student_repeat=student_repeat,
         student_unavailable=student_unavailable,
-        student_multi_teacher=student_multi)
-    status, assignments, core = solve_and_print(model, vars_, assumptions)
+        student_multi_teacher=student_multi,
+        locations=locations,
+        location_restrict=loc_restrict)
+    status, assignments, core = solve_and_print(model, vars_, loc_vars, assumptions)
 
     # Insert solver results into DB
     if assignments:
         group_lessons = set()
         filtered = []
-        for sid, tid, subj, slot in assignments:
+        for sid, tid, subj, slot, loc in assignments:
             if sid >= offset:
                 gid = sid - offset
-                group_lessons.add((gid, tid, subj, slot))
-                filtered.append((None, gid, tid, subj, slot))
-        for sid, tid, subj, slot in assignments:
+                group_lessons.add((gid, tid, subj, slot, loc))
+                filtered.append((None, gid, tid, subj, slot, loc))
+        for sid, tid, subj, slot, loc in assignments:
             if sid >= offset:
                 continue
             skip = False
             for gid in student_groups.get(sid, []):
-                if subj in group_subjects.get(gid, []) and (gid, tid, subj, slot) in group_lessons:
+                if subj in group_subjects.get(gid, []) and (gid, tid, subj, slot, loc) in group_lessons:
                     skip = True
                     break
             if not skip:
-                filtered.append((sid, None, tid, subj, slot))
+                filtered.append((sid, None, tid, subj, slot, loc))
 
         attendance_rows = []
         for entry in filtered:
-            sid, gid, tid, subj, slot = entry
-            c.execute('INSERT INTO timetable (student_id, group_id, teacher_id, subject, slot, date) VALUES (?, ?, ?, ?, ?, ?)',
-                      (sid, gid, tid, subj, slot, target_date))
+            sid, gid, tid, subj, slot, loc = entry
+            c.execute('INSERT INTO timetable (student_id, group_id, teacher_id, subject, slot, location_id, date) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                      (sid, gid, tid, subj, slot, loc, target_date))
             if sid is not None:
                 name = student_name_map.get(sid, '')
                 attendance_rows.append((sid, name, subj, target_date))
