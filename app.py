@@ -1253,12 +1253,14 @@ def get_timetable_data(target_date):
 
     c.execute('''SELECT t.slot, te.name as teacher,
                         COALESCE(s.name, sa.name) as student,
-                        g.name as group_name, t.subject, t.group_id, t.teacher_id, t.student_id
+                        g.name as group_name, t.subject, t.group_id, t.teacher_id,
+                        t.student_id, l.name AS location_name
                  FROM timetable t
                  JOIN teachers te ON t.teacher_id = te.id
                  LEFT JOIN students s ON t.student_id = s.id
                  LEFT JOIN students_archive sa ON t.student_id = sa.id
                  LEFT JOIN groups g ON t.group_id = g.id
+                 LEFT JOIN locations l ON t.location_id = l.id
                  WHERE t.date=?''', (target_date,))
     rows = c.fetchall()
     c.execute('SELECT group_id, student_id FROM group_members')
@@ -1275,12 +1277,13 @@ def get_timetable_data(target_date):
     grid = {slot: {te['id']: None for te in teachers} for slot in range(slots)}
     for r in rows:
         tid = r['teacher_id']
+        loc = f" @ {r['location_name']}" if r['location_name'] else ''
         if r['group_id']:
             members = group_students.get(r['group_id'], [])
             names = ', '.join(student_names.get(m, 'Unknown') for m in members)
-            desc = f"{r['group_name']} [{names}] ({r['subject']})"
+            desc = f"{r['group_name']} [{names}] ({r['subject']}){loc}"
         else:
-            desc = f"{r['student']} ({r['subject']})"
+            desc = f"{r['student']} ({r['subject']}){loc}"
         grid[r['slot']][tid] = desc
 
     assigned = {s['id']: set() for s in student_rows}
