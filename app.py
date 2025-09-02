@@ -1495,6 +1495,7 @@ def edit_timetable(date):
             teacher_id = request.form.get('teacher')
             subject = request.form.get('subject')
             student_group = request.form.get('student_group')
+            location = request.form.get('location')
             if slot is not None and teacher_id and subject and student_group:
                 slot = int(slot)
                 teacher_id = int(teacher_id)
@@ -1504,10 +1505,11 @@ def edit_timetable(date):
                     student_id = int(student_group[1:])
                 elif student_group.startswith('g'):
                     group_id = int(student_group[1:])
+                location_id = int(location) if location else None
                 c.execute(
-                    'INSERT INTO timetable (student_id, group_id, teacher_id, subject, slot, date) '
-                    'VALUES (?, ?, ?, ?, ?, ?)',
-                    (student_id, group_id, teacher_id, subject, slot, date),
+                    'INSERT INTO timetable (student_id, group_id, teacher_id, subject, slot, location_id, date) '
+                    'VALUES (?, ?, ?, ?, ?, ?, ?)',
+                    (student_id, group_id, teacher_id, subject, slot, location_id, date),
                 )
                 # record attendance for the new lesson
                 if student_id is not None:
@@ -1547,6 +1549,92 @@ def edit_timetable(date):
                         )
                 conn.commit()
                 flash('Lesson added.', 'info')
+        elif action == 'edit':
+            entry_id = request.form.get('entry_id')
+            subject = request.form.get('subject')
+            student_group = request.form.get('student_group')
+            location = request.form.get('location')
+            if entry_id and subject and student_group:
+                c.execute(
+                    'SELECT student_id, group_id, subject FROM timetable WHERE id=? AND date=?',
+                    (entry_id, date),
+                )
+                old = c.fetchone()
+                if old:
+                    old_subj = old['subject']
+                    if old['student_id'] is not None:
+                        sid = old['student_id']
+                        c.execute(
+                            'SELECT rowid FROM attendance_log WHERE student_id=? AND subject=? AND date=? LIMIT 1',
+                            (sid, old_subj, date),
+                        )
+                        r = c.fetchone()
+                        if r:
+                            c.execute('DELETE FROM attendance_log WHERE rowid=?', (r['rowid'],))
+                    elif old['group_id'] is not None:
+                        gid = old['group_id']
+                        members = c.execute(
+                            'SELECT student_id FROM group_members WHERE group_id=?',
+                            (gid,),
+                        ).fetchall()
+                        for m in members:
+                            sid = m['student_id']
+                            c.execute(
+                                'SELECT rowid FROM attendance_log WHERE student_id=? AND subject=? AND date=? LIMIT 1',
+                                (sid, old_subj, date),
+                            )
+                            r = c.fetchone()
+                            if r:
+                                c.execute('DELETE FROM attendance_log WHERE rowid=?', (r['rowid'],))
+
+                new_student_id = None
+                new_group_id = None
+                if student_group.startswith('s'):
+                    new_student_id = int(student_group[1:])
+                elif student_group.startswith('g'):
+                    new_group_id = int(student_group[1:])
+                location_id = int(location) if location else None
+                c.execute(
+                    'UPDATE timetable SET student_id=?, group_id=?, subject=?, location_id=? WHERE id=? AND date=?',
+                    (new_student_id, new_group_id, subject, location_id, entry_id, date),
+                )
+                if new_student_id is not None:
+                    c.execute('SELECT name FROM students WHERE id=?', (new_student_id,))
+                    r = c.fetchone()
+                    if r:
+                        name = r['name']
+                    else:
+                        c.execute('SELECT name FROM students_archive WHERE id=?', (new_student_id,))
+                        r = c.fetchone()
+                        name = r['name'] if r else ''
+                    c.execute(
+                        'INSERT INTO attendance_log (student_id, student_name, subject, date) VALUES (?, ?, ?, ?)',
+                        (new_student_id, name, subject, date),
+                    )
+                elif new_group_id is not None:
+                    members = c.execute(
+                        'SELECT student_id FROM group_members WHERE group_id=?',
+                        (new_group_id,),
+                    ).fetchall()
+                    rows = []
+                    for m in members:
+                        sid = m['student_id']
+                        c.execute('SELECT name FROM students WHERE id=?', (sid,))
+                        r = c.fetchone()
+                        if r:
+                            name = r['name']
+                        else:
+                            c.execute('SELECT name FROM students_archive WHERE id=?', (sid,))
+                            r = c.fetchone()
+                            name = r['name'] if r else ''
+                        rows.append((sid, name, subject, date))
+                    if rows:
+                        c.executemany(
+                            'INSERT INTO attendance_log (student_id, student_name, subject, date) VALUES (?, ?, ?, ?)',
+                            rows,
+                        )
+                conn.commit()
+                flash('Lesson updated.', 'info')
         elif action == 'worksheet':
             student_id = request.form.get('student_id')
             subject = request.form.get('subject')
@@ -1597,18 +1685,20 @@ def edit_timetable(date):
                                 'end': f"{end // 60:02d}:{end % 60:02d}"})
             last_start = start
 
-    # Teachers for columns
-    c.execute('SELECT id, name FROM teachers')
+    # Teachers for columns (include subjects to display in header)
+    c.execute('SELECT id, name, subjects FROM teachers')
     teachers = c.fetchall()
 
     # Existing lessons with teacher id for grid placement
     c.execute(
         '''SELECT t.id, t.slot, t.subject, t.teacher_id, t.student_id, t.group_id,
-                  COALESCE(s.name, sa.name) AS student_name, g.name AS group_name
+                  t.location_id, COALESCE(s.name, sa.name) AS student_name,
+                  g.name AS group_name, l.name AS location_name
            FROM timetable t
            LEFT JOIN students s ON t.student_id = s.id
            LEFT JOIN students_archive sa ON t.student_id = sa.id
            LEFT JOIN groups g ON t.group_id = g.id
+           LEFT JOIN locations l ON t.location_id = l.id
            WHERE t.date=?''',
         (date,),
     )
@@ -1617,7 +1707,16 @@ def edit_timetable(date):
     grid = {slot: {t['id']: None for t in teachers} for slot in slots}
     for les in lessons:
         desc = f"{les['student_name'] or les['group_name']} ({les['subject']})"
-        grid[les['slot']][les['teacher_id']] = {'id': les['id'], 'desc': desc}
+        if les['location_name']:
+            desc += f" @ {les['location_name']}"
+        grid[les['slot']][les['teacher_id']] = {
+            'id': les['id'],
+            'desc': desc,
+            'student_id': les['student_id'],
+            'group_id': les['group_id'],
+            'subject': les['subject'],
+            'location_id': les['location_id'],
+        }
 
     c.execute('SELECT id, name FROM students')
     students = c.fetchall()
@@ -1625,6 +1724,8 @@ def edit_timetable(date):
     groups = c.fetchall()
     c.execute('SELECT name FROM subjects')
     subjects = [r['name'] for r in c.fetchall()]
+    c.execute('SELECT id, name FROM locations')
+    locations = c.fetchall()
 
     # compute unassigned subjects and worksheet counts
     c.execute('SELECT group_id, student_id FROM group_members')
@@ -1682,10 +1783,12 @@ def edit_timetable(date):
         groups=groups,
         teachers=teachers,
         subjects=subjects,
+        locations=locations,
         missing=missing,
         student_names=student_names,
         slots=slots,
         lesson_counts=lesson_counts,
+        json=json,
     )
 
 
