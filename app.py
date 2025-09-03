@@ -662,6 +662,9 @@ def config():
                 c.execute('INSERT INTO student_teacher_block (student_id, teacher_id) VALUES (?, ?)',
                           (new_sid, tval))
                 block_map_current.setdefault(new_sid, set()).add(tval)
+            for lid in request.form.getlist('new_student_locs'):
+                c.execute('INSERT INTO student_locations (student_id, location_id) VALUES (?, ?)',
+                          (new_sid, int(lid)))
 
         # Build helper maps used when validating group changes. These maps
         # describe which teachers can teach each subject, what subjects every
@@ -765,6 +768,9 @@ def config():
                 for sid in member_ids:
                     c.execute('INSERT INTO group_members (group_id, student_id) VALUES (?, ?)',
                               (gid, sid))
+                for lid in request.form.getlist('new_group_locs'):
+                    c.execute('INSERT INTO group_locations (group_id, location_id) VALUES (?, ?)',
+                              (gid, int(lid)))
 
         # update locations and restrictions
         loc_ids = request.form.getlist('location_id')
@@ -784,18 +790,22 @@ def config():
         c.execute('SELECT id FROM students')
         student_ids = [r['id'] for r in c.fetchall()]
         for sid in student_ids:
-            sel = [int(x) for x in request.form.getlist(f'student_locs_{sid}')]
-            c.execute('DELETE FROM student_locations WHERE student_id=?', (sid,))
-            for lid in sel:
-                c.execute('INSERT INTO student_locations (student_id, location_id) VALUES (?, ?)', (sid, lid))
+            key = f'student_locs_{sid}'
+            if key in request.form:
+                sel = [int(x) for x in request.form.getlist(key)]
+                c.execute('DELETE FROM student_locations WHERE student_id=?', (sid,))
+                for lid in sel:
+                    c.execute('INSERT INTO student_locations (student_id, location_id) VALUES (?, ?)', (sid, lid))
 
         c.execute('SELECT id FROM groups')
         group_ids = [r['id'] for r in c.fetchall()]
         for gid in group_ids:
-            sel = [int(x) for x in request.form.getlist(f'group_locs_{gid}')]
-            c.execute('DELETE FROM group_locations WHERE group_id=?', (gid,))
-            for lid in sel:
-                c.execute('INSERT INTO group_locations (group_id, location_id) VALUES (?, ?)', (gid, lid))
+            key = f'group_locs_{gid}'
+            if key in request.form:
+                sel = [int(x) for x in request.form.getlist(key)]
+                c.execute('DELETE FROM group_locations WHERE group_id=?', (gid,))
+                for lid in sel:
+                    c.execute('INSERT INTO group_locations (group_id, location_id) VALUES (?, ?)', (gid, lid))
 
         # update teacher unavailability
         unavail_ids = request.form.getlist('unavail_id')
