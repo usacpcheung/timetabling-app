@@ -234,6 +234,13 @@
                     {% endfor %}
                 </select>
             </label>
+            <label class="block">Locations:
+                <select multiple name="student_locs_{{ s['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                    {% for loc in locations %}
+                    <option value="{{ loc['id'] }}" {% if loc['id'] in student_loc_map.get(s['id'], []) %}selected{% endif %}>{{ loc['name'] }}</option>
+                    {% endfor %}
+                </select>
+            </label>
             <button type="button" data-modal-target="adv-{{ s['id'] }}" data-modal-toggle="adv-{{ s['id'] }}" class="bg-emerald-200 text-emerald-800 px-2 py-1 rounded">Advanced</button>
             <div id="adv-{{ s['id'] }}" tabindex="-1" aria-hidden="true" class="hidden fixed top-0 right-0 left-0 z-50 justify-center items-center w-full p-4 overflow-x-hidden overflow-y-auto md:inset-0 h-[calc(100%-1rem)] max-h-full">
                 <div class="relative p-4 w-full max-w-md max-h-full">
@@ -293,6 +300,13 @@
                 <select multiple name="new_student_block" class="border border-emerald-300 rounded-lg p-2.5 w-full">
                     {% for t in teachers %}
                     <option value="{{ t['id'] }}">{{ t['name'] }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label class="block">Locations:
+                <select multiple name="new_student_locs" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                    {% for loc in locations %}
+                    <option value="{{ loc['id'] }}">{{ loc['name'] }}</option>
                     {% endfor %}
                 </select>
             </label>
@@ -370,6 +384,13 @@
                     {% endfor %}
                 </select>
             </label>
+            <label class="block">Locations:
+                <select multiple name="group_locs_{{ g['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                    {% for loc in locations %}
+                    <option value="{{ loc['id'] }}" {% if loc['id'] in group_loc_map.get(g['id'], []) %}selected{% endif %}>{{ loc['name'] }}</option>
+                    {% endfor %}
+                </select>
+            </label>
             <label class="flex items-center gap-2">Delete?
                 <input type="checkbox" name="group_delete" value="{{ g['id'] }}" class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
             </label>
@@ -390,6 +411,39 @@
                     <option value="{{ s['id'] }}">{{ s['name'] }}</option>
                     {% endfor %}
                 </select>
+            </label>
+            <label class="block">Locations:
+                <select multiple name="new_group_locs" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                    {% for loc in locations %}
+                    <option value="{{ loc['id'] }}">{{ loc['name'] }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+        </fieldset>
+    </div>
+    <!-- Locations -->
+    <h2 id="heading-locations">
+        <button type="button" class="flex items-center justify-between w-full p-4  font-medium text-left border border-b-0 border-emerald-200 hover:bg-emerald-300"
+            data-accordion-target="#body-locations" aria-expanded="false" aria-controls="body-locations">
+            <span>Locations</span>
+            <svg data-accordion-icon class="w-3 h-3 rotate-180 shrink-0" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 10 6">
+                <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5 5 1 1 5"/>
+            </svg>
+        </button>
+    </h2>
+    <div id="body-locations" class="hidden p-4 border border-b-0 border-emerald-200">
+        <fieldset class="space-y-4">
+            {% for loc in locations %}
+            <input type="hidden" name="location_id" value="{{ loc['id'] }}">
+            <label class="block">Name:
+                <input type="text" name="location_name_{{ loc['id'] }}" value="{{ loc['name'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+            </label>
+            <label class="flex items-center gap-2">Delete?
+                <input type="checkbox" name="location_delete" value="{{ loc['id'] }}" class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
+            </label>
+            {% endfor %}
+            <label class="block">New Location Name:
+                <input type="text" name="new_location_name" class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
         </fieldset>
     </div>

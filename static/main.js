@@ -89,6 +89,36 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
+    const editButtons = document.querySelectorAll('.edit-lesson-btn');
+    const entryInput = document.getElementById('entry-id-input');
+    const editStudentSelect = document.getElementById('edit-student-group');
+    const editSubjectSelect = document.getElementById('edit-subject');
+    const editLocationSelect = document.getElementById('edit-location');
+    const editModalEl = document.getElementById('edit-modal');
+    let editModal = null;
+    if (editModalEl && typeof Modal !== 'undefined') {
+        editModal = new Modal(editModalEl);
+    }
+    editButtons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            if (entryInput) entryInput.value = btn.dataset.entry;
+            if (editStudentSelect) {
+                if (btn.dataset.student) {
+                    editStudentSelect.value = 's' + btn.dataset.student;
+                } else if (btn.dataset.group) {
+                    editStudentSelect.value = 'g' + btn.dataset.group;
+                }
+            }
+            if (editSubjectSelect && btn.dataset.subject) {
+                editSubjectSelect.value = btn.dataset.subject;
+            }
+            if (editLocationSelect) {
+                editLocationSelect.value = btn.dataset.location || '';
+            }
+            if (editModal) editModal.show();
+        });
+    });
+
     const worksheetForms = document.querySelectorAll('.worksheet-form');
     worksheetForms.forEach(function (form) {
         const cb = form.querySelector('input[type="checkbox"]');
