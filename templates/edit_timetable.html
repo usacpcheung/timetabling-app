@@ -26,7 +26,7 @@
                     <tr>
                         <th class="px-4 py-2 border">Slot</th>
                         {% for t in teachers %}
-                        <th class="px-4 py-2 border">{{ t['name'] }}</th>
+                        <th class="px-4 py-2 border">{{ t['name'] }}<br>{{ ', '.join(json.loads(t['subjects'])) }}</th>
                         {% endfor %}
                     </tr>
                 </thead>
@@ -40,6 +40,7 @@
                             <td class="px-4 py-2 border align-top">
                                 {% if entry %}
                                     <div>{{ entry.desc }}</div>
+                                    <button type="button" class="text-blue-600 hover:underline text-xs edit-lesson-btn" data-entry="{{ entry.id }}" data-student="{{ entry.student_id or '' }}" data-group="{{ entry.group_id or '' }}" data-subject="{{ entry.subject }}" data-location="{{ entry.location_id or '' }}">Edit</button>
                                     <form method="post" class="delete-lesson-form mt-1">
                                         <input type="hidden" name="action" value="delete">
                                         <input type="hidden" name="entry_id" value="{{ entry.id }}">
@@ -109,9 +110,64 @@
                     {% endfor %}
                 </select>
               </div>
+              <div class="mb-4">
+                <label class="block text-sm font-medium mb-1">Location</label>
+                <select name="location" class="border rounded w-full p-1">
+                    <option value="">-- None --</option>
+                    {% for loc in locations %}
+                    <option value="{{ loc['id'] }}">{{ loc['name'] }}</option>
+                    {% endfor %}
+                </select>
+              </div>
               <div class="flex justify-end">
                 <button type="submit" class="bg-emerald-500 text-white border rounded-md px-3 py-2 hover:bg-emerald-600 transition">Save</button>
                 <button type="button" data-modal-hide="add-modal" class="ml-2 text-emerald-700 hover:underline">Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal for editing lessons -->
+    <div id="edit-modal" tabindex="-1" class="hidden overflow-y-auto overflow-x-hidden fixed top-0 right-0 left-0 z-50 justify-center items-center w-full md:inset-0 h-[calc(100%-1rem)] max-h-full">
+      <div class="relative p-4 w-full max-w-md max-h-full">
+        <div class="relative bg-white rounded-lg shadow dark:bg-gray-700">
+          <div class="p-6">
+            <form method="post" id="edit-form">
+              <input type="hidden" name="action" value="edit">
+              <input type="hidden" name="entry_id" id="entry-id-input">
+              <div class="mb-4">
+                <label class="block text-sm font-medium mb-1">Student/Group</label>
+                <select name="student_group" id="edit-student-group" class="border rounded w-full p-1">
+                    {% for s in students %}
+                    <option value="s{{ s['id'] }}">Student: {{ s['name'] }}</option>
+                    {% endfor %}
+                    {% for g in groups %}
+                    <option value="g{{ g['id'] }}">Group: {{ g['name'] }}</option>
+                    {% endfor %}
+                </select>
+              </div>
+              <div class="mb-4">
+                <label class="block text-sm font-medium mb-1">Subject</label>
+                <select name="subject" id="edit-subject" class="border rounded w-full p-1">
+                    {% for sub in subjects %}
+                    <option value="{{ sub }}">{{ sub }}</option>
+                    {% endfor %}
+                </select>
+              </div>
+              <div class="mb-4">
+                <label class="block text-sm font-medium mb-1">Location</label>
+                <select name="location" id="edit-location" class="border rounded w-full p-1">
+                    <option value="">-- None --</option>
+                    {% for loc in locations %}
+                    <option value="{{ loc['id'] }}">{{ loc['name'] }}</option>
+                    {% endfor %}
+                </select>
+              </div>
+              <div class="flex justify-end">
+                <button type="submit" class="bg-emerald-500 text-white border rounded-md px-3 py-2 hover:bg-emerald-600 transition">Save</button>
+                <button type="button" data-modal-hide="edit-modal" class="ml-2 text-emerald-700 hover:underline">Cancel</button>
               </div>
             </form>
           </div>
