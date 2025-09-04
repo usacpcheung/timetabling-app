@@ -44,3 +44,18 @@ def test_location_view_groups_by_location(tmp_path):
     (_, _, locations, grid, _, _, _, _, _) = app.get_timetable_data('2024-01-01', view='location')
     assert locations[0]['name'] == 'Room A'
     assert grid[0][locations[0]['id']] == 'Student 1 (Math) with Teacher A'
+
+
+def test_location_view_without_subject(tmp_path):
+    import app
+    conn = setup_db(tmp_path)
+    c = conn.cursor()
+    c.execute("INSERT INTO locations (name) VALUES ('Room A')")
+    c.execute(
+        "INSERT INTO timetable (student_id, teacher_id, subject, slot, location_id, date) VALUES (1, 1, 'Math', 0, 1, '2024-01-01')"
+    )
+    conn.commit()
+    conn.close()
+
+    (_, _, locations, grid, _, _, _, _, _) = app.get_timetable_data('2024-01-01', view='location_nosubject')
+    assert grid[0][locations[0]['id']] == 'Student 1 with Teacher A'

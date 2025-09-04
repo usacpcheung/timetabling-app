@@ -22,7 +22,7 @@
             <th>Slot</th>
             {% for col in columns %}
             <th>
-                {% if view_mode == 'location' %}
+                {% if view_mode.startswith('location') %}
                     {{ col['name'] }}
                 {% else %}
                     {{ col['name'] }}<br>{{ ', '.join(json.loads(col['subjects'])) }}
