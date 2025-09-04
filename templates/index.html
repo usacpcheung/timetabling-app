@@ -35,9 +35,9 @@
             </li>
         </ul>
         <div class="grid gap-6 md:grid-cols-2">
-        <div class="bg-white rounded-lg shadow p-4">
+        <div class="bg-white rounded-lg shadow p-4 flex flex-col h-full">
             <h2 class="text-lg font-medium mb-2">Generate Timetable</h2>
-            <form id="generate-form" action="{{ url_for('generate') }}" method="post" data-check-url="{{ url_for('check_timetable') }}" class="mb-4">
+            <form id="generate-form" action="{{ url_for('generate') }}" method="post" data-check-url="{{ url_for('check_timetable') }}" class="flex flex-col h-full">
                 <label class="block mb-2">Date:
                     <div class="relative">
                         <div class="absolute inset-y-0 start-0 flex items-center ps-3.5 pointer-events-none">
@@ -48,12 +48,12 @@
                         <input datepicker datepicker-format="yyyy-mm-dd" datepicker-autohide="true" id="generate-date" class="border border-emerald-300 rounded-lg block w-full ps-10 p-2.5" type="text" name="date" value="{{ today }}" placeholder="Select date">
                     </div>
                 </label>
-            <button type="submit" class="w-full bg-emerald-500 text-white border rounded-md px-3 py-2 hover:bg-emerald-600 transition">Generate</button>
+                <button type="submit" class="mt-auto w-full bg-emerald-500 text-white border rounded-md px-3 py-2 hover:bg-emerald-600 transition">Generate</button>
             </form>
         </div>
-        <div class="bg-white rounded-lg shadow p-4">
+        <div class="bg-white rounded-lg shadow p-4 flex flex-col h-full">
             <h2 class="text-lg font-medium mb-2">View Timetable</h2>
-            <form action="{{ url_for('index') }}" method="get" class="mb-2">
+            <form action="{{ url_for('index') }}" method="get" class="flex flex-col h-full">
                 <label class="block mb-2">Date:
                     <div class="relative">
                         <div class="absolute inset-y-0 start-0 flex items-center ps-3.5 pointer-events-none">
@@ -70,7 +70,7 @@
                         <option value="location" {% if view_mode == 'location' %}selected{% endif %}>By Location</option>
                     </select>
                 </label>
-            <button type="submit" class="w-full bg-emerald-500 text-white border rounded-md px-3 py-2 hover:bg-emerald-600 transition">View</button>
+                <button type="submit" class="mt-auto w-full bg-emerald-500 text-white border rounded-md px-3 py-2 hover:bg-emerald-600 transition">View</button>
             </form>
         </div>
         </div>
