@@ -83,6 +83,24 @@ def test_highlighted_when_worksheet_on_date(tmp_path):
     assert 'English (0)' in html
 
 
+def test_prior_lessons_included_in_counts(tmp_path):
+    import app
+    conn = setup_db(tmp_path)
+    cur = conn.cursor()
+    sid = cur.execute("SELECT id FROM students WHERE name='Student 1'").fetchone()[0]
+    # add a previous lesson for Math
+    cur.execute(
+        "INSERT INTO timetable (student_id, teacher_id, subject, slot, date) VALUES (?, ?, ?, ?, ?)",
+        (sid, 1, 'Math', 0, '2024-01-01'),
+    )
+    conn.commit()
+    conn.close()
+
+    _, _, _, _, missing, _, _, _, _ = app.get_timetable_data('2024-01-02')
+    math = next(item for item in missing[sid] if item['subject'] == 'Math')
+    assert math['count'] == 1
+
+
 def test_deleted_student_preserved_in_missing(tmp_path):
     import app
     conn = setup_db(tmp_path)

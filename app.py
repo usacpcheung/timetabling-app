@@ -359,17 +359,35 @@ def calculate_missing_and_counts(c, date):
         if miss:
             subj_list = []
             for subj in sorted(miss):
+                sid = s['id']
+                # count lessons directly assigned to the student
+                c.execute(
+                    'SELECT COUNT(*) FROM timetable '
+                    'WHERE student_id=? AND subject=? AND date<=?',
+                    (sid, subj, date),
+                )
+                lesson_count = c.fetchone()[0]
+                # count lessons via group membership
+                c.execute(
+                    'SELECT COUNT(*) FROM timetable t '
+                    'JOIN group_members gm ON t.group_id = gm.group_id '
+                    'WHERE gm.student_id=? AND t.subject=? AND t.date<=?',
+                    (sid, subj, date),
+                )
+                lesson_count += c.fetchone()[0]
+                # count worksheets assigned
                 c.execute(
                     'SELECT COUNT(*) FROM worksheets WHERE student_id=? AND subject=? AND date<=?',
-                    (s['id'], subj, date),
+                    (sid, subj, date),
                 )
-                count = c.fetchone()[0]
+                worksheet_count = c.fetchone()[0]
                 c.execute(
                     'SELECT 1 FROM worksheets WHERE student_id=? AND subject=? AND date=?',
-                    (s['id'], subj, date),
+                    (sid, subj, date),
                 )
                 assigned_today = c.fetchone() is not None
-                subj_list.append({'subject': subj, 'count': count, 'assigned': assigned_today})
+                total_count = lesson_count + worksheet_count
+                subj_list.append({'subject': subj, 'count': total_count, 'assigned': assigned_today})
             missing[s['id']] = subj_list
 
     return missing, lesson_counts
