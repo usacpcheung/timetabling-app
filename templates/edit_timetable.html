@@ -79,7 +79,9 @@
         </ul>
         {% endif %}
 
-        <p class="text-center"><a href="{{ url_for('manage_timetables') }}" class="text-emerald-700 hover:underline">Back to Manage Timetables</a></p>
+        <div class="text-center">
+            <a href="{{ url_for('manage_timetables') }}" class="inline-block bg-emerald-500 text-white border rounded-md px-3 py-2 hover:bg-emerald-600 transition">Back to Manage Timetables</a>
+        </div>
     </div>
 
     <!-- Modal for adding lessons -->

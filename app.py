@@ -344,10 +344,11 @@ def index():
     existing one and links to the configuration and attendance pages.
     """
     selected = request.args.get('date')
-    context = {'today': date.today().isoformat()}
+    mode = request.args.get('mode', 'teacher')
+    context = {'today': date.today().isoformat(), 'view_mode': mode}
     if selected:
-        data = get_timetable_data(selected)
-        (sel_date, slots, teachers, grid, missing,
+        data = get_timetable_data(selected, view=mode)
+        (sel_date, slots, columns, grid, missing,
          student_names, slot_labels, has_rows, lesson_counts) = data
         if not has_rows:
             flash('No timetable available. Generate one from the home page.',
@@ -356,7 +357,7 @@ def index():
             'show_timetable': has_rows,
             'date': sel_date,
             'slots': slots,
-            'teachers': teachers,
+            'columns': columns,
             'grid': grid,
             'missing': missing,
             'student_names': student_names,
@@ -1012,8 +1013,6 @@ def generate_schedule(target_date=None):
     teacher_min = cfg['teacher_min_lessons']
     teacher_max = cfg['teacher_max_lessons']
 
-    c.execute('SELECT * FROM teachers')
-    teachers = c.fetchall()
     c.execute('SELECT * FROM students WHERE active=1')
     students = c.fetchall()
     c.execute('SELECT * FROM groups')
@@ -1239,8 +1238,18 @@ def generate_schedule(target_date=None):
     conn.close()
 
 
-def get_timetable_data(target_date):
-    """Return timetable grid data for the given date."""
+def get_timetable_data(target_date, view='teacher'):
+    """Return timetable grid data for the given date.
+
+    Parameters
+    ----------
+    target_date : str or None
+        Date of the timetable to retrieve. If ``None`` the most recent date is
+        used.
+    view : str
+        ``'teacher'`` for the traditional teacher-column layout or
+        ``'location'`` to organise columns by location.
+    """
     conn = get_db()
     c = conn.cursor()
     c.execute('SELECT * FROM config WHERE id=1')
@@ -1266,8 +1275,13 @@ def get_timetable_data(target_date):
                             'end': f"{end // 60:02d}:{end % 60:02d}"})
         last_start = start
 
-    c.execute('SELECT * FROM teachers')
-    teachers = c.fetchall()
+    if view == 'location':
+        c.execute('SELECT * FROM locations')
+        columns = c.fetchall()
+    else:
+        c.execute('SELECT * FROM teachers')
+        columns = c.fetchall()
+
     if not target_date:
         c.execute('SELECT DISTINCT date FROM timetable ORDER BY date DESC LIMIT 1')
         row = c.fetchone()
@@ -1275,8 +1289,9 @@ def get_timetable_data(target_date):
 
     c.execute('''SELECT t.slot, te.name as teacher,
                         COALESCE(s.name, sa.name) as student,
-                        g.name as group_name, t.subject, t.group_id, t.teacher_id,
-                        t.student_id, l.name AS location_name
+                        g.name as group_name, t.subject, t.group_id,
+                        t.teacher_id, t.student_id, t.location_id,
+                        l.name AS location_name
                  FROM timetable t
                  JOIN teachers te ON t.teacher_id = te.id
                  LEFT JOIN students s ON t.student_id = s.id
@@ -1296,17 +1311,29 @@ def get_timetable_data(target_date):
     c.execute('SELECT id, name FROM students_archive')
     for row in c.fetchall():
         student_names.setdefault(row['id'], row['name'])
-    grid = {slot: {te['id']: None for te in teachers} for slot in range(slots)}
+    grid = {slot: {col['id']: None for col in columns} for slot in range(slots)}
     for r in rows:
-        tid = r['teacher_id']
-        loc = f" @ {r['location_name']}" if r['location_name'] else ''
-        if r['group_id']:
-            members = group_students.get(r['group_id'], [])
-            names = ', '.join(student_names.get(m, 'Unknown') for m in members)
-            desc = f"{r['group_name']} [{names}] ({r['subject']}){loc}"
+        if view == 'location':
+            lid = r['location_id']
+            if lid is None:
+                continue
+            if r['group_id']:
+                members = group_students.get(r['group_id'], [])
+                names = ', '.join(student_names.get(m, 'Unknown') for m in members)
+                desc = f"{r['group_name']} [{names}] ({r['subject']}) with {r['teacher']}"
+            else:
+                desc = f"{r['student']} ({r['subject']}) with {r['teacher']}"
+            grid[r['slot']][lid] = desc
         else:
-            desc = f"{r['student']} ({r['subject']}){loc}"
-        grid[r['slot']][tid] = desc
+            tid = r['teacher_id']
+            loc = f" @ {r['location_name']}" if r['location_name'] else ''
+            if r['group_id']:
+                members = group_students.get(r['group_id'], [])
+                names = ', '.join(student_names.get(m, 'Unknown') for m in members)
+                desc = f"{r['group_name']} [{names}] ({r['subject']}){loc}"
+            else:
+                desc = f"{r['student']} ({r['subject']}){loc}"
+            grid[r['slot']][tid] = desc
 
     assigned = {s['id']: set() for s in student_rows}
     lesson_counts = {s['id']: 0 for s in student_rows}
@@ -1342,7 +1369,7 @@ def get_timetable_data(target_date):
     conn.close()
 
     has_rows = bool(rows)
-    return (target_date, range(slots), teachers, grid, missing,
+    return (target_date, range(slots), columns, grid, missing,
             student_names, slot_labels, has_rows, lesson_counts)
 
 
@@ -1378,20 +1405,22 @@ def generate():
 def timetable():
     """Render a grid of the lessons scheduled for a particular date.
 
-    Each column shows a teacher while each row represents a time slot. The
-    page also lists any subjects that could not be scheduled for active
-    students.
+    Columns can represent teachers or locations depending on the ``mode`` query
+    parameter. Each row represents a time slot and the page also lists any
+    subjects that could not be scheduled for active students.
     """
     target_date = request.args.get('date')
-    (t_date, slots, teachers, grid,
-     missing, student_names, slot_labels, has_rows, lesson_counts) = get_timetable_data(target_date)
+    mode = request.args.get('mode', 'teacher')
+    (t_date, slots, columns, grid,
+     missing, student_names, slot_labels, has_rows, lesson_counts) = get_timetable_data(target_date, view=mode)
     if not has_rows:
         flash('No timetable available. Generate one from the home page.', 'error')
-    return render_template('timetable.html', slots=slots, teachers=teachers,
+    return render_template('timetable.html', slots=slots, columns=columns,
                            grid=grid, json=json, date=t_date,
                            missing=missing, student_names=student_names,
                            slot_labels=slot_labels,
-                           lesson_counts=lesson_counts)
+                           lesson_counts=lesson_counts,
+                           view_mode=mode)
 
 
 @app.route('/attendance')
