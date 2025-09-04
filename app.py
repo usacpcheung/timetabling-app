@@ -1344,8 +1344,8 @@ def get_timetable_data(target_date, view='teacher'):
     view : str
         ``'teacher'`` for the traditional teacher-column layout,
         ``'location'`` to organise columns by location, or
-        ``'location_nosubject'`` to group by location without subjects
-        in the time slots.
+        ``'patient_only'`` to group by location while showing only patient
+        names in the time slots.
     """
     conn = get_db()
     c = conn.cursor()
@@ -1372,7 +1372,8 @@ def get_timetable_data(target_date, view='teacher'):
                             'end': f"{end // 60:02d}:{end % 60:02d}"})
         last_start = start
 
-    if view.startswith('location'):
+    location_views = {'location', 'patient_only'}
+    if view in location_views:
         c.execute('SELECT * FROM locations')
         columns = c.fetchall()
     else:
@@ -1410,20 +1411,20 @@ def get_timetable_data(target_date, view='teacher'):
         student_names.setdefault(row['id'], row['name'])
     grid = {slot: {col['id']: None for col in columns} for slot in range(slots)}
     for r in rows:
-        if view.startswith('location'):
+        if view in location_views:
             lid = r['location_id']
             if lid is None:
                 continue
             if r['group_id']:
                 members = group_students.get(r['group_id'], [])
                 names = ', '.join(student_names.get(m, 'Unknown') for m in members)
-                if view == 'location_nosubject':
-                    desc = f"{r['group_name']} [{names}] with {r['teacher']}"
+                if view == 'patient_only':
+                    desc = f"{r['group_name']} [{names}]"
                 else:
                     desc = f"{r['group_name']} [{names}] ({r['subject']}) with {r['teacher']}"
             else:
-                if view == 'location_nosubject':
-                    desc = f"{r['student']} with {r['teacher']}"
+                if view == 'patient_only':
+                    desc = f"{r['student']}"
                 else:
                     desc = f"{r['student']} ({r['subject']}) with {r['teacher']}"
             grid[r['slot']][lid] = desc

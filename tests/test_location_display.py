@@ -46,7 +46,7 @@ def test_location_view_groups_by_location(tmp_path):
     assert grid[0][locations[0]['id']] == 'Student 1 (Math) with Teacher A'
 
 
-def test_location_view_without_subject(tmp_path):
+def test_patient_only_view(tmp_path):
     import app
     conn = setup_db(tmp_path)
     c = conn.cursor()
@@ -57,5 +57,5 @@ def test_location_view_without_subject(tmp_path):
     conn.commit()
     conn.close()
 
-    (_, _, locations, grid, _, _, _, _, _) = app.get_timetable_data('2024-01-01', view='location_nosubject')
-    assert grid[0][locations[0]['id']] == 'Student 1 with Teacher A'
+    (_, _, locations, grid, _, _, _, _, _) = app.get_timetable_data('2024-01-01', view='patient_only')
+    assert grid[0][locations[0]['id']] == 'Student 1'
