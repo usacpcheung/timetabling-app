@@ -68,6 +68,7 @@
                     <select name="mode" class="border border-emerald-300 rounded-lg block w-full p-2.5">
                         <option value="teacher" {% if view_mode == 'teacher' %}selected{% endif %}>By Teacher</option>
                         <option value="location" {% if view_mode == 'location' %}selected{% endif %}>By Location</option>
+                        <option value="patient_only" {% if view_mode == 'patient_only' %}selected{% endif %}>By Location (Patient Only)</option>
                     </select>
                 </label>
                 <button type="submit" class="mt-auto w-full bg-emerald-500 text-white border rounded-md px-3 py-2 hover:bg-emerald-600 transition">View</button>
@@ -85,7 +86,7 @@
                             <th scope="col" class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">Slot</th>
                             {% for col in columns %}
                             <th scope="col" class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">
-                                {% if view_mode == 'location' %}
+                                {% if view_mode in ['location', 'patient_only'] %}
                                     {{ col['name'] }}
                                 {% else %}
                                     {{ col['name'] }}<br>{{ ', '.join(json.loads(col['subjects'])) }}
