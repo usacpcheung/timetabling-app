@@ -35,9 +35,9 @@
             </li>
         </ul>
         <div class="grid gap-6 md:grid-cols-2">
-        <div class="bg-white rounded-lg shadow p-4">
+        <div class="bg-white rounded-lg shadow p-4 flex flex-col h-full">
             <h2 class="text-lg font-medium mb-2">Generate Timetable</h2>
-            <form id="generate-form" action="{{ url_for('generate') }}" method="post" data-check-url="{{ url_for('check_timetable') }}" class="mb-4">
+            <form id="generate-form" action="{{ url_for('generate') }}" method="post" data-check-url="{{ url_for('check_timetable') }}" class="flex flex-col h-full">
                 <label class="block mb-2">Date:
                     <div class="relative">
                         <div class="absolute inset-y-0 start-0 flex items-center ps-3.5 pointer-events-none">
@@ -48,12 +48,12 @@
                         <input datepicker datepicker-format="yyyy-mm-dd" datepicker-autohide="true" id="generate-date" class="border border-emerald-300 rounded-lg block w-full ps-10 p-2.5" type="text" name="date" value="{{ today }}" placeholder="Select date">
                     </div>
                 </label>
-            <button type="submit" class="w-full bg-emerald-500 text-white border rounded-md px-3 py-2 hover:bg-emerald-600 transition">Generate</button>
+                <button type="submit" class="mt-auto w-full bg-emerald-500 text-white border rounded-md px-3 py-2 hover:bg-emerald-600 transition">Generate</button>
             </form>
         </div>
-        <div class="bg-white rounded-lg shadow p-4">
+        <div class="bg-white rounded-lg shadow p-4 flex flex-col h-full">
             <h2 class="text-lg font-medium mb-2">View Timetable</h2>
-            <form action="{{ url_for('index') }}" method="get" class="mb-2">
+            <form action="{{ url_for('index') }}" method="get" class="flex flex-col h-full">
                 <label class="block mb-2">Date:
                     <div class="relative">
                         <div class="absolute inset-y-0 start-0 flex items-center ps-3.5 pointer-events-none">
@@ -64,7 +64,13 @@
                         <input datepicker datepicker-format="yyyy-mm-dd" datepicker-autohide="true" id="view-date" class="border border-emerald-300 rounded-lg block w-full ps-10 p-2.5" type="text" name="date" value="{{ today }}" placeholder="Select date">
                     </div>
                 </label>
-            <button type="submit" class="w-full bg-emerald-500 text-white border rounded-md px-3 py-2 hover:bg-emerald-600 transition">View</button>
+                <label class="block mb-4">Mode:
+                    <select name="mode" class="border border-emerald-300 rounded-lg block w-full p-2.5">
+                        <option value="teacher" {% if view_mode == 'teacher' %}selected{% endif %}>By Teacher</option>
+                        <option value="location" {% if view_mode == 'location' %}selected{% endif %}>By Location</option>
+                    </select>
+                </label>
+                <button type="submit" class="mt-auto w-full bg-emerald-500 text-white border rounded-md px-3 py-2 hover:bg-emerald-600 transition">View</button>
             </form>
         </div>
         </div>
@@ -77,8 +83,14 @@
                     <thead class="text-xs text-emerald-800 uppercase bg-emerald-100 dark:bg-emerald-800 dark:text-emerald-200">
                         <tr>
                             <th scope="col" class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">Slot</th>
-                            {% for t in teachers %}
-                            <th scope="col" class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">{{ t['name'] }}<br>{{ ', '.join(json.loads(t['subjects'])) }}</th>
+                            {% for col in columns %}
+                            <th scope="col" class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">
+                                {% if view_mode == 'location' %}
+                                    {{ col['name'] }}
+                                {% else %}
+                                    {{ col['name'] }}<br>{{ ', '.join(json.loads(col['subjects'])) }}
+                                {% endif %}
+                            </th>
                             {% endfor %}
                         </tr>
                     </thead>
@@ -89,8 +101,8 @@
                             <th scope="row" class="px-4 py-2 font-medium text-emerald-900 whitespace-nowrap border border-emerald-200 dark:border-emerald-700 dark:text-white">
                                 Slot {{ slot + 1 }}<br>{{ label.start }}-{{ label.end }}
                             </th>
-                            {% for t in teachers %}
-                            <td class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">{{ grid[slot][t['id']] or '' }}</td>
+                            {% for col in columns %}
+                            <td class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">{{ grid[slot][col['id']] or '' }}</td>
                             {% endfor %}
                         </tr>
                         {% endfor %}
