@@ -215,6 +215,13 @@ def init_db():
         if not column_exists('timetable', 'location_id'):
             c.execute('ALTER TABLE timetable ADD COLUMN location_id INTEGER')
 
+    if not table_exists('timetable_snapshot'):
+        c.execute('''CREATE TABLE timetable_snapshot (
+            date TEXT PRIMARY KEY,
+            missing TEXT,
+            lesson_counts TEXT
+        )''')
+
     if not table_exists('locations'):
         c.execute('''CREATE TABLE locations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -318,6 +325,73 @@ def init_db():
         c.executemany('INSERT INTO subjects (name, min_percentage) VALUES (?, ?)', subjects)
     conn.commit()
     conn.close()
+
+
+def calculate_missing_and_counts(c, date):
+    c.execute('SELECT group_id, student_id FROM group_members')
+    gm_rows = c.fetchall()
+    group_students = {}
+    for gm in gm_rows:
+        group_students.setdefault(gm['group_id'], []).append(gm['student_id'])
+
+    c.execute('SELECT id, name, subjects, active FROM students')
+    student_rows = c.fetchall()
+
+    assigned = {s['id']: set() for s in student_rows}
+    lesson_counts = {s['id']: 0 for s in student_rows}
+
+    c.execute('SELECT student_id, group_id, subject FROM timetable WHERE date=?', (date,))
+    lessons = c.fetchall()
+    for les in lessons:
+        subj = les['subject']
+        if les['group_id']:
+            for sid in group_students.get(les['group_id'], []):
+                assigned.setdefault(sid, set()).add(subj)
+                lesson_counts[sid] = lesson_counts.get(sid, 0) + 1
+        elif les['student_id']:
+            assigned.setdefault(les['student_id'], set()).add(subj)
+            lesson_counts[les['student_id']] = lesson_counts.get(les['student_id'], 0) + 1
+
+    missing = {}
+    for s in student_rows:
+        required = set(json.loads(s['subjects']))
+        miss = required - assigned.get(s['id'], set())
+        if miss:
+            subj_list = []
+            for subj in sorted(miss):
+                c.execute(
+                    'SELECT COUNT(*) FROM worksheets WHERE student_id=? AND subject=? AND date<=?',
+                    (s['id'], subj, date),
+                )
+                count = c.fetchone()[0]
+                c.execute(
+                    'SELECT 1 FROM worksheets WHERE student_id=? AND subject=? AND date=?',
+                    (s['id'], subj, date),
+                )
+                assigned_today = c.fetchone() is not None
+                subj_list.append({'subject': subj, 'count': count, 'assigned': assigned_today})
+            missing[s['id']] = subj_list
+
+    return missing, lesson_counts
+
+
+def get_missing_and_counts(c, date, refresh=False):
+    if not refresh:
+        row = c.execute(
+            'SELECT missing, lesson_counts FROM timetable_snapshot WHERE date=?',
+            (date,),
+        ).fetchone()
+        if row:
+            missing = {int(k): v for k, v in json.loads(row['missing']).items()}
+            lesson_counts = {int(k): v for k, v in json.loads(row['lesson_counts']).items()}
+            return missing, lesson_counts
+
+    missing, lesson_counts = calculate_missing_and_counts(c, date)
+    c.execute(
+        'INSERT OR REPLACE INTO timetable_snapshot (date, missing, lesson_counts) VALUES (?, ?, ?)',
+        (date, json.dumps(missing), json.dumps(lesson_counts)),
+    )
+    return missing, lesson_counts
 
 
 @app.route('/check_timetable')
@@ -1233,7 +1307,7 @@ def generate_schedule(target_date=None):
             flash('No feasible timetable could be generated.', 'error')
             for name in core:
                 flash(reason_map.get(name, name), 'error')
-
+    get_missing_and_counts(c, target_date, refresh=True)
     conn.commit()
     conn.close()
 
@@ -1335,41 +1409,18 @@ def get_timetable_data(target_date, view='teacher'):
                 desc = f"{r['student']} ({r['subject']}){loc}"
             grid[r['slot']][tid] = desc
 
-    assigned = {s['id']: set() for s in student_rows}
-    lesson_counts = {s['id']: 0 for s in student_rows}
-    for r in rows:
-        subj = r['subject']
-        if r['group_id']:
-            for sid in group_students.get(r['group_id'], []):
-                assigned.setdefault(sid, set()).add(subj)
-                lesson_counts[sid] = lesson_counts.get(sid, 0) + 1
-        elif r['student_id']:
-            assigned.setdefault(r['student_id'], set()).add(subj)
-            lesson_counts[r['student_id']] = lesson_counts.get(r['student_id'], 0) + 1
-    missing = {}
-    for s in student_rows:
-        required = set(json.loads(s['subjects']))
-        miss = required - assigned.get(s['id'], set())
-        if miss:
-            subj_list = []
-            for subj in sorted(miss):
-                c.execute(
-                    'SELECT COUNT(*) FROM worksheets WHERE student_id=? AND subject=? AND date<=?',
-                    (s['id'], subj, target_date),
-                )
-                count = c.fetchone()[0]
-                c.execute(
-                    'SELECT 1 FROM worksheets WHERE student_id=? AND subject=? AND date=?',
-                    (s['id'], subj, target_date),
-                )
-                has_today = c.fetchone() is not None
-                subj_list.append({'subject': subj, 'count': count, 'today': has_today})
-            missing[s['id']] = subj_list
+    missing, lesson_counts = get_missing_and_counts(c, target_date)
+    conn.commit()
+    missing_view = {
+        sid: [{'subject': item['subject'], 'count': item['count'], 'today': item['assigned']}
+              for item in subs]
+        for sid, subs in missing.items()
+    }
 
     conn.close()
 
     has_rows = bool(rows)
-    return (target_date, range(slots), columns, grid, missing,
+    return (target_date, range(slots), columns, grid, missing_view,
             student_names, slot_labels, has_rows, lesson_counts)
 
 
@@ -1539,6 +1590,7 @@ def edit_timetable(date):
                             if r:
                                 c.execute('DELETE FROM attendance_log WHERE rowid=?', (r['rowid'],))
                 c.execute('DELETE FROM timetable WHERE id=? AND date=?', (entry_id, date))
+                get_missing_and_counts(c, date, refresh=True)
                 conn.commit()
                 flash('Lesson deleted.', 'info')
         elif action == 'add':
@@ -1598,6 +1650,7 @@ def edit_timetable(date):
                             'INSERT INTO attendance_log (student_id, student_name, subject, date) VALUES (?, ?, ?, ?)',
                             rows,
                         )
+                get_missing_and_counts(c, date, refresh=True)
                 conn.commit()
                 flash('Lesson added.', 'info')
         elif action == 'edit':
@@ -1684,6 +1737,7 @@ def edit_timetable(date):
                             'INSERT INTO attendance_log (student_id, student_name, subject, date) VALUES (?, ?, ?, ?)',
                             rows,
                         )
+                get_missing_and_counts(c, date, refresh=True)
                 conn.commit()
                 flash('Lesson updated.', 'info')
         elif action == 'worksheet':
@@ -1707,8 +1761,13 @@ def edit_timetable(date):
                         'DELETE FROM worksheets WHERE student_id=? AND subject=? AND date=?',
                         (sid, subject, date),
                     )
+                get_missing_and_counts(c, date, refresh=True)
                 conn.commit()
                 flash('Worksheet assignment updated.', 'info')
+        elif action == 'refresh':
+            get_missing_and_counts(c, date, refresh=True)
+            conn.commit()
+            flash('Unassigned list refreshed.', 'warning')
         conn.close()
         return redirect(url_for('edit_timetable', date=date))
 
@@ -1779,12 +1838,6 @@ def edit_timetable(date):
     locations = c.fetchall()
 
     # compute unassigned subjects and worksheet counts
-    c.execute('SELECT group_id, student_id FROM group_members')
-    gm_rows = c.fetchall()
-    group_students = {}
-    for gm in gm_rows:
-        group_students.setdefault(gm['group_id'], []).append(gm['student_id'])
-
     c.execute('SELECT id, name, subjects, active FROM students')
     student_rows = c.fetchall()
     student_names = {s['id']: s['name'] for s in student_rows}
@@ -1792,38 +1845,8 @@ def edit_timetable(date):
     for row in c.fetchall():
         student_names.setdefault(row['id'], row['name'])
 
-    assigned = {s['id']: set() for s in student_rows}
-    lesson_counts = {s['id']: 0 for s in student_rows}
-    for les in lessons:
-        subj = les['subject']
-        if les['group_id']:
-            for sid in group_students.get(les['group_id'], []):
-                assigned.setdefault(sid, set()).add(subj)
-                lesson_counts[sid] = lesson_counts.get(sid, 0) + 1
-        elif les['student_id']:
-            assigned.setdefault(les['student_id'], set()).add(subj)
-            lesson_counts[les['student_id']] = lesson_counts.get(les['student_id'], 0) + 1
-
-    missing = {}
-    for s in student_rows:
-        required = set(json.loads(s['subjects']))
-        miss = required - assigned.get(s['id'], set())
-        if miss:
-            subj_list = []
-            for subj in sorted(miss):
-                c.execute(
-                    'SELECT COUNT(*) FROM worksheets WHERE student_id=? AND subject=? AND date<=?',
-                    (s['id'], subj, date),
-                )
-                count = c.fetchone()[0]
-                c.execute(
-                    'SELECT 1 FROM worksheets WHERE student_id=? AND subject=? AND date=?',
-                    (s['id'], subj, date),
-                )
-                assigned_today = c.fetchone() is not None
-                subj_list.append({'subject': subj, 'count': count, 'assigned': assigned_today})
-            missing[s['id']] = subj_list
-
+    missing, lesson_counts = get_missing_and_counts(c, date)
+    conn.commit()
     conn.close()
     return render_template(
         'edit_timetable.html',

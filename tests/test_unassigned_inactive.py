@@ -81,3 +81,59 @@ def test_highlighted_when_worksheet_on_date(tmp_path):
     html = resp.get_data(as_text=True)
     assert 'worksheet-assigned">Math (1)' in html
     assert 'English (0)' in html
+
+
+def test_deleted_student_preserved_in_missing(tmp_path):
+    import app
+    conn = setup_db(tmp_path)
+    cur = conn.cursor()
+    sid = cur.execute("SELECT id FROM students WHERE name='Student 1'").fetchone()[0]
+    cur.execute(
+        "INSERT INTO timetable (student_id, teacher_id, subject, slot, date) VALUES (?, ?, ?, ?, ?)",
+        (sid, 1, 'Math', 0, '2024-01-01'),
+    )
+    conn.commit()
+    conn.close()
+
+    app.get_timetable_data('2024-01-01')
+
+    conn = sqlite3.connect(app.DB_PATH)
+    cur = conn.cursor()
+    cur.execute("INSERT INTO students_archive (id, name) VALUES (?, ?)", (sid, 'Student 1'))
+    cur.execute("DELETE FROM students WHERE id=?", (sid,))
+    conn.commit()
+    conn.close()
+
+    _, _, _, _, missing, _, _, _, _ = app.get_timetable_data('2024-01-01')
+    assert sid in missing
+    subjects = {item['subject'] for item in missing[sid]}
+    assert subjects == {'English'}
+
+
+def test_refresh_removes_deleted_student(tmp_path):
+    import app
+    conn = setup_db(tmp_path)
+    cur = conn.cursor()
+    sid = cur.execute("SELECT id FROM students WHERE name='Student 1'").fetchone()[0]
+    cur.execute(
+        "INSERT INTO timetable (student_id, teacher_id, subject, slot, date) VALUES (?, ?, ?, ?, ?)",
+        (sid, 1, 'Math', 0, '2024-01-01'),
+    )
+    conn.commit()
+    conn.close()
+
+    app.get_timetable_data('2024-01-01')
+
+    conn = sqlite3.connect(app.DB_PATH)
+    cur = conn.cursor()
+    cur.execute("INSERT INTO students_archive (id, name) VALUES (?, ?)", (sid, 'Student 1'))
+    cur.execute("DELETE FROM students WHERE id=?", (sid,))
+    conn.commit()
+    conn.close()
+
+    client = app.app.test_client()
+    resp = client.post('/edit_timetable/2024-01-01', data={'action': 'refresh'})
+    assert resp.status_code == 302
+
+    _, _, _, _, missing, _, _, _, _ = app.get_timetable_data('2024-01-01')
+    assert sid not in missing

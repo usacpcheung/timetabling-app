@@ -58,6 +58,10 @@
         </div>
         {% if missing %}
         <h2 class="text-xl text-emerald-900 font-semibold mb-2">Unassigned Subjects</h2>
+        <form method="post" class="mb-2" onsubmit="return confirm('Refresh unassigned list using current student data?')">
+            <input type="hidden" name="action" value="refresh">
+            <button type="submit" class="text-red-600 hover:underline text-sm">Refresh unassigned list</button>
+        </form>
         <ul class="mb-6">
             {% for sid, subs in missing.items() %}
             <li class="mb-1">
