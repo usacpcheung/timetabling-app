@@ -1087,6 +1087,9 @@ def generate_schedule(target_date=None):
     teacher_min = cfg['teacher_min_lessons']
     teacher_max = cfg['teacher_max_lessons']
 
+    c.execute('SELECT * FROM teachers')
+    teachers = c.fetchall()
+
     c.execute('SELECT * FROM students WHERE active=1')
     students = c.fetchall()
     c.execute('SELECT * FROM groups')
