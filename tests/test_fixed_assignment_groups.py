@@ -83,3 +83,45 @@ def test_group_fixed_assignment_suppressed(tmp_path):
     assert row['teacher_id'] == 1
     assert row['subject'] == 'Math'
     assert row['slot'] == 0
+
+
+def test_group_deletion_blocked_by_fixed_assignment(tmp_path):
+    import app, json
+
+    conn = setup_db(tmp_path)
+    c = conn.cursor()
+    c.execute("INSERT INTO groups (name, subjects) VALUES (?, ?)", ('Group A', json.dumps(['Math'])))
+    gid = c.lastrowid
+    c.execute(
+        "INSERT INTO fixed_assignments (teacher_id, group_id, student_id, subject, slot) VALUES (1, ?, NULL, 'Math', 0)",
+        (gid,),
+    )
+    conn.commit()
+
+    slot_starts = {f'slot_start_{i}': f'08:{30 + (i-1)*30:02d}' for i in range(1, 9)}
+    data = {
+        'slots_per_day': '8',
+        'slot_duration': '30',
+        'min_lessons': '1',
+        'max_lessons': '4',
+        'teacher_min_lessons': '1',
+        'teacher_max_lessons': '8',
+        'max_repeats': '2',
+        'consecutive_weight': '3',
+        'attendance_weight': '10',
+        'well_attend_weight': '1',
+        'group_weight': '2.0',
+        'balance_weight': '1',
+        'group_id': str(gid),
+        'group_delete': str(gid),
+        **slot_starts,
+    }
+    with app.app.test_request_context('/config', method='POST', data=data):
+        app.config()
+
+    group = conn.execute('SELECT name FROM groups WHERE id=?', (gid,)).fetchone()
+    fa_count = conn.execute('SELECT COUNT(*) FROM fixed_assignments WHERE group_id=?', (gid,)).fetchone()[0]
+    conn.close()
+
+    assert group is not None
+    assert fa_count == 1

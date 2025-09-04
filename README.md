@@ -155,6 +155,8 @@ The configuration page performs several checks when saving data:
 * A fixed assignment cannot use a slot marked as unavailable for that teacher.
 * A teacher cannot be marked unavailable in a slot that already has a fixed assignment.
 * Duplicate fixed assignments for the same teacher and slot are rejected.
+* Students with fixed assignments cannot be deleted; remove those assignments first.
+* Groups with fixed assignments cannot be deleted; remove those assignments first.
 * Minimum lesson values cannot exceed maximum values for either global or per-teacher settings.
 * Students cannot block a teacher if that teacher already has a fixed assignment with them or if the block would leave their group without a teacher for a subject.
 * Groups must have at least one subject and one member. Each subject must be required by all members and a suitable teacher must remain available after considering block rules.

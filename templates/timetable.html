@@ -20,16 +20,22 @@
     <table border="1" cellpadding="5">
         <tr>
             <th>Slot</th>
-            {% for t in teachers %}
-            <th>{{ t['name'] }}<br>{{ ', '.join(json.loads(t['subjects'])) }}</th>
+            {% for col in columns %}
+            <th>
+                {% if view_mode in ['location', 'patient_only'] %}
+                    {{ col['name'] }}
+                {% else %}
+                    {{ col['name'] }}<br>{{ ', '.join(json.loads(col['subjects'])) }}
+                {% endif %}
+            </th>
             {% endfor %}
         </tr>
         {% for slot in slots %}
         {% set label = slot_labels[slot] %}
         <tr>
             <td>Slot {{ slot + 1 }}<br>{{ label.start }}-{{ label.end }}</td>
-            {% for t in teachers %}
-            <td>{{ grid[slot][t['id']] or '' }}</td>
+            {% for col in columns %}
+            <td>{{ grid[slot][col['id']] or '' }}</td>
             {% endfor %}
         </tr>
         {% endfor %}
