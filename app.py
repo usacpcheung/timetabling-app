@@ -577,6 +577,12 @@ def config():
                     flash(f'Remove student from groups first: {names}', 'error')
                     has_error = True
                     continue
+                # prevent deletion if fixed assignments exist
+                c.execute('SELECT 1 FROM fixed_assignments WHERE student_id=? LIMIT 1', (int(sid),))
+                if c.fetchone():
+                    flash('Remove fixed assignments involving this student before deleting', 'error')
+                    has_error = True
+                    continue
                 c.execute('SELECT name FROM students WHERE id=?', (int(sid),))
                 row = c.fetchone()
                 if row:
@@ -690,6 +696,12 @@ def config():
         deletes_grp = set(request.form.getlist('group_delete'))
         for gid in group_ids:
             if gid in deletes_grp:
+                # prevent deletion if fixed assignments exist
+                c.execute('SELECT 1 FROM fixed_assignments WHERE group_id=? LIMIT 1', (int(gid),))
+                if c.fetchone():
+                    flash('Remove fixed assignments involving this group before deleting', 'error')
+                    has_error = True
+                    continue
                 c.execute('DELETE FROM groups WHERE id=?', (int(gid),))
                 c.execute('DELETE FROM group_members WHERE group_id=?', (int(gid),))
                 continue
