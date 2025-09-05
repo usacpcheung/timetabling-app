@@ -679,8 +679,16 @@ def config():
                 c.execute('SELECT name FROM students WHERE id=?', (int(sid),))
                 row = c.fetchone()
                 if row:
+                    name = row['name']
+                    c.execute('SELECT id, name FROM students_archive WHERE name LIKE ?', (f"{name}%",))
+                    existing = c.fetchall()
+                    for ex in existing:
+                        if ex['name'] == name:
+                            c.execute('UPDATE students_archive SET name=? WHERE id=?',
+                                      (f"{name} (id {ex['id']})", ex['id']))
+                    archive_name = f"{name} (id {int(sid)})" if existing else name
                     c.execute('INSERT OR IGNORE INTO students_archive (id, name) VALUES (?, ?)',
-                              (int(sid), row['name']))
+                              (int(sid), archive_name))
                 c.execute('DELETE FROM students WHERE id=?', (int(sid),))
                 c.execute('DELETE FROM student_teacher_block WHERE student_id=?', (int(sid),))
             else:
