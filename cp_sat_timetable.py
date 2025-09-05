@@ -174,25 +174,29 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
 
     all_locs = locations or []
     loc_restrict = location_restrict or {}
-    for (sid, tid, subj, sl), var in list(vars_.items()):
-        allowed = loc_restrict.get(sid, all_locs)
-        if allowed:
-            lvars = []
-            for loc in allowed:
-                lv = model.NewBoolVar(f"x_s{sid}_t{tid}_sub{subj}_sl{sl}_loc{loc}")
-                loc_vars[(sid, tid, subj, sl, loc)] = lv
-                model.Add(lv <= var)
-                lvars.append(lv)
-            model.Add(sum(lvars) == var)
-        else:
-            model.Add(var == 0)
+    # Only add location assignment variables/constraints when locations are configured.
+    if all_locs:
+        for (sid, tid, subj, sl), var in list(vars_.items()):
+            allowed = loc_restrict.get(sid, all_locs)
+            if allowed:
+                lvars = []
+                for loc in allowed:
+                    lv = model.NewBoolVar(f"x_s{sid}_t{tid}_sub{subj}_sl{sl}_loc{loc}")
+                    loc_vars[(sid, tid, subj, sl, loc)] = lv
+                    model.Add(lv <= var)
+                    lvars.append(lv)
+                model.Add(sum(lvars) == var)
+            else:
+                # If locations are in use but none are allowed for this (student/group),
+                # prevent this lesson from being scheduled.
+                model.Add(var == 0)
 
-    for loc in all_locs:
-        for slot in range(slots):
-            possible = [lv for (sid, tid, subj, sl, l), lv in loc_vars.items()
-                        if l == loc and sl == slot]
-            if possible:
-                model.Add(sum(possible) <= 1)
+        for loc in all_locs:
+            for slot in range(slots):
+                possible = [lv for (sid, tid, subj, sl, l), lv in loc_vars.items()
+                            if l == loc and sl == slot]
+                if possible:
+                    model.Add(sum(possible) <= 1)
 
     # Constraint 1: teacher availability - a teacher cannot teach more than one lesson in the same time slot.  We scan
     # all variables for each teacher/slot pair and ensure at most one is "on".
@@ -278,17 +282,31 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                     model.Add(adj >= v1 + v2 - 1)
                     adjacency_vars.append(adj)
 
-    if not allow_multi_teacher or student_multi_teacher:
-        by_student_subject = {}
+    # If multi-teacher is disallowed for a student/subject, enforce that all
+    # lessons for that subject use at most one teacher, while still allowing
+    # repeats across different slots with that same teacher.
+    if (not allow_multi_teacher) or student_multi_teacher:
+        # Build mapping per (sid, subj) to variables grouped by teacher.
+        by_student_subject_teacher = {}
         for (sid, tid, subj, sl), var in vars_.items():
             allow_mt = student_multi_teacher.get(sid, allow_multi_teacher) if student_multi_teacher else allow_multi_teacher
             if not allow_mt:
-                by_student_subject.setdefault((sid, subj), []).append(var)
-        for key, vlist in by_student_subject.items():
-            if len(vlist) > 1:
-                ct = model.Add(sum(vlist) <= 1)
-                if add_assumptions:
-                    ct.OnlyEnforceIf(assumptions['repeat_restrictions'])
+                by_student_subject_teacher.setdefault((sid, subj), {}).setdefault(tid, []).append(var)
+        for (sid, subj), tmap in by_student_subject_teacher.items():
+            if len(tmap) <= 1:
+                continue
+            y_vars = []
+            for tid, vlist in tmap.items():
+                y = model.NewBoolVar(f"y_s{sid}_sub{subj}_t{tid}")
+                # If any lesson with this teacher is chosen, y must be 1.
+                for v in vlist:
+                    model.Add(v <= y)
+                # Optional tightening: y <= sum(vlist)
+                model.Add(y <= sum(vlist))
+                y_vars.append(y)
+            ct = model.Add(sum(y_vars) <= 1)
+            if add_assumptions:
+                ct.OnlyEnforceIf(assumptions['repeat_restrictions'])
 
     # Limit total lessons per teacher and track each teacher's load
     teacher_load_vars = []
@@ -357,12 +375,21 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
     # Objective function: prioritize scheduling as many lessons as possible.  Additional
     # terms can encourage consecutive repeats or penalize uneven teacher loads
     # depending on the configuration options.
-    weighted_sum = sum(var * var_weights.get(var, 1) for var in vars_.values())
+    # Ensure integer coefficients for CP-SAT by scaling/rounding weights.
+    def _int_weight(w):
+        try:
+            return int(round(float(w) * 100))
+        except Exception:
+            return 100  # default equivalent to weight 1.0
+
+    # Recompute integer weights for all vars to avoid float coefficients
+    int_weights = {var: _int_weight(var_weights.get(var, 1)) for var in vars_.values()}
+    weighted_sum = sum(var * int_weights[var] for var in vars_.values())
     objective = weighted_sum
     if adjacency_vars:
-        objective += consecutive_weight * sum(adjacency_vars)
+        objective += _int_weight(consecutive_weight) * sum(adjacency_vars)
     if balance_teacher_load and teacher_load_vars:
-        objective -= balance_weight * load_diff
+        objective -= _int_weight(balance_weight) * load_diff
     model.Maximize(objective)
 
     # Return the constructed model along with the decision variables and any
@@ -393,7 +420,19 @@ def solve_and_print(model, vars_, loc_vars, assumptions=None):
 
     # Instantiate the solver and let it process the model.
     solver = cp_model.CpSolver()
-    status = solver.Solve(model)
+    # Solve with assumptions if API supports it; otherwise rely on AddAssumption + Solve.
+    if assumptions and hasattr(solver, 'SolveWithAssumptions'):
+        # Use a fixed key order for stable core mapping
+        assumption_keys = [
+            'teacher_availability',
+            'teacher_limits',
+            'student_limits',
+            'repeat_restrictions',
+        ]
+        assumption_list = [assumptions[k] for k in assumption_keys if k in assumptions]
+        status = solver.SolveWithAssumptions(model, assumption_list)
+    else:
+        status = solver.Solve(model)
 
     assignments = []
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
@@ -409,10 +448,17 @@ def solve_and_print(model, vars_, loc_vars, assumptions=None):
     core = []
     if status == cp_model.INFEASIBLE and assumptions:
         indices = solver.SufficientAssumptionsForInfeasibility()
-        order = list(assumptions.keys())
+        # Map back using the same key order used to build assumption_list
+        mapping_keys = [
+            'teacher_availability',
+            'teacher_limits',
+            'student_limits',
+            'repeat_restrictions',
+        ]
+        present_keys = [k for k in mapping_keys if k in assumptions]
         for idx in indices:
-            if 0 <= idx < len(order):
-                core.append(order[idx])
+            if 0 <= idx < len(present_keys):
+                core.append(present_keys[idx])
 
     # ``core`` gives a minimal set of unsatisfied assumption groups when no
     # feasible schedule exists.  ``assignments`` is empty in that case.

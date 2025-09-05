@@ -9,6 +9,23 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@4.1.11/index.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flowbite@3.1.2/dist/flowbite.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='flowbite-accordion-selectinput-fix.css') }}">    
+    <style>
+    /* Fix bottom rounding and border visibility for the last accordion item */
+    #heading-assign > button[aria-expanded="true"] {
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+        border-bottom-width: 0;
+    }
+    #heading-assign > button[aria-expanded="false"] {
+        border-bottom-left-radius: 0.75rem; /* ~ rounded-b-xl */
+        border-bottom-right-radius: 0.75rem;
+    }
+    /* Ensure body’s top corners are square to meet the header cleanly */
+    #body-assign {
+        border-top-left-radius: 0;
+        border-top-right-radius: 0;
+    }
+    </style>
 </head>
 <body class="bg-emerald-50 min-h-screen">
     <div class="max-w-4xl mx-auto mt-10 p-6">
@@ -38,9 +55,77 @@
     {% endwith %}
 <form method="post" class="space-y-6">
 <div id="config-accordion" data-accordion="open" data-active-classes="bg-emerald-300" data-inactive-classes="text-grey-900" class="mb-4">
+    <!-- Help & Guidance -->
+    <h2 id="heading-help">
+        <button type="button" class="flex items-center justify-between w-full p-4 font-medium text-left border border-b-0 border-emerald-200 rounded-t-xl hover:bg-emerald-300"
+            data-accordion-target="#body-help" aria-expanded="false" aria-controls="body-help">
+            <span>Help & Guidance</span>
+            <svg data-accordion-icon class="w-3 h-3 rotate-180 shrink-0" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 10 6">
+                <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5 5 1 1 5"/>
+            </svg>
+        </button>
+    </h2>
+    <div id="body-help" class="hidden p-4 border border-b-0 border-emerald-200">
+        <div class="prose max-w-none text-sm text-emerald-900">
+            <p class="mb-2"><strong>Weights and Toggles</strong> control solver priorities and feasibility rules. Weights are relative (larger means stronger preference). Values are internally scaled for the solver; keep using the same units.</p>
+            <ul class="list-disc ms-6 mb-4">
+                <li><strong>Min/Max lessons per student</strong>: Global defaults. Individual student overrides (Advanced) take precedence.</li>
+                <li><strong>Teacher min/max lessons</strong>: Global defaults used when a teacher’s own Min/Max is left blank.</li>
+                <li><strong>Allow repeated lessons</strong>: If off, each (student, teacher, subject) can occur at most once.</li>
+                <li><strong>Max repeats</strong>: Upper limit when repeats are allowed (applies per student–teacher–subject).</li>
+                <li><strong>Allow consecutive repeats</strong>: If off, repeated lessons for the same triple cannot be in adjacent slots.</li>
+                <li><strong>Prefer consecutive repeats</strong>: Adds a bonus to schedule back‑to‑back repeats (only takes effect when consecutive is allowed).</li>
+                <li><strong>Allow different teachers per subject</strong>: If off, a student can study a subject with at most one teacher; repeats with that same teacher are still allowed.</li>
+                <li><strong>Require all subjects</strong>: Ensures each active student receives at least one lesson for every listed subject.</li>
+            </ul>
+
+            <p class="mb-2"><strong>Objective Weights</strong> influence what the solver prefers when multiple schedules are feasible:</p>
+            <ul class="list-disc ms-6 mb-4">
+                <li><strong>consecutive_weight</strong>: Reward for consecutive repeats (typical 0–10). 0 disables the preference.</li>
+                <li><strong>balance_weight</strong>: Penalty on the gap between most/least busy teachers (typical 0–10). 0 disables load balancing.</li>
+                <li><strong>attendance_weight</strong>: Extra weight for subjects where a student (or group median) is below the subject’s Min% target (typical 0–20).</li>
+                <li><strong>well_attend_weight</strong>: Weight to use for subjects already meeting the Min% target (typical 0.5–2.0).</li>
+                <li><strong>group_weight</strong>: Multiplier for group lessons to bias scheduling toward groups (typical 1.0–3.0). Set to 0 to remove the bias.</li>
+            </ul>
+
+            <p class="mb-2"><strong>Attendance Priority</strong> (optional):</p>
+            <ul class="list-disc ms-6 mb-4">
+                <li>Enable <em>Attendance Priority</em> to favor subjects where a student’s attendance % is below the <em>Subjects → Min %</em> threshold.</li>
+                <li>Weights used are <em>attendance_weight</em> (below target) and <em>well_attend_weight</em> (at/above target).</li>
+                <li>For groups, the median attendance among members is used to decide the weight.</li>
+                <li>Note: Combining <em>Require All Subjects</em> and <em>Attendance Priority</em> can slow solving.</li>
+            </ul>
+
+            <p class="mb-2"><strong>Locations</strong> (optional):</p>
+            <ul class="list-disc ms-6 mb-4">
+                <li>If no locations exist, lessons are scheduled without location constraints.</li>
+                <li>If locations exist, each lesson is assigned a location; at most one lesson per location per slot.</li>
+                <li>Use <em>Student/Group → Locations</em> to restrict which locations can be used for that entity.</li>
+            </ul>
+
+            <p class="mb-2"><strong>Unavailability & Blocking</strong>:</p>
+            <ul class="list-disc ms-6 mb-4">
+                <li><em>Teacher Unavailability</em> marks slots a teacher cannot teach.</li>
+                <li><em>Student Advanced → Blocked Slots</em> prevents any lesson for that student in the selected slots.</li>
+                <li><em>Student → Forbidden Teachers</em> blocks specific teachers for that student. Group pseudo‑students inherit the union of member blocks.</li>
+            </ul>
+
+            <p class="mb-2"><strong>Fixed Assignments</strong>:</p>
+            <ul class="list-disc ms-6 mb-4">
+                <li>Force specific teacher/student(or group)/subject/slot combinations.</li>
+                <li>When both a student and a group are provided on creation, the entry is saved for the <em>group</em> only if <em>group_weight &gt; 0</em> (or no student is chosen).</li>
+            </ul>
+
+            <p class="mb-2"><strong>Per‑Student Overrides</strong> (Advanced dialog):</p>
+            <ul class="list-disc ms-6">
+                <li>Min/Max lessons, Allow Repeats, Max Repeats, Allow/Prefer Consecutive, Allow Different Teachers per Subject, Blocked Slots.</li>
+                <li>These settings override the global defaults for that student only.</li>
+            </ul>
+        </div>
+    </div>
     <!-- General settings -->
     <h2 id="heading-general">
-        <button type="button" class="flex items-center justify-between w-full p-4 font-medium text-left border border-b-0 border-emerald-200 rounded-t-xl hover:bg-emerald-300"
+        <button type="button" class="flex items-center justify-between w-full p-4 font-medium text-left border border-b-0 border-emerald-200 hover:bg-emerald-300"
             data-accordion-target="#body-general" aria-expanded="true" aria-controls="body-general">
             <span>General</span>
             <svg data-accordion-icon class="w-3 h-3 rotate-180 shrink-0" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 10 6">
@@ -484,7 +569,7 @@
     </div>
     <!-- Fixed assignments -->
     <h2 id="heading-assign">
-        <button type="button" class="flex items-center justify-between w-full p-4 font-medium text-left border border-b-0 border-emerald-200 rounded-b-xl hover:bg-emerald-300"
+        <button type="button" class="flex items-center justify-between w-full p-4 font-medium text-left border border-emerald-200 hover:bg-emerald-300 rounded-b-xl"
             data-accordion-target="#body-assign" aria-expanded="false" aria-controls="body-assign">
             <span>Fixed Assignments</span>
             <svg data-accordion-icon class="w-3 h-3 rotate-180 shrink-0" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 10 6">
