@@ -9,10 +9,9 @@ echo === Timetabling App Launcher ===
 
 REM Prefer python, fall back to py -3 if needed
 set "PYCMD=python"
-where %PYCMD% >nul 2>nul
+where python >nul 2>nul
 if errorlevel 1 (
-  set "PYCMD=py -3"
-  where %PYCMD% >nul 2>nul
+  where py >nul 2>nul
   if errorlevel 1 (
     echo.
     echo [ERROR] Python was not found on PATH.
@@ -20,6 +19,7 @@ if errorlevel 1 (
     pause
     exit /b 1
   )
+  set "PYCMD=py -3"
 )
 
 REM Create virtual environment if missing
