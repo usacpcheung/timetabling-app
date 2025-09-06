@@ -1,8 +1,8 @@
 # Core web framework used by the app (templates, routes, dev server)
 Flask>=2.2,<3.1
 
-# OR-Tools CP-SAT solver used for timetabling model
-ortools>=9.6,<9.11
+# OR-Tools CP-SAT solver used for timetabling model (use latest)
+ortools
 
 # Test runner used by the test suite in `tests/`
 pytest>=7.0,<9.0
