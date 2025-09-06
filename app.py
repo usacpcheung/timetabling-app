@@ -10,12 +10,16 @@ requested, the configuration is passed to the CP-SAT model defined in
 database.
 """
 
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import Flask, render_template, request, redirect, url_for, flash, send_file
 import sqlite3
 import json
 import os
 from datetime import date
 import statistics
+import tempfile
+import zipfile
+from datetime import datetime
+from werkzeug.utils import secure_filename
 
 from cp_sat_timetable import build_model, solve_and_print
 
@@ -1581,7 +1585,29 @@ def manage_timetables():
     c.execute('SELECT DISTINCT date FROM timetable ORDER BY date DESC')
     dates = [row['date'] for row in c.fetchall()]
     conn.close()
-    return render_template('manage_timetables.html', dates=dates)
+    # Also list existing backup zip files under data/backups
+    backups = []
+    backups_dir = os.path.join(DATA_DIR, 'backups')
+    os.makedirs(backups_dir, exist_ok=True)
+    try:
+        for name in os.listdir(backups_dir):
+            if not name.lower().endswith('.zip'):
+                continue
+            p = os.path.join(backups_dir, name)
+            try:
+                stat = os.stat(p)
+            except OSError:
+                continue
+            backups.append({
+                'name': name,
+                'size': stat.st_size,
+                'ctime': stat.st_ctime,
+                'created': datetime.fromtimestamp(stat.st_ctime).strftime('%Y-%m-%d %H:%M:%S'),
+            })
+        backups.sort(key=lambda x: x['ctime'], reverse=True)
+    except Exception:
+        backups = []
+    return render_template('manage_timetables.html', dates=dates, backups=backups)
 
 
 @app.route('/edit_timetable/<date>', methods=['GET', 'POST'])
@@ -1950,6 +1976,210 @@ def reset_db():
     init_db()
     flash('Database reset to default scenario.', 'info')
     return redirect(url_for('config'))
+
+
+# --- Backup & Restore utilities and routes ---
+
+def _verify_db_integrity(db_path: str) -> bool:
+    try:
+        conn = sqlite3.connect(db_path)
+        cur = conn.execute("PRAGMA integrity_check")
+        row = cur.fetchone()
+        conn.close()
+        return bool(row and str(row[0]).lower() == 'ok')
+    except Exception:
+        return False
+
+
+def _rotate_backups(dest_dir: str, keep: int) -> None:
+    try:
+        files = [os.path.join(dest_dir, f) for f in os.listdir(dest_dir) if f.lower().endswith('.zip')]
+        files = [(f, os.stat(f).st_ctime) for f in files if os.path.isfile(f)]
+        files.sort(key=lambda t: t[1], reverse=True)
+        for f, _ in files[keep:]:
+            try:
+                os.remove(f)
+            except OSError:
+                pass
+    except Exception:
+        pass
+
+
+def backup_db(dest_dir: str = None, compress: bool = True, verify: bool = True, keep: int = 10):
+    dest_dir = dest_dir or os.path.join(DATA_DIR, 'backups')
+    os.makedirs(dest_dir, exist_ok=True)
+
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    base_name = f"timetable_{ts}"
+    snapshot_path = os.path.join(dest_dir, base_name + '.db')
+    zip_path = os.path.join(dest_dir, base_name + '.zip')
+
+    # Create consistent snapshot using sqlite backup API
+    src = get_db()
+    try:
+        dst = sqlite3.connect(snapshot_path)
+        src.backup(dst)
+        dst.close()
+    finally:
+        src.close()
+
+    # Verify snapshot
+    if verify and not _verify_db_integrity(snapshot_path):
+        try:
+            os.remove(snapshot_path)
+        except OSError:
+            pass
+        raise RuntimeError('Backup integrity check failed.')
+
+    # Zip snapshot if requested
+    if compress:
+        with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.write(snapshot_path, arcname=os.path.basename(snapshot_path))
+        try:
+            os.remove(snapshot_path)
+        except OSError:
+            pass
+        out_path = zip_path
+        out_name = os.path.basename(zip_path)
+    else:
+        out_path = snapshot_path
+        out_name = os.path.basename(snapshot_path)
+
+    # Rotation
+    _rotate_backups(dest_dir, keep)
+
+    return out_path, out_name
+
+
+def _validate_backup_filename(name: str) -> str:
+    # Ensure the file stays within the backups directory
+    backups_dir = os.path.join(DATA_DIR, 'backups')
+    path = os.path.normpath(os.path.join(backups_dir, name))
+    if not path.startswith(os.path.normpath(backups_dir) + os.sep):
+        raise ValueError('Invalid backup filename')
+    if not path.lower().endswith('.zip'):
+        raise ValueError('Backup must be a .zip file')
+    if not os.path.exists(path):
+        raise FileNotFoundError('Backup not found')
+    return path
+
+
+def restore_db_from_zip(zip_file_path: str, run_migrations: bool = True) -> None:
+    # Extract DB from zip to a temp file
+    with zipfile.ZipFile(zip_file_path, 'r') as zf:
+        # Find the first .db file inside
+        db_members = [m for m in zf.namelist() if m.lower().endswith('.db')]
+        if not db_members:
+            raise RuntimeError('No .db file inside backup zip')
+        member = db_members[0]
+        with tempfile.TemporaryDirectory() as td:
+            tmp_db = os.path.join(td, os.path.basename(member))
+            zf.extract(member, td)
+            # When extracted, file is at td/member path; normalize if nested
+            extracted_path = os.path.join(td, member)
+            if os.path.isdir(extracted_path):
+                # safety, but unlikely
+                raise RuntimeError('Unexpected backup structure')
+            os.replace(extracted_path, tmp_db)
+
+            # Verify integrity
+            if not _verify_db_integrity(tmp_db):
+                raise RuntimeError('Backup file failed integrity check')
+
+            # Safety copy of current DB
+            ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+            pre_path = os.path.join(DATA_DIR, f'timetable_pre_restore_{ts}.db')
+            try:
+                if os.path.exists(DB_PATH):
+                    # Use sqlite backup API to copy current DB safely
+                    src = sqlite3.connect(DB_PATH)
+                    dst = sqlite3.connect(pre_path)
+                    try:
+                        src.backup(dst)
+                    finally:
+                        dst.close()
+                        src.close()
+            except Exception:
+                # If safety copy fails, proceed but inform via flash later
+                pre_path = None
+
+            # Replace the DB
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+            # Use atomic replace where possible
+            try:
+                os.replace(tmp_db, DB_PATH)
+            except PermissionError as e:
+                raise RuntimeError('Database file is in use; please retry') from e
+
+    # Run migrations to adjust schema differences
+    if run_migrations:
+        init_db()
+
+
+@app.route('/backup_db', methods=['POST'])
+def backup_db_route():
+    try:
+        path, name = backup_db(dest_dir=os.path.join(DATA_DIR, 'backups'), compress=True, verify=True, keep=10)
+        # Auto-download; also saved to disk already
+        return send_file(path, as_attachment=True, download_name=name, mimetype='application/zip')
+    except Exception as e:
+        flash(f'Backup failed: {e}', 'error')
+        return redirect(url_for('manage_timetables'))
+
+
+@app.route('/download_backup/<path:filename>')
+def download_backup(filename):
+    try:
+        path = _validate_backup_filename(filename)
+        return send_file(path, as_attachment=True, download_name=os.path.basename(path), mimetype='application/zip')
+    except Exception as e:
+        flash(f'Cannot download backup: {e}', 'error')
+        return redirect(url_for('manage_timetables'))
+
+
+@app.route('/restore_db_existing', methods=['POST'])
+def restore_db_existing():
+    confirm = request.form.get('confirm', '')
+    if confirm.strip() != 'RESTORE':
+        flash("Confirmation text mismatch. Type 'RESTORE' exactly.", 'error')
+        return redirect(url_for('manage_timetables'))
+    name = request.form.get('filename', '')
+    try:
+        path = _validate_backup_filename(name)
+        restore_db_from_zip(path, run_migrations=True)
+        flash(f'Restored database from {name}.', 'info')
+    except Exception as e:
+        flash(f'Restore failed: {e}', 'error')
+    return redirect(url_for('manage_timetables'))
+
+
+@app.route('/restore_db_upload', methods=['POST'])
+def restore_db_upload():
+    confirm = request.form.get('confirm', '')
+    if confirm.strip() != 'RESTORE':
+        flash("Confirmation text mismatch. Type 'RESTORE' exactly.", 'error')
+        return redirect(url_for('manage_timetables'))
+    file = request.files.get('file')
+    if not file or file.filename == '':
+        flash('No file selected.', 'error')
+        return redirect(url_for('manage_timetables'))
+    filename = secure_filename(file.filename)
+    if not filename.lower().endswith('.zip'):
+        flash('Only .zip backups are accepted.', 'error')
+        return redirect(url_for('manage_timetables'))
+    backups_dir = os.path.join(DATA_DIR, 'backups')
+    os.makedirs(backups_dir, exist_ok=True)
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    save_name = f"uploaded_{ts}_{filename}"
+    save_path = os.path.join(backups_dir, save_name)
+    try:
+        file.save(save_path)
+        restore_db_from_zip(save_path, run_migrations=True)
+        flash(f'Uploaded and restored backup: {save_name}', 'info')
+    except Exception as e:
+        flash(f'Upload/restore failed: {e}', 'error')
+    return redirect(url_for('manage_timetables'))
 
 
 if __name__ == '__main__':
