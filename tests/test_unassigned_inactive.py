@@ -96,9 +96,10 @@ def test_prior_lessons_included_in_counts(tmp_path):
     conn.commit()
     conn.close()
 
+    # Now counts reflect worksheets only; a prior lesson does not increment worksheet count
     _, _, _, _, missing, _, _, _, _ = app.get_timetable_data('2024-01-02')
     math = next(item for item in missing[sid] if item['subject'] == 'Math')
-    assert math['count'] == 1
+    assert math['count'] == 0
 
 
 def test_deleted_student_preserved_in_missing(tmp_path):
