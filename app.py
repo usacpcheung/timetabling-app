@@ -384,9 +384,8 @@ def calculate_missing_and_counts(c, date):
                     (sid, subj, date),
                 )
                 assigned_today = c.fetchone() is not None
-                # Track worksheet assignments only to avoid conflating them with lessons
-                total_count = worksheet_count
-                subj_list.append({'subject': subj, 'count': total_count, 'assigned': assigned_today})
+                # Track worksheet counts directly to avoid conflating them with lessons
+                subj_list.append({'subject': subj, 'count': worksheet_count, 'assigned': assigned_today})
             missing[s['id']] = subj_list
 
     return missing, lesson_counts
