@@ -262,11 +262,20 @@ def init_db():
     # Clean up any duplicate worksheet rows (same student, subject, date)
     if table_exists('worksheets'):
         # Keep the oldest row per (student_id, subject, date)
-        c.execute('DELETE FROM worksheets WHERE rowid NOT IN (SELECT MIN(rowid) FROM worksheets GROUP BY student_id, subject, date)')
+        c.execute(
+            '''DELETE FROM worksheets WHERE rowid NOT IN (
+                   SELECT MIN(rowid) FROM worksheets
+                   GROUP BY student_id, subject, date
+               )'''
+        )
+        removed = c.rowcount
         # Enforce uniqueness to prevent future duplicates
-        c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_worksheets_unique ON worksheets(student_id, subject, date)')
-        # Invalidate cached snapshots so counts are recomputed with corrected rules
-        if table_exists('timetable_snapshot'):
+        c.execute(
+            'CREATE UNIQUE INDEX IF NOT EXISTS idx_worksheets_unique '
+            'ON worksheets(student_id, subject, date)'
+        )
+        # Invalidate cached snapshots only if duplicates were cleaned up
+        if removed and table_exists('timetable_snapshot'):
             c.execute('DELETE FROM timetable_snapshot')
 
     if not table_exists('groups'):
@@ -373,22 +382,7 @@ def calculate_missing_and_counts(c, date):
             subj_list = []
             for subj in sorted(miss):
                 sid = s['id']
-                # count lessons directly assigned to the student
-                c.execute(
-                    'SELECT COUNT(*) FROM timetable '
-                    'WHERE student_id=? AND subject=? AND date<=?',
-                    (sid, subj, date),
-                )
-                lesson_count = c.fetchone()[0]
-                # count lessons via group membership
-                c.execute(
-                    'SELECT COUNT(*) FROM timetable t '
-                    'JOIN group_members gm ON t.group_id = gm.group_id '
-                    'WHERE gm.student_id=? AND t.subject=? AND t.date<=?',
-                    (sid, subj, date),
-                )
-                lesson_count += c.fetchone()[0]
-                # count worksheets assigned (by distinct date to avoid duplicates)
+                # Count worksheets assigned (by distinct date to avoid duplicates)
                 c.execute(
                     'SELECT COUNT(DISTINCT date) FROM worksheets WHERE student_id=? AND subject=? AND date<=?',
                     (sid, subj, date),
@@ -399,9 +393,8 @@ def calculate_missing_and_counts(c, date):
                     (sid, subj, date),
                 )
                 assigned_today = c.fetchone() is not None
-                # Show worksheets-only in the UI to avoid conflating lessons and worksheets
-                total_count = worksheet_count
-                subj_list.append({'subject': subj, 'count': total_count, 'assigned': assigned_today})
+                # Track worksheet counts directly to avoid conflating them with lessons
+                subj_list.append({'subject': subj, 'count': worksheet_count, 'assigned': assigned_today})
             missing[s['id']] = subj_list
 
     return missing, lesson_counts
