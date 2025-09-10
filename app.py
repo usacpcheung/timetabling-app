@@ -262,11 +262,20 @@ def init_db():
     # Clean up any duplicate worksheet rows (same student, subject, date)
     if table_exists('worksheets'):
         # Keep the oldest row per (student_id, subject, date)
-        c.execute('DELETE FROM worksheets WHERE rowid NOT IN (SELECT MIN(rowid) FROM worksheets GROUP BY student_id, subject, date)')
+        c.execute(
+            '''DELETE FROM worksheets WHERE rowid NOT IN (
+                   SELECT MIN(rowid) FROM worksheets
+                   GROUP BY student_id, subject, date
+               )'''
+        )
+        removed = c.rowcount
         # Enforce uniqueness to prevent future duplicates
-        c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_worksheets_unique ON worksheets(student_id, subject, date)')
-        # Invalidate cached snapshots so counts are recomputed with corrected rules
-        if table_exists('timetable_snapshot'):
+        c.execute(
+            'CREATE UNIQUE INDEX IF NOT EXISTS idx_worksheets_unique '
+            'ON worksheets(student_id, subject, date)'
+        )
+        # Invalidate cached snapshots only if duplicates were cleaned up
+        if removed and table_exists('timetable_snapshot'):
             c.execute('DELETE FROM timetable_snapshot')
 
     if not table_exists('groups'):
