@@ -156,3 +156,35 @@ def test_refresh_removes_deleted_student(tmp_path):
 
     _, _, _, _, missing, _, _, _, _ = app.get_timetable_data('2024-01-01')
     assert sid not in missing
+
+
+def test_added_student_not_in_missing_until_refresh(tmp_path):
+    import app
+    conn = setup_db(tmp_path)
+    conn.close()
+
+    # generate initial snapshot for the date
+    app.get_timetable_data('2024-01-01')
+
+    conn = sqlite3.connect(app.DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO students (name, subjects, active) VALUES (?, ?, 1)",
+        ('New Student', json.dumps(['Math']))
+    )
+    sid_new = cur.lastrowid
+    conn.commit()
+    conn.close()
+
+    # simulate application restart which runs migrations
+    app.init_db()
+
+    # new student should not appear in existing missing list
+    _, _, _, _, missing, _, _, _, _ = app.get_timetable_data('2024-01-01')
+    assert sid_new not in missing
+
+    # after manual refresh the student is included
+    client = app.app.test_client()
+    client.post('/edit_timetable/2024-01-01', data={'action': 'refresh'})
+    _, _, _, _, missing2, _, _, _, _ = app.get_timetable_data('2024-01-01')
+    assert sid_new in missing2
