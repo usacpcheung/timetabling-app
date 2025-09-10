@@ -52,7 +52,25 @@
         {% endfor %}
     </ul>
     {% endif %}
-    {% endwith %}
+{% endwith %}
+    <div class="mb-6">
+        <h2 class="text-xl text-emerald-900 font-semibold mb-2">Presets</h2>
+        <form method="post" action="{{ url_for('save_preset') }}" class="flex gap-2 mb-2">
+            <input type="text" name="name" placeholder="Preset name" class="border border-emerald-300 rounded-lg p-2.5 flex-1">
+            <button type="submit" class="bg-emerald-500 text-white px-4 py-2 rounded">Save</button>
+        </form>
+        <form id="load-form" method="post" action="{{ url_for('load_preset') }}" class="flex gap-2">
+            <select name="preset_id" class="border border-emerald-300 rounded-lg p-2.5 flex-1">
+                {% for p in presets %}
+                <option value="{{ p['id'] }}">{{ p['name'] }}</option>
+                {% endfor %}
+            </select>
+            <input type="hidden" name="overwrite" id="overwrite" value="0">
+            <button type="submit" onclick="return confirmLoad()" class="bg-emerald-500 text-white px-4 py-2 rounded">Load</button>
+            <button type="submit" formaction="{{ url_for('delete_preset') }}" class="bg-red-500 text-white px-4 py-2 rounded">Delete</button>
+        </form>
+    </div>
+
 <form method="post" class="space-y-6">
 <div id="config-accordion" data-accordion="open" data-active-classes="bg-emerald-300" data-inactive-classes="text-grey-900" class="mb-4">
     <!-- Help & Guidance -->
@@ -635,6 +653,15 @@
     <script id="unavail-data" type="application/json">{{ unavail_map | tojson }}</script>
     <script id="assign-data" type="application/json">{{ assign_map | tojson }}</script>
     <script id="slot-times-data" type="application/json">{{ slot_times | tojson }}</script>
+    <script>
+    function confirmLoad() {
+        if (confirm('Load preset and overwrite current configuration?')) {
+            document.getElementById('overwrite').value = '1';
+            return true;
+        }
+        return false;
+    }
+    </script>
     <script src="{{ url_for('static', filename='config.js') }}"></script>
     <script src="{{ url_for('static', filename='ui.js') }}"></script>
     <script src="{{ url_for('static', filename='main.js') }}"></script>

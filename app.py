@@ -14,6 +14,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, sen
 import sqlite3
 import json
 import os
+import logging
 from datetime import date
 import statistics
 import tempfile
@@ -34,6 +35,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 DB_PATH = os.path.join(DATA_DIR, "timetable.db")
+
+CURRENT_PRESET_VERSION = 1
 
 
 def get_db():
@@ -299,6 +302,31 @@ def init_db():
             PRIMARY KEY(student_id, teacher_id)
         )''')
 
+    if not table_exists('config_presets'):
+        c.execute('''CREATE TABLE config_presets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            data TEXT,
+            version INTEGER,
+            created_at TEXT
+        )''')
+
+
+    # prune corrupt or excess presets
+    def cleanup_presets(cur):
+        cur.execute('SELECT id, data FROM config_presets ORDER BY created_at DESC')
+        rows = cur.fetchall()
+        for r in rows[5:]:
+            cur.execute('DELETE FROM config_presets WHERE id=?', (r['id'],))
+        for r in rows[:5]:
+            try:
+                json.loads(r['data'])
+            except Exception:
+                logging.warning('Removing corrupted preset %s', r['id'])
+                cur.execute('DELETE FROM config_presets WHERE id=?', (r['id'],))
+
+    cleanup_presets(c)
+
     conn.commit()
 
     # Only insert sample data when creating a brand new database file.  If the
@@ -347,6 +375,59 @@ def init_db():
         c.executemany('INSERT INTO subjects (name, min_percentage) VALUES (?, ?)', subjects)
     conn.commit()
     conn.close()
+
+
+def dump_configuration():
+    """Serialize the entire database (except presets) to a JSON-compatible dict."""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    tables = [row['name'] for row in c.fetchall()]
+    data = {}
+    for table in tables:
+        if table in ('config_presets', 'sqlite_sequence'):
+            continue
+        c.execute(f'SELECT * FROM {table}')
+        rows = [dict(r) for r in c.fetchall()]
+        data[table] = rows
+    conn.close()
+    return {'version': CURRENT_PRESET_VERSION, 'data': data}
+
+
+def migrate_preset(preset):
+    """Upgrade preset data from older versions to CURRENT_PRESET_VERSION."""
+    # Currently only version 1 exists. Future migrations will modify ``preset``.
+    return preset
+
+
+def restore_configuration(preset, overwrite=False):
+    """Restore database from a preset dump."""
+    version = preset.get('version', 0)
+    if version > CURRENT_PRESET_VERSION:
+        raise ValueError('Preset version is newer than supported.')
+    if version < CURRENT_PRESET_VERSION:
+        preset = migrate_preset(preset)
+    conn = get_db()
+    c = conn.cursor()
+    current = dump_configuration()['data']
+    if not overwrite and current != preset['data']:
+        conn.close()
+        return False
+    for table, rows in preset['data'].items():
+        if table == 'config_presets':
+            continue
+        c.execute(f'DELETE FROM {table}')
+        if rows:
+            cols = rows[0].keys()
+            placeholders = ','.join(['?'] * len(cols))
+            for row in rows:
+                c.execute(
+                    f"INSERT INTO {table} ({','.join(cols)}) VALUES ({placeholders})",
+                    [row[col] for col in cols],
+                )
+    conn.commit()
+    conn.close()
+    return True
 
 
 def calculate_missing_and_counts(c, date):
@@ -1084,6 +1165,8 @@ def config():
     unavail_map = {}
     for u in unavailable:
         unavail_map.setdefault(u['teacher_id'], []).append(u['slot'])
+    c.execute('SELECT id, name FROM config_presets ORDER BY created_at DESC')
+    presets = c.fetchall()
     conn.close()
 
     return render_template('config.html', config=cfg, teachers=teachers,
@@ -1097,7 +1180,74 @@ def config():
                            slot_times=slot_times,
                            student_unavail_map=student_unavail_map,
                            student_loc_map=student_loc_map,
-                           group_loc_map=group_loc_map)
+                           group_loc_map=group_loc_map,
+                           presets=presets)
+
+
+@app.route('/presets', methods=['GET'])
+def list_presets():
+    """Return a JSON list of saved configuration presets."""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT id, name, created_at FROM config_presets ORDER BY created_at DESC')
+    rows = [dict(r) for r in c.fetchall()]
+    conn.close()
+    return {'presets': rows}
+
+
+@app.route('/presets/save', methods=['POST'])
+def save_preset():
+    name = request.form.get('name') or datetime.now().strftime('Preset %Y-%m-%d %H:%M')
+    preset = dump_configuration()
+    conn = get_db()
+    c = conn.cursor()
+    c.execute(
+        'INSERT INTO config_presets (name, data, version, created_at) VALUES (?, ?, ?, ?)',
+        (name, json.dumps(preset['data']), preset['version'], datetime.utcnow().isoformat()),
+    )
+    conn.commit()
+    # enforce maximum of five presets
+    c.execute('SELECT id FROM config_presets ORDER BY created_at DESC')
+    rows = c.fetchall()
+    for r in rows[5:]:
+        c.execute('DELETE FROM config_presets WHERE id=?', (r['id'],))
+    conn.commit()
+    conn.close()
+    flash('Preset saved.', 'info')
+    return redirect(url_for('config'))
+
+
+@app.route('/presets/load', methods=['POST'])
+def load_preset():
+    preset_id = request.form.get('preset_id')
+    overwrite = bool(request.form.get('overwrite'))
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT data, version FROM config_presets WHERE id=?', (preset_id,))
+    row = c.fetchone()
+    conn.close()
+    if not row:
+        flash('Preset not found.', 'error')
+        return redirect(url_for('config'))
+    preset = {'version': row['version'], 'data': json.loads(row['data'])}
+    ok = restore_configuration(preset, overwrite=overwrite)
+    if not ok:
+        flash('Preset differs from current data. Confirm overwrite to load.', 'warning')
+    else:
+        flash('Preset loaded.', 'info')
+    return redirect(url_for('config'))
+
+
+@app.route('/presets/delete', methods=['POST'])
+def delete_preset():
+    preset_id = request.form.get('preset_id')
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('DELETE FROM config_presets WHERE id=?', (preset_id,))
+    conn.commit()
+    conn.close()
+    flash('Preset deleted.', 'info')
+    return redirect(url_for('config'))
 
 
 def generate_schedule(target_date=None):
