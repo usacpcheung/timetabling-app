@@ -788,9 +788,19 @@ def config():
                 c.execute('SELECT name FROM teachers WHERE id=?', (int(tid),))
                 row = c.fetchone()
                 if row:
+                    name = row['name']
+                    c.execute('SELECT id, name FROM teachers_archive WHERE name LIKE ?', (f"{name}%",))
+                    existing = c.fetchall()
+                    for ex in existing:
+                        if ex['name'] == name:
+                            c.execute(
+                                'UPDATE teachers_archive SET name=? WHERE id=?',
+                                (f"{name} (id {ex['id']})", ex['id']),
+                            )
+                    archive_name = f"{name} (id {int(tid)})" if existing else name
                     c.execute(
                         'INSERT OR IGNORE INTO teachers_archive (id, name) VALUES (?, ?)',
-                        (int(tid), row['name']),
+                        (int(tid), archive_name),
                     )
                 c.execute('DELETE FROM teachers WHERE id=?', (int(tid),))
                 c.execute('DELETE FROM teacher_unavailable WHERE teacher_id=?', (int(tid),))
