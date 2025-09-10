@@ -53,6 +53,7 @@ CONFIG_TABLES = [
     'fixed_assignments',
     'groups',
     'group_members',
+    'groups_archive',
     'student_teacher_block',
     'locations',
     'student_locations',
@@ -322,6 +323,12 @@ def init_db():
             student_id INTEGER
         )''')
 
+    if not table_exists('groups_archive'):
+        c.execute('''CREATE TABLE groups_archive (
+            id INTEGER PRIMARY KEY,
+            name TEXT
+        )''')
+
     if not table_exists('student_teacher_block'):
         c.execute('''CREATE TABLE student_teacher_block (
             student_id INTEGER,
@@ -446,8 +453,8 @@ def restore_configuration(preset, overwrite=False):
         conn.close()
         return False
 
-    # Capture teacher and student references before wiping tables so we can
-    # preserve names for any existing timetable or attendance rows.
+    # Capture teacher, group and student references before wiping tables so we
+    # can preserve names for any existing timetable or attendance rows.
     c.execute('SELECT DISTINCT teacher_id FROM timetable')
     t_ids = [r['teacher_id'] for r in c.fetchall() if r['teacher_id'] is not None]
     teacher_names = {}
@@ -458,6 +465,17 @@ def restore_configuration(preset, overwrite=False):
         c.execute(f'SELECT id, name FROM teachers_archive WHERE id IN ({placeholders})', t_ids)
         for r in c.fetchall():
             teacher_names.setdefault(r['id'], r['name'])
+
+    c.execute('SELECT DISTINCT group_id FROM timetable')
+    g_ids = [r['group_id'] for r in c.fetchall() if r['group_id'] is not None]
+    group_names = {}
+    if g_ids:
+        placeholders = ','.join(['?'] * len(g_ids))
+        c.execute(f'SELECT id, name FROM groups WHERE id IN ({placeholders})', g_ids)
+        group_names = {r['id']: r['name'] for r in c.fetchall()}
+        c.execute(f'SELECT id, name FROM groups_archive WHERE id IN ({placeholders})', g_ids)
+        for r in c.fetchall():
+            group_names.setdefault(r['id'], r['name'])
 
     c.execute('SELECT DISTINCT student_id, student_name FROM attendance_log')
     log_students = {r['student_id']: r['student_name'] for r in c.fetchall()}
@@ -484,6 +502,16 @@ def restore_configuration(preset, overwrite=False):
                 name = teacher_names.get(tid)
                 if name:
                     c.execute('INSERT INTO teachers_archive (id, name) VALUES (?, ?)', (tid, name))
+
+    # Reinsert archived groups for timetable references that no longer resolve.
+    for gid in g_ids:
+        c.execute('SELECT 1 FROM groups WHERE id=?', (gid,))
+        if c.fetchone() is None:
+            c.execute('SELECT 1 FROM groups_archive WHERE id=?', (gid,))
+            if c.fetchone() is None:
+                name = group_names.get(gid)
+                if name:
+                    c.execute('INSERT INTO groups_archive (id, name) VALUES (?, ?)', (gid, name))
 
     # Ensure archived names exist for any students referenced in attendance logs.
     for sid, name in log_students.items():
@@ -957,8 +985,14 @@ def config():
                     flash('Remove fixed assignments involving this group before deleting', 'error')
                     has_error = True
                     continue
+                c.execute('SELECT name FROM groups WHERE id=?', (int(gid),))
+                row = c.fetchone()
+                if row:
+                    c.execute('INSERT OR IGNORE INTO groups_archive (id, name) VALUES (?, ?)',
+                              (int(gid), row['name']))
                 c.execute('DELETE FROM groups WHERE id=?', (int(gid),))
                 c.execute('DELETE FROM group_members WHERE group_id=?', (int(gid),))
+                c.execute('DELETE FROM group_locations WHERE group_id=?', (int(gid),))
                 continue
             name = request.form.get(f'group_name_{gid}')
             subs = request.form.getlist(f'group_subjects_{gid}')
@@ -1217,11 +1251,12 @@ def config():
     c.execute('''SELECT a.id, a.teacher_id, a.student_id, a.group_id, a.subject, a.slot,
                         t.name as teacher_name,
                         s.name as student_name,
-                        g.name as group_name
+                        COALESCE(g.name, ga.name) as group_name
                  FROM fixed_assignments a
                  JOIN teachers t ON a.teacher_id = t.id
                  LEFT JOIN students s ON a.student_id = s.id
-                 LEFT JOIN groups g ON a.group_id = g.id''')
+                 LEFT JOIN groups g ON a.group_id = g.id
+                 LEFT JOIN groups_archive ga ON a.group_id = ga.id''')
     assignments = c.fetchall()
     assign_map = {}
     for a in assignments:
@@ -1622,7 +1657,7 @@ def get_timetable_data(target_date, view='teacher'):
     c.execute('''SELECT t.slot,
                         COALESCE(te.name, ta.name) as teacher,
                         COALESCE(s.name, sa.name) as student,
-                        g.name as group_name, t.subject, t.group_id,
+                        COALESCE(g.name, ga.name) as group_name, t.subject, t.group_id,
                         t.teacher_id, t.student_id, t.location_id,
                         l.name AS location_name
                  FROM timetable t
@@ -1631,6 +1666,7 @@ def get_timetable_data(target_date, view='teacher'):
                  LEFT JOIN students s ON t.student_id = s.id
                  LEFT JOIN students_archive sa ON t.student_id = sa.id
                  LEFT JOIN groups g ON t.group_id = g.id
+                 LEFT JOIN groups_archive ga ON t.group_id = ga.id
                  LEFT JOIN locations l ON t.location_id = l.id
                  WHERE t.date=?''', (target_date,))
     rows = c.fetchall()
@@ -2093,11 +2129,12 @@ def edit_timetable(date):
     c.execute(
         '''SELECT t.id, t.slot, t.subject, t.teacher_id, t.student_id, t.group_id,
                   t.location_id, COALESCE(s.name, sa.name) AS student_name,
-                  g.name AS group_name, l.name AS location_name
+                  COALESCE(g.name, ga.name) AS group_name, l.name AS location_name
            FROM timetable t
            LEFT JOIN students s ON t.student_id = s.id
            LEFT JOIN students_archive sa ON t.student_id = sa.id
            LEFT JOIN groups g ON t.group_id = g.id
+           LEFT JOIN groups_archive ga ON t.group_id = ga.id
            LEFT JOIN locations l ON t.location_id = l.id
            WHERE t.date=?''',
         (date,),

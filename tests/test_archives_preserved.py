@@ -56,6 +56,43 @@ def test_restore_archives_teachers(tmp_path):
     conn.close()
 
 
+def test_restore_archives_groups(tmp_path):
+    import app
+    conn = setup_db(tmp_path)
+    cur = conn.cursor()
+    cur.execute('DELETE FROM groups')
+    cur.execute('DELETE FROM groups_archive')
+    cur.execute('DELETE FROM timetable')
+    cur.execute("INSERT INTO groups (id, name, subjects) VALUES (1, 'G1', '[]')")
+    cur.execute(
+        "INSERT INTO timetable (date, slot, student_id, teacher_id, subject, group_id, location_id) "
+        "VALUES ('2024-01-01', 0, NULL, NULL, 'Math', 1, NULL)"
+    )
+    conn.commit()
+
+    preset = app.dump_configuration()
+    preset['data']['groups'] = []
+    preset['data']['group_members'] = []
+    preset['data']['groups_archive'] = []
+    conn.close()
+
+    app.restore_configuration(preset, overwrite=True)
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    assert cur.execute('SELECT COUNT(*) FROM timetable').fetchone()[0] == 1
+    assert cur.execute('SELECT name FROM groups_archive WHERE id=1').fetchone()[0] == 'G1'
+    assert cur.execute('SELECT COUNT(*) FROM groups WHERE id=1').fetchone()[0] == 0
+    row = cur.execute(
+        '''SELECT COALESCE(g.name, ga.name) AS gname FROM timetable t
+           LEFT JOIN groups g ON t.group_id = g.id
+           LEFT JOIN groups_archive ga ON t.group_id = ga.id'''
+    ).fetchone()
+    assert row['gname'] == 'G1'
+    conn.close()
+
+
 def test_restore_preserves_attendance(tmp_path):
     import app
     conn = setup_db(tmp_path)
