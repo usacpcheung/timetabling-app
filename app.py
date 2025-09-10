@@ -44,6 +44,7 @@ CURRENT_PRESET_VERSION = 1
 CONFIG_TABLES = [
     'config',
     'teachers',
+    'teachers_archive',
     'students',
     'students_archive',
     'subjects',
@@ -147,6 +148,12 @@ def init_db():
             subjects TEXT,
             min_lessons INTEGER,
             max_lessons INTEGER
+        )''')
+
+    if not table_exists('teachers_archive'):
+        c.execute('''CREATE TABLE teachers_archive (
+            id INTEGER PRIMARY KEY,
+            name TEXT
         )''')
 
     if not table_exists('students'):
@@ -438,6 +445,23 @@ def restore_configuration(preset, overwrite=False):
     if not overwrite and current != preset['data']:
         conn.close()
         return False
+
+    # Capture teacher and student references before wiping tables so we can
+    # preserve names for any existing timetable or attendance rows.
+    c.execute('SELECT DISTINCT teacher_id FROM timetable')
+    t_ids = [r['teacher_id'] for r in c.fetchall() if r['teacher_id'] is not None]
+    teacher_names = {}
+    if t_ids:
+        placeholders = ','.join(['?'] * len(t_ids))
+        c.execute(f'SELECT id, name FROM teachers WHERE id IN ({placeholders})', t_ids)
+        teacher_names = {r['id']: r['name'] for r in c.fetchall()}
+        c.execute(f'SELECT id, name FROM teachers_archive WHERE id IN ({placeholders})', t_ids)
+        for r in c.fetchall():
+            teacher_names.setdefault(r['id'], r['name'])
+
+    c.execute('SELECT DISTINCT student_id, student_name FROM attendance_log')
+    log_students = {r['student_id']: r['student_name'] for r in c.fetchall()}
+
     for table in CONFIG_TABLES:
         rows = preset['data'].get(table, [])
         c.execute(f'DELETE FROM {table}')
@@ -449,6 +473,24 @@ def restore_configuration(preset, overwrite=False):
                     f"INSERT INTO {table} ({','.join(cols)}) VALUES ({placeholders})",
                     [row[col] for col in cols],
                 )
+
+    # Reinsert archived teachers for any timetable references that no longer
+    # resolve to an active teacher.
+    for tid in t_ids:
+        c.execute('SELECT 1 FROM teachers WHERE id=?', (tid,))
+        if c.fetchone() is None:
+            c.execute('SELECT 1 FROM teachers_archive WHERE id=?', (tid,))
+            if c.fetchone() is None:
+                name = teacher_names.get(tid)
+                if name:
+                    c.execute('INSERT INTO teachers_archive (id, name) VALUES (?, ?)', (tid, name))
+
+    # Ensure archived names exist for any students referenced in attendance logs.
+    for sid, name in log_students.items():
+        c.execute('SELECT 1 FROM students WHERE id=?', (sid,))
+        if c.fetchone() is None:
+            c.execute('INSERT OR IGNORE INTO students_archive (id, name) VALUES (?, ?)', (sid, name))
+
     conn.commit()
     conn.close()
     return True
@@ -1566,7 +1608,10 @@ def get_timetable_data(target_date, view='teacher'):
         c.execute('SELECT * FROM locations')
         columns = c.fetchall()
     else:
-        c.execute('SELECT * FROM teachers')
+        c.execute(
+            'SELECT id, name, subjects FROM teachers '
+            "UNION ALL SELECT id, name, '[]' as subjects FROM teachers_archive"
+        )
         columns = c.fetchall()
 
     if not target_date:
@@ -1574,13 +1619,15 @@ def get_timetable_data(target_date, view='teacher'):
         row = c.fetchone()
         target_date = row['date'] if row else date.today().isoformat()
 
-    c.execute('''SELECT t.slot, te.name as teacher,
+    c.execute('''SELECT t.slot,
+                        COALESCE(te.name, ta.name) as teacher,
                         COALESCE(s.name, sa.name) as student,
                         g.name as group_name, t.subject, t.group_id,
                         t.teacher_id, t.student_id, t.location_id,
                         l.name AS location_name
                  FROM timetable t
-                 JOIN teachers te ON t.teacher_id = te.id
+                 LEFT JOIN teachers te ON t.teacher_id = te.id
+                 LEFT JOIN teachers_archive ta ON t.teacher_id = ta.id
                  LEFT JOIN students s ON t.student_id = s.id
                  LEFT JOIN students_archive sa ON t.student_id = sa.id
                  LEFT JOIN groups g ON t.group_id = g.id
@@ -1710,9 +1757,11 @@ def attendance():
     ''')
     active_rows = c.fetchall()
     c.execute('''
-        SELECT al.student_id AS sid, sa.name AS name, al.subject, al.date
+        SELECT al.student_id AS sid,
+               COALESCE(sa.name, al.student_name) AS name,
+               al.subject, al.date
         FROM attendance_log al
-        JOIN students_archive sa ON al.student_id = sa.id
+        LEFT JOIN students_archive sa ON al.student_id = sa.id
         LEFT JOIN students s ON al.student_id = s.id
         WHERE s.id IS NULL OR s.active=0
     ''')
