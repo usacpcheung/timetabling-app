@@ -38,6 +38,26 @@ DB_PATH = os.path.join(DATA_DIR, "timetable.db")
 
 CURRENT_PRESET_VERSION = 1
 
+# Tables that represent configuration data. Presets only dump and restore
+# these tables so previously generated timetables, worksheets or logs remain
+# untouched when a preset is loaded.
+CONFIG_TABLES = [
+    'config',
+    'teachers',
+    'students',
+    'students_archive',
+    'subjects',
+    'teacher_unavailable',
+    'student_unavailable',
+    'fixed_assignments',
+    'groups',
+    'group_members',
+    'student_teacher_block',
+    'locations',
+    'student_locations',
+    'group_locations',
+]
+
 
 def get_db():
     """Return a connection to the SQLite database.
@@ -378,15 +398,15 @@ def init_db():
 
 
 def dump_configuration():
-    """Serialize the entire database (except presets) to a JSON-compatible dict."""
+    """Serialize configuration tables to a JSON-compatible dict.
+
+    Timetables, worksheets and other runtime data are intentionally excluded so
+    presets capture only the settings needed to regenerate a schedule.
+    """
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT name FROM sqlite_master WHERE type='table'")
-    tables = [row['name'] for row in c.fetchall()]
     data = {}
-    for table in tables:
-        if table in ('config_presets', 'sqlite_sequence'):
-            continue
+    for table in CONFIG_TABLES:
         c.execute(f'SELECT * FROM {table}')
         rows = [dict(r) for r in c.fetchall()]
         data[table] = rows
@@ -401,7 +421,12 @@ def migrate_preset(preset):
 
 
 def restore_configuration(preset, overwrite=False):
-    """Restore database from a preset dump."""
+    """Restore configuration tables from a preset dump.
+
+    Existing timetables and worksheet counts remain unchanged. When ``overwrite``
+    is False and current configuration differs from the preset, ``False`` is
+    returned so the caller can prompt the user for confirmation.
+    """
     version = preset.get('version', 0)
     if version > CURRENT_PRESET_VERSION:
         raise ValueError('Preset version is newer than supported.')
@@ -413,9 +438,8 @@ def restore_configuration(preset, overwrite=False):
     if not overwrite and current != preset['data']:
         conn.close()
         return False
-    for table, rows in preset['data'].items():
-        if table == 'config_presets':
-            continue
+    for table in CONFIG_TABLES:
+        rows = preset['data'].get(table, [])
         c.execute(f'DELETE FROM {table}')
         if rows:
             cols = rows[0].keys()

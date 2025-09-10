@@ -655,7 +655,7 @@
     <script id="slot-times-data" type="application/json">{{ slot_times | tojson }}</script>
     <script>
     function confirmLoad() {
-        if (confirm('Load preset and overwrite current configuration?')) {
+        if (confirm('Load preset and overwrite current configuration? Existing timetables remain unchanged.')) {
             document.getElementById('overwrite').value = '1';
             return true;
         }
