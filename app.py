@@ -785,7 +785,17 @@ def config():
         deletes = set()
         for tid in teacher_ids:
             if request.form.get(f'teacher_delete_{tid}'):
+                c.execute('SELECT name FROM teachers WHERE id=?', (int(tid),))
+                row = c.fetchone()
+                if row:
+                    c.execute(
+                        'INSERT OR IGNORE INTO teachers_archive (id, name) VALUES (?, ?)',
+                        (int(tid), row['name']),
+                    )
                 c.execute('DELETE FROM teachers WHERE id=?', (int(tid),))
+                c.execute('DELETE FROM teacher_unavailable WHERE teacher_id=?', (int(tid),))
+                c.execute('DELETE FROM student_teacher_block WHERE teacher_id=?', (int(tid),))
+                c.execute('DELETE FROM fixed_assignments WHERE teacher_id=?', (int(tid),))
                 deletes.add(tid)
             else:
                 name = request.form.get(f'teacher_name_{tid}')
