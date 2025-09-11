@@ -376,12 +376,58 @@ def init_db():
     cleanup_presets(c)
 
     # --- migrate subjects from names to ids and populate subject_id columns ---
+    # Earlier versions stored subject names directly which caused issues when
+    # migrating to integer IDs.  Some runs also introduced duplicate subject
+    # rows where the ``name`` column held an old numeric ID.  Clean those up
+    # first so subsequent mapping uses a stable subject table.
+    c.execute('SELECT id, name FROM subjects')
+    rows = c.fetchall()
+    existing_ids = {r['id'] for r in rows}
+    numeric_dupes = []
+    for r in rows:
+        nm = r['name']
+        if nm and str(nm).isdigit():
+            num = int(nm)
+            if num in existing_ids and num != r['id']:
+                numeric_dupes.append((r['id'], num))
+
+    # Re-point any references that used the duplicate IDs to the correct one
+    for bad_id, good_id in numeric_dupes:
+        for tbl in ('timetable', 'worksheets', 'fixed_assignments', 'attendance_log'):
+            if table_exists(tbl) and column_exists(tbl, 'subject_id'):
+                c.execute(f'UPDATE {tbl} SET subject_id=? WHERE subject_id=?', (good_id, bad_id))
+        for tbl in ('teachers', 'students', 'groups'):
+            if table_exists(tbl):
+                c.execute(f'SELECT id, subjects FROM {tbl}')
+                for row in c.fetchall():
+                    try:
+                        subj_ids = json.loads(row['subjects']) if row['subjects'] else []
+                    except Exception:
+                        subj_ids = []
+                    if bad_id in subj_ids:
+                        subj_ids = [good_id if i == bad_id else i for i in subj_ids]
+                        c.execute(
+                            f'UPDATE {tbl} SET subjects=? WHERE id=?',
+                            (json.dumps(subj_ids), row['id'])
+                        )
+        c.execute('DELETE FROM subjects WHERE id=?', (bad_id,))
+
+    # Refresh subject map after cleanup
     c.execute('SELECT id, name FROM subjects')
     subj_map = {r['name']: r['id'] for r in c.fetchall()}
 
-    def ensure_subject(name):
-        if name is None:
+    def ensure_subject(value):
+        if value is None:
             return None
+        # Treat integers or digit strings as existing IDs when possible
+        if isinstance(value, int) or (isinstance(value, str) and value.isdigit()):
+            sid = int(value)
+            c.execute('SELECT 1 FROM subjects WHERE id=?', (sid,))
+            if c.fetchone():
+                return sid
+            name = str(value)
+        else:
+            name = value
         sid = subj_map.get(name)
         if sid is None:
             c.execute('INSERT INTO subjects (name) VALUES (?)', (name,))
@@ -396,11 +442,14 @@ def init_db():
             rows = c.fetchall()
             for row in rows:
                 try:
-                    names = json.loads(row['subjects']) if row['subjects'] else []
+                    items = json.loads(row['subjects']) if row['subjects'] else []
                 except Exception:
-                    names = []
-                ids = [ensure_subject(n) for n in names]
-                c.execute(f'UPDATE {table} SET subjects=? WHERE id=?', (json.dumps(ids), row['id']))
+                    items = []
+                ids = [ensure_subject(it) for it in items]
+                c.execute(
+                    f'UPDATE {table} SET subjects=? WHERE id=?',
+                    (json.dumps(ids), row['id'])
+                )
 
     # populate subject_id columns for existing rows
     for tbl in ('timetable', 'worksheets', 'fixed_assignments', 'attendance_log'):
