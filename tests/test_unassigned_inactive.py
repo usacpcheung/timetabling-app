@@ -35,11 +35,12 @@ def test_worksheet_counts_separate_by_id(tmp_path):
     conn = setup_db(tmp_path)
     cur = conn.cursor()
     sid_old = cur.execute("SELECT id FROM students WHERE name='Student 1'").fetchone()[0]
+    math_id = cur.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
     cur.executemany(
-        "INSERT INTO worksheets (student_id, subject, date) VALUES (?, ?, ?)",
+        "INSERT INTO worksheets (student_id, subject, subject_id, date) VALUES (?, ?, ?, ?)",
         [
-            (sid_old, 'Math', '2024-01-01'),
-            (sid_old, 'Math', '2024-01-02'),
+            (sid_old, 'Math', math_id, '2024-01-01'),
+            (sid_old, 'Math', math_id, '2024-01-02'),
         ],
     )
     cur.execute("INSERT INTO students_archive (id, name) VALUES (?, ?)", (sid_old, 'Student 1'))
@@ -63,9 +64,10 @@ def test_highlighted_when_worksheet_on_date(tmp_path):
     conn = setup_db(tmp_path)
     cur = conn.cursor()
     sid = cur.execute("SELECT id FROM students WHERE name='Student 1'").fetchone()[0]
+    math_id = cur.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
     cur.execute(
-        "INSERT INTO worksheets (student_id, subject, date) VALUES (?, ?, ?)",
-        (sid, 'Math', '2024-01-01'),
+        "INSERT INTO worksheets (student_id, subject, subject_id, date) VALUES (?, ?, ?, ?)",
+        (sid, 'Math', math_id, '2024-01-01'),
     )
     # insert a timetable row for another student so the view renders the timetable
     other = cur.execute("SELECT id FROM students WHERE name='Student 2'").fetchone()[0]

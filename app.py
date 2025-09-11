@@ -288,22 +288,32 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             student_id INTEGER,
             subject TEXT,
-            date TEXT
+            subject_id INTEGER,
+            date TEXT,
+            FOREIGN KEY(subject_id) REFERENCES subjects(id)
         )''')
+    else:
+        if not column_exists('worksheets', 'subject_id'):
+            c.execute('ALTER TABLE worksheets ADD COLUMN subject_id INTEGER')
+            c.execute(
+                'UPDATE worksheets SET subject_id = ('
+                'SELECT id FROM subjects WHERE LOWER(name) = LOWER(worksheets.subject)'
+                ') WHERE subject_id IS NULL'
+            )
     # Clean up any duplicate worksheet rows (same student, subject, date)
     if table_exists('worksheets'):
-        # Keep the oldest row per (student_id, subject, date)
+        # Keep the oldest row per (student_id, subject_id, date)
         c.execute(
             '''DELETE FROM worksheets WHERE rowid NOT IN (
                    SELECT MIN(rowid) FROM worksheets
-                   GROUP BY student_id, subject, date
+                   GROUP BY student_id, subject_id, date
                )'''
         )
         removed = c.rowcount
         # Enforce uniqueness to prevent future duplicates
         c.execute(
             'CREATE UNIQUE INDEX IF NOT EXISTS idx_worksheets_unique '
-            'ON worksheets(student_id, subject, date)'
+            'ON worksheets(student_id, subject_id, date)'
         )
         # Invalidate cached snapshots only if duplicates were cleaned up
         if removed and table_exists('timetable_snapshot'):
@@ -572,12 +582,15 @@ def calculate_missing_and_counts(c, date):
                 sid = s['id']
                 # Count worksheets assigned (by distinct date to avoid duplicates)
                 c.execute(
-                    'SELECT COUNT(DISTINCT date) FROM worksheets WHERE student_id=? AND subject=? AND date<=?',
+                    'SELECT COUNT(DISTINCT w.date) FROM worksheets w '
+                    'JOIN subjects subj ON w.subject_id = subj.id '
+                    'WHERE w.student_id=? AND LOWER(subj.name)=LOWER(?) AND w.date<=?',
                     (sid, subj, date),
                 )
                 worksheet_count = c.fetchone()[0]
                 c.execute(
-                    'SELECT 1 FROM worksheets WHERE student_id=? AND subject=? AND date=?',
+                    'SELECT 1 FROM worksheets w JOIN subjects subj ON w.subject_id = subj.id '
+                    'WHERE w.student_id=? AND LOWER(subj.name)=LOWER(?) AND w.date=?',
                     (sid, subj, date),
                 )
                 assigned_today = c.fetchone() is not None
@@ -2105,24 +2118,31 @@ def edit_timetable(date):
             assign = request.form.get('assign')
             if student_id and subject and assign is not None:
                 sid = int(student_id)
-                if assign == '1':
-                    c.execute(
-                        'SELECT 1 FROM worksheets WHERE student_id=? AND subject=? AND date=?',
-                        (sid, subject, date),
-                    )
-                    if c.fetchone() is None:
+                c.execute(
+                    'SELECT id FROM subjects WHERE LOWER(name)=LOWER(?)',
+                    (subject,),
+                )
+                row = c.fetchone()
+                if row:
+                    subj_id = row['id']
+                    if assign == '1':
                         c.execute(
-                            'INSERT INTO worksheets (student_id, subject, date) VALUES (?, ?, ?)',
-                            (sid, subject, date),
+                            'SELECT 1 FROM worksheets WHERE student_id=? AND subject_id=? AND date=?',
+                            (sid, subj_id, date),
                         )
-                else:
-                    c.execute(
-                        'DELETE FROM worksheets WHERE student_id=? AND subject=? AND date=?',
-                        (sid, subject, date),
-                    )
-                get_missing_and_counts(c, date, refresh=True)
-                conn.commit()
-                flash('Worksheet assignment updated.', 'info')
+                        if c.fetchone() is None:
+                            c.execute(
+                                'INSERT INTO worksheets (student_id, subject, subject_id, date) VALUES (?, ?, ?, ?)',
+                                (sid, subject, subj_id, date),
+                            )
+                    else:
+                        c.execute(
+                            'DELETE FROM worksheets WHERE student_id=? AND subject_id=? AND date=?',
+                            (sid, subj_id, date),
+                        )
+                    get_missing_and_counts(c, date, refresh=True)
+                    conn.commit()
+                    flash('Worksheet assignment updated.', 'info')
         elif action == 'refresh':
             get_missing_and_counts(c, date, refresh=True)
             conn.commit()
