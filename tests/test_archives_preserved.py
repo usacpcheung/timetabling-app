@@ -26,9 +26,11 @@ def test_restore_archives_teachers(tmp_path):
     cur.execute(
         "INSERT INTO teachers (id, name, subjects, min_lessons, max_lessons) VALUES (1, 'Old', '[]', 0, 0)"
     )
+    math_id = cur.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
     cur.execute(
-        "INSERT INTO timetable (date, slot, student_id, teacher_id, subject, group_id, location_id) "
-        "VALUES ('2024-01-01', 0, NULL, 1, 'Math', NULL, NULL)"
+        "INSERT INTO timetable (date, slot, student_id, teacher_id, subject_id, group_id, location_id) "
+        "VALUES ('2024-01-01', 0, NULL, 1, ?, NULL, NULL)",
+        (math_id,)
     )
     conn.commit()
 
@@ -64,9 +66,11 @@ def test_restore_archives_groups(tmp_path):
     cur.execute('DELETE FROM groups_archive')
     cur.execute('DELETE FROM timetable')
     cur.execute("INSERT INTO groups (id, name, subjects) VALUES (1, 'G1', '[]')")
+    math_id = cur.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
     cur.execute(
-        "INSERT INTO timetable (date, slot, student_id, teacher_id, subject, group_id, location_id) "
-        "VALUES ('2024-01-01', 0, NULL, NULL, 'Math', 1, NULL)"
+        "INSERT INTO timetable (date, slot, student_id, teacher_id, subject_id, group_id, location_id) "
+        "VALUES ('2024-01-01', 0, NULL, NULL, ?, 1, NULL)",
+        (math_id,)
     )
     conn.commit()
 
@@ -100,9 +104,11 @@ def test_restore_preserves_attendance(tmp_path):
     cur.execute('DELETE FROM students')
     cur.execute('DELETE FROM students_archive')
     cur.execute('DELETE FROM attendance_log')
+    math_id = cur.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
     cur.execute(
-        "INSERT INTO attendance_log (student_id, student_name, subject, date) "
-        "VALUES (1, 'Stu', 'Math', '2024-01-01')"
+        "INSERT INTO attendance_log (student_id, student_name, subject_id, date) "
+        "VALUES (1, 'Stu', ?, '2024-01-01')",
+        (math_id,)
     )
     conn.commit()
     preset = app.dump_configuration()

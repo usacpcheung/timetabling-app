@@ -20,9 +20,11 @@ def test_restore_only_updates_config(tmp_path):
     cur = conn.cursor()
 
     # Insert timetable entry to ensure it survives preset restore
+    math_id = cur.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
     cur.execute(
-        "INSERT INTO timetable (date, slot, student_id, teacher_id, subject, group_id, location_id) "
-        "VALUES ('2024-01-01', 0, 1, 1, 'Math', NULL, NULL)"
+        "INSERT INTO timetable (date, slot, student_id, teacher_id, subject_id, group_id, location_id) "
+        "VALUES ('2024-01-01', 0, 1, 1, ?, NULL, NULL)",
+        (math_id,),
     )
     conn.commit()
 
