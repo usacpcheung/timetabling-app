@@ -587,7 +587,7 @@ def calculate_missing_and_counts(c, date):
     c.execute('SELECT id, name FROM subjects')
     subj_rows = c.fetchall()
     id_to_name = {r['id']: r['name'] for r in subj_rows}
-    name_to_id = {r['name'].lower(): r['id'] for r in subj_rows}
+    name_to_id = {r['name'].strip().lower(): r['id'] for r in subj_rows}
 
     c.execute('SELECT id, name, subject_ids, subjects, active FROM students')
     student_rows = c.fetchall()
@@ -598,7 +598,7 @@ def calculate_missing_and_counts(c, date):
     c.execute('SELECT student_id, group_id, subject FROM timetable WHERE date=?', (date,))
     lessons = c.fetchall()
     for les in lessons:
-        subj_id = name_to_id.get(les['subject'].lower()) if les['subject'] else None
+        subj_id = name_to_id.get(les['subject'].strip().lower()) if les['subject'] else None
         if subj_id is None:
             continue
         if les['group_id']:
@@ -615,7 +615,7 @@ def calculate_missing_and_counts(c, date):
             required_ids = set(json.loads(s['subject_ids']))
         else:
             names = json.loads(s['subjects'] or '[]')
-            required_ids = {name_to_id.get(n.lower()) for n in names if name_to_id.get(n.lower()) is not None}
+            required_ids = {name_to_id.get(n.strip().lower()) for n in names if name_to_id.get(n.strip().lower()) is not None}
         miss_ids = required_ids - assigned.get(s['id'], set())
         if miss_ids:
             subj_list = []

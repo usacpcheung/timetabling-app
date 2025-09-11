@@ -60,3 +60,38 @@ def test_worksheet_counts_after_subject_rename(tmp_path):
     item = next(entry for entry in missing[sid] if entry['subject'] == 'Algebra')
     assert item['count'] == 1
     assert item['today']
+
+
+def test_timetable_subject_with_extra_spaces(tmp_path):
+    import app
+    conn = setup_db(tmp_path)
+    cur = conn.cursor()
+    sid = cur.execute("SELECT id FROM students WHERE name='Student 1'").fetchone()[0]
+    conn.commit()
+    conn.close()
+
+    client = app.app.test_client()
+    client.post(
+        '/edit_timetable/2024-01-01',
+        data={'action': 'worksheet', 'student_id': str(sid), 'subject': 'Math', 'assign': '1'},
+    )
+
+    # Confirm worksheet counted before lesson exists
+    _, _, _, _, missing, _, _, _, _ = app.get_timetable_data('2024-01-01')
+    assert any(item['subject'] == 'Math' for item in missing[sid])
+
+    # Add a lesson with extra spaces around the subject
+    conn = sqlite3.connect(app.DB_PATH)
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO timetable (student_id, group_id, teacher_id, subject, slot, date) VALUES (?, NULL, 1, ?, 0, ?)",
+        (sid, '  Math  ', '2024-01-01'),
+    )
+    cur.execute("DELETE FROM timetable_snapshot WHERE date=?", ('2024-01-01',))
+    conn.commit()
+    conn.close()
+
+    # Recompute and ensure the subject is recognised
+    _, _, _, _, missing, _, _, _, lesson_counts = app.get_timetable_data('2024-01-01')
+    assert all(item['subject'] != 'Math' for item in missing.get(sid, []))
+    assert lesson_counts[sid] == 1
