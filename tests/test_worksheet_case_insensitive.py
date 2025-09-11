@@ -95,3 +95,27 @@ def test_timetable_subject_with_extra_spaces(tmp_path):
     _, _, _, _, missing, _, _, _, lesson_counts = app.get_timetable_data('2024-01-01')
     assert all(item['subject'] != 'Math' for item in missing.get(sid, []))
     assert lesson_counts[sid] == 1
+
+
+def test_multiple_worksheets_across_dates(tmp_path):
+    import app
+    conn = setup_db(tmp_path)
+    cur = conn.cursor()
+    sid = cur.execute("SELECT id FROM students WHERE name='Student 1'").fetchone()[0]
+    conn.commit()
+    conn.close()
+
+    client = app.app.test_client()
+    client.post(
+        '/edit_timetable/2024-01-01',
+        data={'action': 'worksheet', 'student_id': str(sid), 'subject': 'Math', 'assign': '1'},
+    )
+    client.post(
+        '/edit_timetable/2024-01-02',
+        data={'action': 'worksheet', 'student_id': str(sid), 'subject': 'Math', 'assign': '1'},
+    )
+
+    # Count worksheets up to the second date
+    _, _, _, _, missing, _, _, _, _ = app.get_timetable_data('2024-01-02')
+    math = next(item for item in missing[sid] if item['subject'] == 'Math')
+    assert math['count'] == 2

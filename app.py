@@ -621,9 +621,9 @@ def calculate_missing_and_counts(c, date):
             subj_list = []
             for sid_ in sorted(miss_ids):
                 sid = s['id']
-                # Count worksheets assigned (by distinct date to avoid duplicates)
+                # Count worksheets assigned
                 c.execute(
-                    'SELECT COUNT(DISTINCT w.date) FROM worksheets w '
+                    'SELECT COUNT(*) FROM worksheets w '
                     'WHERE w.student_id=? AND w.subject_id=? AND w.date<=?',
                     (sid, sid_, date),
                 )
