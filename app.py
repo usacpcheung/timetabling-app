@@ -327,18 +327,36 @@ def init_db():
         c.execute('''CREATE TABLE worksheets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             student_id INTEGER,
-            subject TEXT,
             subject_id INTEGER,
             date TEXT,
             FOREIGN KEY(subject_id) REFERENCES subjects(id)
         )''')
     else:
-        if not column_exists('worksheets', 'subject_id'):
+        # Older schemas stored the subject name; migrate to subject_id-only
+        if column_exists('worksheets', 'subject'):
+            c.execute('ALTER TABLE worksheets RENAME TO worksheets_old')
+            c.execute('''CREATE TABLE worksheets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_id INTEGER,
+                subject_id INTEGER,
+                date TEXT,
+                FOREIGN KEY(subject_id) REFERENCES subjects(id)
+            )''')
+            c.execute(
+                '''INSERT INTO worksheets (id, student_id, subject_id, date)
+                   SELECT w.id, w.student_id,
+                          COALESCE(w.subject_id,
+                                   (SELECT id FROM subjects WHERE LOWER(name)=LOWER(w.subject))),
+                          w.date
+                   FROM worksheets_old w'''
+            )
+            c.execute('DROP TABLE worksheets_old')
+        elif not column_exists('worksheets', 'subject_id'):
             c.execute('ALTER TABLE worksheets ADD COLUMN subject_id INTEGER')
             c.execute(
                 'UPDATE worksheets SET subject_id = ('
-                'SELECT id FROM subjects WHERE LOWER(name) = LOWER(worksheets.subject)'
-                ') WHERE subject_id IS NULL'
+                'SELECT id FROM subjects WHERE LOWER(name) = LOWER(subject)) '
+                'WHERE subject_id IS NULL'
             )
     # Clean up any duplicate worksheet rows (same student, subject, date)
     if table_exists('worksheets'):
@@ -650,7 +668,7 @@ def calculate_missing_and_counts(c, date):
                     (sid, sid_, date),
                 )
                 assigned_today = c.fetchone() is not None
-                subj_list.append({'subject': id_to_name.get(sid_, ''), 'count': worksheet_count, 'assigned': assigned_today})
+                subj_list.append({'subject_id': sid_, 'subject': id_to_name.get(sid_, ''), 'count': worksheet_count, 'assigned': assigned_today})
             missing[s['id']] = subj_list
 
     return missing, lesson_counts
@@ -1866,8 +1884,15 @@ def get_timetable_data(target_date, view='teacher'):
     missing, lesson_counts = get_missing_and_counts(c, target_date)
     conn.commit()
     missing_view = {
-        sid: [{'subject': item['subject'], 'count': item['count'], 'today': item['assigned']}
-              for item in subs]
+        sid: [
+            {
+                'subject': item['subject'],
+                'subject_id': item['subject_id'],
+                'count': item['count'],
+                'today': item['assigned'],
+            }
+            for item in subs
+        ]
         for sid, subs in missing.items()
     }
 
@@ -2220,17 +2245,13 @@ def edit_timetable(date):
                 flash('Lesson updated.', 'info')
         elif action == 'worksheet':
             student_id = request.form.get('student_id')
-            subject = request.form.get('subject')
+            subject_id = request.form.get('subject_id')
             assign = request.form.get('assign')
-            if student_id and subject and assign is not None:
+            if student_id and subject_id and assign is not None:
                 sid = int(student_id)
-                c.execute(
-                    'SELECT id FROM subjects WHERE LOWER(name)=LOWER(?)',
-                    (subject,),
-                )
-                row = c.fetchone()
-                if row:
-                    subj_id = row['id']
+                subj_id = int(subject_id)
+                c.execute('SELECT 1 FROM subjects WHERE id=?', (subj_id,))
+                if c.fetchone():
                     if assign == '1':
                         c.execute(
                             'SELECT 1 FROM worksheets WHERE student_id=? AND subject_id=? AND date=?',
@@ -2238,8 +2259,8 @@ def edit_timetable(date):
                         )
                         if c.fetchone() is None:
                             c.execute(
-                                'INSERT INTO worksheets (student_id, subject, subject_id, date) VALUES (?, ?, ?, ?)',
-                                (sid, subject, subj_id, date),
+                                'INSERT INTO worksheets (student_id, subject_id, date) VALUES (?, ?, ?)',
+                                (sid, subj_id, date),
                             )
                     else:
                         c.execute(

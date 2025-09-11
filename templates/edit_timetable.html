@@ -70,10 +70,10 @@
                 <form method="post" class="inline-block ml-4 worksheet-form">
                     <input type="hidden" name="action" value="worksheet">
                     <input type="hidden" name="student_id" value="{{ sid }}">
-                    <input type="hidden" name="subject" value="{{ item.subject }}">
-                    <input type="hidden" name="assign" value="{{ 1 if item.assigned else 0 }}">
+                    <input type="hidden" name="subject_id" value="{{ item.subject_id }}">
+                    <input type="hidden" name="assign" value="{{ 1 if item.today else 0 }}">
                     <label class="inline-flex items-center">
-                        <input type="checkbox" class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500 dark:focus:ring-emerald-500 dark:ring-offset-emerald-800 focus:ring-2 dark:bg-emerald-700 dark:border-emerald-600" {% if item.assigned %}checked{% endif %}>
+                        <input type="checkbox" class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500 dark:focus:ring-emerald-500 dark:ring-offset-emerald-800 focus:ring-2 dark:bg-emerald-700 dark:border-emerald-600" {% if item.today %}checked{% endif %}>
                         <span class="ml-1">{{ item.subject }} ({{ item.count }})</span>
                     </label>
                 </form>
