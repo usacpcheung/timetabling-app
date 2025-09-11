@@ -301,26 +301,9 @@ def init_db():
             subject_id INTEGER,
             date TEXT
         )''')
-    # Clean up any duplicate worksheet rows (same student, subject_id, date)
-    if table_exists('worksheets'):
+    else:
         if not column_exists('worksheets', 'subject_id'):
             c.execute('ALTER TABLE worksheets ADD COLUMN subject_id INTEGER')
-        # Keep the oldest row per (student_id, subject_id, date)
-        c.execute(
-            '''DELETE FROM worksheets WHERE rowid NOT IN (
-                   SELECT MIN(rowid) FROM worksheets
-                   GROUP BY student_id, subject_id, date
-               )'''
-        )
-        removed = c.rowcount
-        # Enforce uniqueness to prevent future duplicates (use subject_id)
-        c.execute(
-            'CREATE UNIQUE INDEX IF NOT EXISTS idx_worksheets_unique '
-            'ON worksheets(student_id, subject_id, date)'
-        )
-        # Invalidate cached snapshots only if duplicates were cleaned up
-        if removed and table_exists('timetable_snapshot'):
-            c.execute('DELETE FROM timetable_snapshot')
 
     if not table_exists('groups'):
         c.execute('''CREATE TABLE groups (
