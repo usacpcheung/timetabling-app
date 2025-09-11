@@ -98,6 +98,13 @@ def populate_student_subject_ids(c):
         c.execute('UPDATE students SET subject_ids=? WHERE id=?', (json.dumps(ids), r['id']))
 
 
+def clear_timetable_snapshot(c):
+    """Remove cached timetable snapshots so counts are recomputed."""
+    c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='timetable_snapshot'")
+    if c.fetchone():
+        c.execute('DELETE FROM timetable_snapshot')
+
+
 def init_db():
     """Create the SQLite tables and populate default rows.
 
@@ -342,8 +349,8 @@ def init_db():
             'ON worksheets(student_id, subject_id, date)'
         )
         # Invalidate cached snapshots only if duplicates were cleaned up
-        if removed and table_exists('timetable_snapshot'):
-            c.execute('DELETE FROM timetable_snapshot')
+        if removed:
+            clear_timetable_snapshot(c)
 
     if not table_exists('groups'):
         c.execute('''CREATE TABLE groups (
@@ -572,6 +579,8 @@ def restore_configuration(preset, overwrite=False):
         if c.fetchone() is None:
             c.execute('INSERT OR IGNORE INTO students_archive (id, name) VALUES (?, ?)', (sid, name))
 
+    conn.commit()
+    clear_timetable_snapshot(c)
     conn.commit()
     conn.close()
     return True
@@ -1309,6 +1318,8 @@ def config():
         if has_error:
             conn.rollback()
         else:
+            conn.commit()
+            clear_timetable_snapshot(c)
             conn.commit()
         conn.close()
         return redirect(url_for('config'))
