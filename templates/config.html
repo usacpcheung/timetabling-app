@@ -269,11 +269,11 @@
                 <input type="text" name="teacher_name_{{ t['id'] }}" value="{{ t['name'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
             <label class="block">Subjects:
-                <select multiple name="teacher_subjects_{{ t['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
-                    {% for sub in subjects %}
-                    <option value="{{ sub['name'] }}" {% if sub['name'] in json.loads(t['subjects']) %}selected{% endif %}>{{ sub['name'] }}</option>
-                    {% endfor %}
-                </select>
+                  <select multiple name="teacher_subjects_{{ t['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                      {% for sub in subjects %}
+                      <option value="{{ sub['id'] }}" {% if sub['id'] in teacher_map[t['id']] %}selected{% endif %}>{{ sub['name'] }}</option>
+                      {% endfor %}
+                  </select>
             </label>
             <label class="block">Min:
                 <input type="number" name="teacher_min_{{ t['id'] }}" value="{{ t['min_lessons'] if t['min_lessons'] is not none else '' }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
@@ -289,11 +289,11 @@
                 <input type="text" name="new_teacher_name" class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
             <label class="block">Subjects:
-                <select multiple name="new_teacher_subjects" class="border border-emerald-300 rounded-lg p-2.5 w-full">
-                    {% for sub in subjects %}
-                    <option value="{{ sub['name'] }}">{{ sub['name'] }}</option>
-                    {% endfor %}
-                </select>
+                  <select multiple name="new_teacher_subjects" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                      {% for sub in subjects %}
+                      <option value="{{ sub['id'] }}">{{ sub['name'] }}</option>
+                      {% endfor %}
+                  </select>
             </label>
             <label class="block">Min:
                 <input type="number" name="new_teacher_min" class="border border-emerald-300 rounded-lg p-2.5 w-full">
@@ -321,11 +321,11 @@
                 <input type="text" name="student_name_{{ s['id'] }}" value="{{ s['name'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
             <label class="block">Subjects:
-                <select multiple name="student_subjects_{{ s['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
-                    {% for sub in subjects %}
-                    <option value="{{ sub['name'] }}" {% if sub['name'] in json.loads(s['subjects']) %}selected{% endif %}>{{ sub['name'] }}</option>
-                    {% endfor %}
-                </select>
+                  <select multiple name="student_subjects_{{ s['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                      {% for sub in subjects %}
+                      <option value="{{ sub['id'] }}" {% if sub['id'] in student_map[s['id']] %}selected{% endif %}>{{ sub['name'] }}</option>
+                      {% endfor %}
+                  </select>
             </label>
             <label class="flex items-center gap-2">Needs lessons?
                 <input type="checkbox" name="student_active_{{ s['id'] }}" value="1" {% if s['active'] %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
@@ -393,11 +393,11 @@
                 <input type="text" name="new_student_name" class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
             <label class="block">Subjects:
-                <select multiple name="new_student_subjects" class="border border-emerald-300 rounded-lg p-2.5 w-full">
-                    {% for sub in subjects %}
-                    <option value="{{ sub['name'] }}">{{ sub['name'] }}</option>
-                    {% endfor %}
-                </select>
+                  <select multiple name="new_student_subjects" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                      {% for sub in subjects %}
+                      <option value="{{ sub['id'] }}">{{ sub['name'] }}</option>
+                      {% endfor %}
+                  </select>
             </label>
             <label class="block">Forbidden Teachers:
                 <select multiple name="new_student_block" class="border border-emerald-300 rounded-lg p-2.5 w-full">
@@ -474,11 +474,11 @@
                 <input type="text" name="group_name_{{ g['id'] }}" value="{{ g['name'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
             <label class="block">Subjects:
-                <select multiple name="group_subjects_{{ g['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
-                    {% for sub in subjects %}
-                    <option value="{{ sub['name'] }}" {% if sub['name'] in json.loads(g['subjects']) %}selected{% endif %}>{{ sub['name'] }}</option>
-                    {% endfor %}
-                </select>
+                  <select multiple name="group_subjects_{{ g['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                      {% for sub in subjects %}
+                      <option value="{{ sub['id'] }}" {% if sub['id'] in group_subj_map[g['id']] %}selected{% endif %}>{{ sub['name'] }}</option>
+                      {% endfor %}
+                  </select>
             </label>
             <label class="block">Members:
                 <select multiple name="group_members_{{ g['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
@@ -502,11 +502,11 @@
                 <input type="text" name="new_group_name" class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
             <label class="block">Subjects:
-                <select multiple name="new_group_subjects" class="border border-emerald-300 rounded-lg p-2.5 w-full">
-                    {% for sub in subjects %}
-                    <option value="{{ sub['name'] }}">{{ sub['name'] }}</option>
-                    {% endfor %}
-                </select>
+                  <select multiple name="new_group_subjects" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                      {% for sub in subjects %}
+                      <option value="{{ sub['id'] }}">{{ sub['name'] }}</option>
+                      {% endfor %}
+                  </select>
             </label>
             <label class="block">Members:
                 <select multiple name="new_group_members" class="border border-emerald-300 rounded-lg p-2.5 w-full">

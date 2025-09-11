@@ -623,19 +623,26 @@ def calculate_missing_and_counts(c, date):
             subj_list = []
             for subj in sorted(miss):
                 sid = s['id']
+                subj_name = subject_names.get(subj)
                 # Count worksheets assigned (by distinct date to avoid duplicates)
                 c.execute(
-                    'SELECT COUNT(DISTINCT date) FROM worksheets WHERE student_id=? AND subject_id=? AND date<=?',
-                    (sid, subj, date),
+                    'SELECT COUNT(DISTINCT date) FROM worksheets WHERE student_id=? '
+                    'AND (subject_id=? OR subject=?) AND date<=?',
+                    (sid, subj, subj_name, date),
                 )
                 worksheet_count = c.fetchone()[0]
                 c.execute(
-                    'SELECT 1 FROM worksheets WHERE student_id=? AND subject_id=? AND date=?',
-                    (sid, subj, date),
+                    'SELECT 1 FROM worksheets WHERE student_id=? '
+                    'AND (subject_id=? OR subject=?) AND date=?',
+                    (sid, subj, subj_name, date),
                 )
                 assigned_today = c.fetchone() is not None
                 # Track worksheet counts directly to avoid conflating them with lessons
-                subj_list.append({'subject': subject_names.get(subj, str(subj)), 'count': worksheet_count, 'assigned': assigned_today})
+                subj_list.append({
+                    'subject': subj_name or str(subj),
+                    'count': worksheet_count,
+                    'assigned': assigned_today,
+                })
             missing[s['id']] = subj_list
 
     return missing, lesson_counts
@@ -1311,14 +1318,25 @@ def config():
         student_unavail_map.setdefault(r['student_id'], []).append(r['slot'])
     c.execute('SELECT * FROM subjects')
     subjects = c.fetchall()
+    subj_map = {s['id']: s['name'] for s in subjects}
     c.execute('SELECT * FROM groups')
     groups = c.fetchall()
+    group_subj_map = {g['id']: json.loads(g['subjects']) for g in groups}
     c.execute('SELECT group_id, student_id FROM group_members')
     gm_rows = c.fetchall()
     group_map = {}
     for gm in gm_rows:
         group_map.setdefault(gm['group_id'], []).append(gm['student_id'])
-    group_subj_map = {g['id']: json.loads(g['subjects']) for g in groups}
+    # Build mappings of subject IDs for form selections
+    teacher_map = {t['id']: json.loads(t['subjects']) for t in teachers}
+    student_map = {s['id']: json.loads(s['subjects']) for s in students}
+    # Convert stored subject ID lists to names for display
+    for t in teachers:
+        t['subjects'] = json.dumps([subj_map.get(i, str(i)) for i in teacher_map.get(t['id'], [])])
+    for s in students:
+        s['subjects'] = json.dumps([subj_map.get(i, str(i)) for i in student_map.get(s['id'], [])])
+    for g in groups:
+        g['subjects'] = json.dumps([subj_map.get(i, str(i)) for i in group_subj_map.get(g['id'], [])])
     c.execute('SELECT * FROM locations')
     locations = c.fetchall()
     c.execute('SELECT student_id, location_id FROM student_locations')
@@ -1348,8 +1366,6 @@ def config():
     assign_map = {}
     for a in assignments:
         assign_map.setdefault(a['teacher_id'], []).append(a['slot'])
-    teacher_map = {t['id']: json.loads(t['subjects']) for t in teachers}
-    student_map = {s['id']: json.loads(s['subjects']) for s in students}
     unavail_map = {}
     for u in unavailable:
         unavail_map.setdefault(u['teacher_id'], []).append(u['slot'])
