@@ -1,6 +1,7 @@
 import os
 import sys
 import sqlite3
+import json
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -119,3 +120,22 @@ def test_multiple_worksheets_across_dates(tmp_path):
     _, _, _, _, missing, _, _, _, _ = app.get_timetable_data('2024-01-02')
     math = next(item for item in missing[sid] if item['subject'] == 'Math')
     assert math['count'] == 2
+
+
+def test_populate_student_subject_ids_whitespace(tmp_path):
+    import app
+    conn = setup_db(tmp_path)
+    cur = conn.cursor()
+    math_id = cur.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
+    cur.execute(
+        "INSERT INTO students (name, subjects) VALUES (?, ?)",
+        ('Kid', json.dumps([' Math ']))
+    )
+    conn.commit()
+    app.populate_student_subject_ids(cur)
+    conn.commit()
+    ids_json = cur.execute(
+        "SELECT subject_ids FROM students WHERE name='Kid'"
+    ).fetchone()[0]
+    assert json.loads(ids_json) == [math_id]
+    conn.close()

@@ -87,15 +87,21 @@ def populate_student_subject_ids(c):
     """
     c.execute('SELECT id, name FROM subjects')
     rows = c.fetchall()
-    name_to_id = {r['name'].lower(): r['id'] for r in rows}
+    name_to_id = {r['name'].strip().lower(): r['id'] for r in rows}
     c.execute('SELECT id, subjects, subject_ids FROM students')
     srows = c.fetchall()
     for r in srows:
-        if r['subject_ids']:
-            continue
         names = json.loads(r['subjects'] or '[]')
-        ids = [name_to_id.get(n.lower()) for n in names if name_to_id.get(n.lower()) is not None]
-        c.execute('UPDATE students SET subject_ids=? WHERE id=?', (json.dumps(ids), r['id']))
+        existing = json.loads(r['subject_ids'] or '[]')
+        if existing and len(existing) >= len(names):
+            continue
+        ids = [
+            name_to_id.get(n.strip().lower())
+            for n in names
+            if name_to_id.get(n.strip().lower()) is not None
+        ]
+        if ids != existing:
+            c.execute('UPDATE students SET subject_ids=? WHERE id=?', (json.dumps(ids), r['id']))
 
 
 def clear_timetable_snapshot(c):
@@ -220,7 +226,6 @@ def init_db():
             c.execute('ALTER TABLE students ADD COLUMN allow_multi_teacher INTEGER')
         if not column_exists('students', 'subject_ids'):
             c.execute('ALTER TABLE students ADD COLUMN subject_ids TEXT')
-            populate_student_subject_ids(c)
 
     if not table_exists('students_archive'):
         c.execute('''CREATE TABLE students_archive (
@@ -237,6 +242,8 @@ def init_db():
     else:
         if not column_exists('subjects', 'min_percentage'):
             c.execute('ALTER TABLE subjects ADD COLUMN min_percentage INTEGER')
+
+    populate_student_subject_ids(c)
 
     if not table_exists('teacher_unavailable'):
         c.execute('''CREATE TABLE teacher_unavailable (
