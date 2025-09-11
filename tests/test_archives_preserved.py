@@ -93,6 +93,42 @@ def test_restore_archives_groups(tmp_path):
     conn.close()
 
 
+def test_restore_archives_students(tmp_path):
+    import app
+    conn = setup_db(tmp_path)
+    cur = conn.cursor()
+    cur.execute('DELETE FROM students')
+    cur.execute('DELETE FROM students_archive')
+    cur.execute('DELETE FROM timetable')
+    cur.execute("INSERT INTO students (id, name, subjects) VALUES (1, 'Stu', '[]')")
+    cur.execute(
+        "INSERT INTO timetable (date, slot, student_id, teacher_id, subject, group_id, location_id) "
+        "VALUES ('2024-01-01', 0, 1, NULL, 'Math', NULL, NULL)"
+    )
+    conn.commit()
+
+    preset = app.dump_configuration()
+    preset['data']['students'] = []
+    preset['data']['students_archive'] = []
+    conn.close()
+
+    app.restore_configuration(preset, overwrite=True)
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    assert cur.execute('SELECT COUNT(*) FROM timetable').fetchone()[0] == 1
+    assert cur.execute('SELECT COUNT(*) FROM students WHERE id=1').fetchone()[0] == 0
+    assert cur.execute('SELECT name FROM students_archive WHERE id=1').fetchone()[0] == 'Stu'
+    row = cur.execute(
+        '''SELECT COALESCE(s.name, sa.name) AS sname FROM timetable t
+           LEFT JOIN students s ON t.student_id = s.id
+           LEFT JOIN students_archive sa ON t.student_id = sa.id'''
+    ).fetchone()
+    assert row['sname'] == 'Stu'
+    conn.close()
+
+
 def test_restore_preserves_attendance(tmp_path):
     import app
     conn = setup_db(tmp_path)

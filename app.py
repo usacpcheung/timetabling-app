@@ -477,8 +477,21 @@ def restore_configuration(preset, overwrite=False):
         for r in c.fetchall():
             group_names.setdefault(r['id'], r['name'])
 
+    c.execute('SELECT DISTINCT student_id FROM timetable WHERE student_id IS NOT NULL')
+    s_ids = [r['student_id'] for r in c.fetchall()]
+    student_names = {}
+    if s_ids:
+        placeholders = ','.join(['?'] * len(s_ids))
+        c.execute(f'SELECT id, name FROM students WHERE id IN ({placeholders})', s_ids)
+        student_names = {r['id']: r['name'] for r in c.fetchall()}
+        c.execute(f'SELECT id, name FROM students_archive WHERE id IN ({placeholders})', s_ids)
+        for r in c.fetchall():
+            student_names.setdefault(r['id'], r['name'])
+
     c.execute('SELECT DISTINCT student_id, student_name FROM attendance_log')
     log_students = {r['student_id']: r['student_name'] for r in c.fetchall()}
+    for sid, name in student_names.items():
+        log_students.setdefault(sid, name)
 
     for table in CONFIG_TABLES:
         rows = preset['data'].get(table, [])
