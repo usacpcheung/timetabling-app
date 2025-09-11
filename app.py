@@ -405,10 +405,20 @@ def init_db():
     # populate subject_id columns for existing rows
     for tbl in ('timetable', 'worksheets', 'fixed_assignments', 'attendance_log'):
         if table_exists(tbl) and column_exists(tbl, 'subject_id'):
-            c.execute(f'SELECT rowid, subject FROM {tbl} WHERE subject IS NOT NULL AND (subject_id IS NULL OR subject_id="")')
+            # Selecting ``rowid`` directly can return the primary key column name
+            # (e.g. ``id``) depending on the table definition.  Alias it to a
+            # stable column name so it can be accessed reliably from the row
+            # mapping.
+            c.execute(
+                f'SELECT rowid AS rid, subject FROM {tbl} '
+                'WHERE subject IS NOT NULL AND (subject_id IS NULL OR subject_id="")'
+            )
             for r in c.fetchall():
                 sid = ensure_subject(r['subject'])
-                c.execute(f'UPDATE {tbl} SET subject_id=? WHERE rowid=?', (sid, r['rowid']))
+                c.execute(
+                    f'UPDATE {tbl} SET subject_id=? WHERE rowid=?',
+                    (sid, r['rid'])
+                )
 
     conn.commit()
 
