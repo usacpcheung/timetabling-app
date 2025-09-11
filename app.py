@@ -298,15 +298,14 @@ def init_db():
         c.execute('''CREATE TABLE worksheets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             student_id INTEGER,
-            subject TEXT,
             subject_id INTEGER,
             date TEXT
         )''')
-    # Clean up any duplicate worksheet rows (same student, subject, date)
+    # Clean up any duplicate worksheet rows (same student, subject_id, date)
     if table_exists('worksheets'):
         if not column_exists('worksheets', 'subject_id'):
             c.execute('ALTER TABLE worksheets ADD COLUMN subject_id INTEGER')
-        # Keep the oldest row per (student_id, subject, date)
+        # Keep the oldest row per (student_id, subject_id, date)
         c.execute(
             '''DELETE FROM worksheets WHERE rowid NOT IN (
                    SELECT MIN(rowid) FROM worksheets
@@ -453,7 +452,7 @@ def init_db():
 
     # populate subject_id columns for existing rows
     for tbl in ('timetable', 'worksheets', 'fixed_assignments', 'attendance_log'):
-        if table_exists(tbl) and column_exists(tbl, 'subject_id'):
+        if table_exists(tbl) and column_exists(tbl, 'subject_id') and column_exists(tbl, 'subject'):
             # Selecting ``rowid`` directly can return the primary key column name
             # (e.g. ``id``) depending on the table definition.  Alias it to a
             # stable column name so it can be accessed reliably from the row
@@ -468,6 +467,36 @@ def init_db():
                     f'UPDATE {tbl} SET subject_id=? WHERE rowid=?',
                     (sid, r['rid'])
                 )
+
+    # Remove legacy subject column from worksheets now that IDs are populated
+    if table_exists('worksheets'):
+        # purge any remaining duplicates after migration
+        c.execute(
+            '''DELETE FROM worksheets WHERE rowid NOT IN (
+                   SELECT MIN(rowid) FROM worksheets
+                   GROUP BY student_id, subject_id, date
+               )'''
+        )
+        removed = c.rowcount
+        if column_exists('worksheets', 'subject'):
+            c.execute('ALTER TABLE worksheets RENAME TO worksheets_old')
+            c.execute('''CREATE TABLE worksheets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_id INTEGER,
+                subject_id INTEGER,
+                date TEXT
+            )''')
+            c.execute(
+                'INSERT INTO worksheets (id, student_id, subject_id, date) '
+                'SELECT id, student_id, subject_id, date FROM worksheets_old'
+            )
+            c.execute('DROP TABLE worksheets_old')
+        c.execute(
+            'CREATE UNIQUE INDEX IF NOT EXISTS idx_worksheets_unique '
+            'ON worksheets(student_id, subject_id, date)'
+        )
+        if removed and table_exists('timetable_snapshot'):
+            c.execute('DELETE FROM timetable_snapshot')
 
     conn.commit()
 
@@ -676,14 +705,14 @@ def calculate_missing_and_counts(c, date):
                 # Count worksheets assigned (by distinct date to avoid duplicates)
                 c.execute(
                     'SELECT COUNT(DISTINCT date) FROM worksheets WHERE student_id=? '
-                    'AND (subject_id=? OR subject=?) AND date<=?',
-                    (sid, subj, subj_name, date),
+                    'AND subject_id=? AND date<=?',
+                    (sid, subj, date),
                 )
                 worksheet_count = c.fetchone()[0]
                 c.execute(
                     'SELECT 1 FROM worksheets WHERE student_id=? '
-                    'AND (subject_id=? OR subject=?) AND date=?',
-                    (sid, subj, subj_name, date),
+                    'AND subject_id=? AND date=?',
+                    (sid, subj, date),
                 )
                 assigned_today = c.fetchone() is not None
                 # Track worksheet counts directly to avoid conflating them with lessons
