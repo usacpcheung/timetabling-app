@@ -639,6 +639,7 @@ def calculate_missing_and_counts(c, date):
                 assigned_today = c.fetchone() is not None
                 # Track worksheet counts directly to avoid conflating them with lessons
                 subj_list.append({
+                    'subject_id': subj,
                     'subject': subj_name or str(subj),
                     'count': worksheet_count,
                     'assigned': assigned_today,
@@ -1303,9 +1304,9 @@ def config():
     except Exception:
         slot_times = []
     c.execute('SELECT * FROM teachers')
-    teachers = c.fetchall()
+    teacher_rows = c.fetchall()
     c.execute('SELECT * FROM students')
-    students = c.fetchall()
+    student_rows = c.fetchall()
     c.execute('SELECT student_id, teacher_id FROM student_teacher_block')
     st_rows = c.fetchall()
     block_map = {}
@@ -1320,16 +1321,19 @@ def config():
     subjects = c.fetchall()
     subj_map = {s['id']: s['name'] for s in subjects}
     c.execute('SELECT * FROM groups')
-    groups = c.fetchall()
-    group_subj_map = {g['id']: json.loads(g['subjects']) for g in groups}
+    group_rows = c.fetchall()
+    group_subj_map = {g['id']: json.loads(g['subjects']) for g in group_rows}
     c.execute('SELECT group_id, student_id FROM group_members')
     gm_rows = c.fetchall()
     group_map = {}
     for gm in gm_rows:
         group_map.setdefault(gm['group_id'], []).append(gm['student_id'])
     # Build mappings of subject IDs for form selections
-    teacher_map = {t['id']: json.loads(t['subjects']) for t in teachers}
-    student_map = {s['id']: json.loads(s['subjects']) for s in students}
+    teacher_map = {t['id']: json.loads(t['subjects']) for t in teacher_rows}
+    student_map = {s['id']: json.loads(s['subjects']) for s in student_rows}
+    teachers = [dict(t) for t in teacher_rows]
+    students = [dict(s) for s in student_rows]
+    groups = [dict(g) for g in group_rows]
     # Convert stored subject ID lists to names for display
     for t in teachers:
         t['subjects'] = json.dumps([subj_map.get(i, str(i)) for i in teacher_map.get(t['id'], [])])
@@ -2245,7 +2249,7 @@ def edit_timetable(date):
 
     # Existing lessons with teacher id for grid placement
     c.execute(
-        '''SELECT t.id, t.slot, sub.name AS subject, t.teacher_id, t.student_id, t.group_id,
+        '''SELECT t.id, t.slot, t.subject_id, sub.name AS subject, t.teacher_id, t.student_id, t.group_id,
                   t.location_id, COALESCE(s.name, sa.name) AS student_name,
                   COALESCE(g.name, ga.name) AS group_name, l.name AS location_name
            FROM timetable t
@@ -2271,6 +2275,7 @@ def edit_timetable(date):
             'student_id': les['student_id'],
             'group_id': les['group_id'],
             'subject': les['subject'],
+            'subject_id': les['subject_id'],
             'location_id': les['location_id'],
         }
 
