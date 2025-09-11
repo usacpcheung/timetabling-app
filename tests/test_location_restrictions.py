@@ -22,6 +22,7 @@ def test_new_entity_location_restrictions(tmp_path):
     c.execute("INSERT INTO locations (name) VALUES ('Room A')")
     conn.commit()
 
+    math_id = c.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
     slot_starts = {f'slot_start_{i}': f'08:{30 + (i-1)*30:02d}' for i in range(1,9)}
     data = {
         'slots_per_day':'8', 'slot_duration':'30',
@@ -31,7 +32,7 @@ def test_new_entity_location_restrictions(tmp_path):
         'attendance_weight':'10', 'well_attend_weight':'1',
         'group_weight':'2.0', 'balance_weight':'1',
         'new_student_name':'Charlie',
-        'new_student_subjects':['Math'],
+        'new_student_subject_ids':[str(math_id)],
         'new_student_locs':['1'],
         'new_group_name':'Group C',
         'new_group_subjects':['Math'],

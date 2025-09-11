@@ -321,9 +321,9 @@
                 <input type="text" name="student_name_{{ s['id'] }}" value="{{ s['name'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
             <label class="block">Subjects:
-                <select multiple name="student_subjects_{{ s['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                <select multiple name="student_subject_ids_{{ s['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
                     {% for sub in subjects %}
-                    <option value="{{ sub['name'] }}" {% if sub['name'] in json.loads(s['subjects']) %}selected{% endif %}>{{ sub['name'] }}</option>
+                    <option value="{{ sub['id'] }}" {% if sub['id'] in json.loads(s['subject_ids']) %}selected{% endif %}>{{ sub['name'] }}</option>
                     {% endfor %}
                 </select>
             </label>
@@ -393,9 +393,9 @@
                 <input type="text" name="new_student_name" class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
             <label class="block">Subjects:
-                <select multiple name="new_student_subjects" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                <select multiple name="new_student_subject_ids" class="border border-emerald-300 rounded-lg p-2.5 w-full">
                     {% for sub in subjects %}
-                    <option value="{{ sub['name'] }}">{{ sub['name'] }}</option>
+                    <option value="{{ sub['id'] }}">{{ sub['name'] }}</option>
                     {% endfor %}
                 </select>
             </label>

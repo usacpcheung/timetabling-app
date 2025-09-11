@@ -76,6 +76,28 @@ def get_db():
     return conn
 
 
+def populate_student_subject_ids(c):
+    """Ensure each student row has ``subject_ids`` populated.
+
+    The legacy schema stored required subjects as a JSON array of names in the
+    ``subjects`` column.  Newer versions track the canonical integer ids in the
+    ``subject_ids`` column to avoid ambiguity when subjects are renamed.  This
+    helper backfills ``subject_ids`` for any rows missing the data by looking up
+    ids from the ``subjects`` table.  It is safe to call repeatedly.
+    """
+    c.execute('SELECT id, name FROM subjects')
+    rows = c.fetchall()
+    name_to_id = {r['name'].lower(): r['id'] for r in rows}
+    c.execute('SELECT id, subjects, subject_ids FROM students')
+    srows = c.fetchall()
+    for r in srows:
+        if r['subject_ids']:
+            continue
+        names = json.loads(r['subjects'] or '[]')
+        ids = [name_to_id.get(n.lower()) for n in names if name_to_id.get(n.lower()) is not None]
+        c.execute('UPDATE students SET subject_ids=? WHERE id=?', (json.dumps(ids), r['id']))
+
+
 def init_db():
     """Create the SQLite tables and populate default rows.
 
@@ -162,6 +184,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT UNIQUE,
             subjects TEXT,
+            subject_ids TEXT,
             active INTEGER DEFAULT 1,
             min_lessons INTEGER,
             max_lessons INTEGER,
@@ -188,6 +211,9 @@ def init_db():
             c.execute('ALTER TABLE students ADD COLUMN prefer_consecutive INTEGER')
         if not column_exists('students', 'allow_multi_teacher'):
             c.execute('ALTER TABLE students ADD COLUMN allow_multi_teacher INTEGER')
+        if not column_exists('students', 'subject_ids'):
+            c.execute('ALTER TABLE students ADD COLUMN subject_ids TEXT')
+            populate_student_subject_ids(c)
 
     if not table_exists('students_archive'):
         c.execute('''CREATE TABLE students_archive (
@@ -417,6 +443,7 @@ def init_db():
             ('History', 0)
         ]
         c.executemany('INSERT INTO subjects (name, min_percentage) VALUES (?, ?)', subjects)
+        populate_student_subject_ids(c)
     conn.commit()
     conn.close()
 
@@ -429,6 +456,7 @@ def dump_configuration():
     """
     conn = get_db()
     c = conn.cursor()
+    populate_student_subject_ids(c)
     data = {}
     for table in CONFIG_TABLES:
         c.execute(f'SELECT * FROM {table}')
@@ -515,6 +543,8 @@ def restore_configuration(preset, overwrite=False):
                     [row[col] for col in cols],
                 )
 
+    populate_student_subject_ids(c)
+
     # Reinsert archived teachers for any timetable references that no longer
     # resolve to an active teacher.
     for tid in t_ids:
@@ -554,7 +584,12 @@ def calculate_missing_and_counts(c, date):
     for gm in gm_rows:
         group_students.setdefault(gm['group_id'], []).append(gm['student_id'])
 
-    c.execute('SELECT id, name, subjects, active FROM students')
+    c.execute('SELECT id, name FROM subjects')
+    subj_rows = c.fetchall()
+    id_to_name = {r['id']: r['name'] for r in subj_rows}
+    name_to_id = {r['name'].lower(): r['id'] for r in subj_rows}
+
+    c.execute('SELECT id, name, subject_ids, subjects, active FROM students')
     student_rows = c.fetchall()
 
     assigned = {s['id']: set() for s in student_rows}
@@ -563,39 +598,43 @@ def calculate_missing_and_counts(c, date):
     c.execute('SELECT student_id, group_id, subject FROM timetable WHERE date=?', (date,))
     lessons = c.fetchall()
     for les in lessons:
-        subj = les['subject']
+        subj_id = name_to_id.get(les['subject'].lower()) if les['subject'] else None
+        if subj_id is None:
+            continue
         if les['group_id']:
             for sid in group_students.get(les['group_id'], []):
-                assigned.setdefault(sid, set()).add(subj)
+                assigned.setdefault(sid, set()).add(subj_id)
                 lesson_counts[sid] = lesson_counts.get(sid, 0) + 1
         elif les['student_id']:
-            assigned.setdefault(les['student_id'], set()).add(subj)
+            assigned.setdefault(les['student_id'], set()).add(subj_id)
             lesson_counts[les['student_id']] = lesson_counts.get(les['student_id'], 0) + 1
 
     missing = {}
     for s in student_rows:
-        required = set(json.loads(s['subjects']))
-        miss = required - assigned.get(s['id'], set())
-        if miss:
+        if s['subject_ids']:
+            required_ids = set(json.loads(s['subject_ids']))
+        else:
+            names = json.loads(s['subjects'] or '[]')
+            required_ids = {name_to_id.get(n.lower()) for n in names if name_to_id.get(n.lower()) is not None}
+        miss_ids = required_ids - assigned.get(s['id'], set())
+        if miss_ids:
             subj_list = []
-            for subj in sorted(miss):
+            for sid_ in sorted(miss_ids):
                 sid = s['id']
                 # Count worksheets assigned (by distinct date to avoid duplicates)
                 c.execute(
                     'SELECT COUNT(DISTINCT w.date) FROM worksheets w '
-                    'JOIN subjects subj ON w.subject_id = subj.id '
-                    'WHERE w.student_id=? AND LOWER(subj.name)=LOWER(?) AND w.date<=?',
-                    (sid, subj, date),
+                    'WHERE w.student_id=? AND w.subject_id=? AND w.date<=?',
+                    (sid, sid_, date),
                 )
                 worksheet_count = c.fetchone()[0]
                 c.execute(
-                    'SELECT 1 FROM worksheets w JOIN subjects subj ON w.subject_id = subj.id '
-                    'WHERE w.student_id=? AND LOWER(subj.name)=LOWER(?) AND w.date=?',
-                    (sid, subj, date),
+                    'SELECT 1 FROM worksheets w '
+                    'WHERE w.student_id=? AND w.subject_id=? AND w.date=?',
+                    (sid, sid_, date),
                 )
                 assigned_today = c.fetchone() is not None
-                # Track worksheet counts directly to avoid conflating them with lessons
-                subj_list.append({'subject': subj, 'count': worksheet_count, 'assigned': assigned_today})
+                subj_list.append({'subject': id_to_name.get(sid_, ''), 'count': worksheet_count, 'assigned': assigned_today})
             missing[s['id']] = subj_list
 
     return missing, lesson_counts
@@ -884,6 +923,9 @@ def config():
         c.execute('SELECT teacher_id, student_id FROM fixed_assignments WHERE student_id IS NOT NULL')
         fr_rows = c.fetchall()
         fixed_pairs = {(r['student_id'], r['teacher_id']) for r in fr_rows}
+        c.execute('SELECT id, name FROM subjects')
+        subj_rows = c.fetchall()
+        subj_map = {r['id']: r['name'] for r in subj_rows}
         # update students
         student_ids = request.form.getlist('student_id')
         for sid in student_ids:
@@ -921,7 +963,9 @@ def config():
                 c.execute('DELETE FROM student_teacher_block WHERE student_id=?', (int(sid),))
             else:
                 name = request.form.get(f'student_name_{sid}')
-                subs = request.form.getlist(f'student_subjects_{sid}')
+                subs_raw = request.form.getlist(f'student_subject_ids_{sid}')
+                sub_ids = [int(x) for x in subs_raw]
+                subs = [subj_map[i] for i in sub_ids if i in subj_map]
                 active = 1 if request.form.get(f'student_active_{sid}') else 0
                 smin = request.form.get(f'student_min_{sid}')
                 smax = request.form.get(f'student_max_{sid}')
@@ -931,14 +975,15 @@ def config():
                 prefer_con = 1 if request.form.get(f'student_prefer_consecutive_{sid}') else 0
                 allow_multi = 1 if request.form.get(f'student_multi_teacher_{sid}') else 0
                 subj_json = json.dumps(subs)
+                id_json = json.dumps(sub_ids)
                 min_val = int(smin) if smin else None
                 max_val = int(smax) if smax else None
                 max_rep_val = int(max_rep) if max_rep else None
-                c.execute('''UPDATE students SET name=?, subjects=?, active=?,
+                c.execute('''UPDATE students SET name=?, subjects=?, subject_ids=?, active=?,
                              min_lessons=?, max_lessons=?, allow_repeats=?,
                              max_repeats=?, allow_consecutive=?, prefer_consecutive=?,
                              allow_multi_teacher=? WHERE id=?''',
-                          (name, subj_json, active, min_val, max_val,
+                          (name, subj_json, id_json, active, min_val, max_val,
                            allow_rep, max_rep_val, allow_con, prefer_con,
                            allow_multi, int(sid)))
                 slots = request.form.getlist(f'student_unavail_{sid}')
@@ -961,7 +1006,9 @@ def config():
                               (int(sid), tval))
                     block_map_current.setdefault(int(sid), set()).add(tval)
         new_sname = request.form.get('new_student_name')
-        new_ssubs = request.form.getlist('new_student_subjects')
+        new_ssubs_raw = request.form.getlist('new_student_subject_ids')
+        new_ids = [int(x) for x in new_ssubs_raw]
+        new_ssubs = [subj_map[i] for i in new_ids if i in subj_map]
         new_blocks = request.form.getlist('new_student_block')
         new_unav = request.form.getlist('new_student_unavail')
         new_smin = request.form.get('new_student_min')
@@ -973,13 +1020,14 @@ def config():
         new_allow_multi = 1 if request.form.get('new_student_multi_teacher') else 0
         if new_sname and new_ssubs:
             subj_json = json.dumps(new_ssubs)
+            id_json = json.dumps(new_ids)
             min_val = int(new_smin) if new_smin else None
             max_val = int(new_smax) if new_smax else None
             max_rep_val = int(new_max_rep) if new_max_rep else None
-            c.execute('''INSERT INTO students (name, subjects, active, min_lessons, max_lessons,
+            c.execute('''INSERT INTO students (name, subjects, subject_ids, active, min_lessons, max_lessons,
                       allow_repeats, max_repeats, allow_consecutive, prefer_consecutive, allow_multi_teacher)
-                      VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?)''',
-                      (new_sname, subj_json, min_val, max_val, new_allow_rep,
+                      VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)''',
+                      (new_sname, subj_json, id_json, min_val, max_val, new_allow_rep,
                        max_rep_val, new_allow_con, new_prefer_con, new_allow_multi))
             new_sid = c.lastrowid
             for sl in new_unav:
@@ -1007,9 +1055,16 @@ def config():
         c.execute('SELECT id, subjects FROM teachers')
         trows = c.fetchall()
         teacher_map_validate = {t['id']: json.loads(t['subjects']) for t in trows}
-        c.execute('SELECT id, subjects FROM students')
+        c.execute('SELECT id, subject_ids, subjects FROM students')
         srows = c.fetchall()
-        student_subj_map = {s['id']: set(json.loads(s['subjects'])) for s in srows}
+        student_subj_map = {}
+        for s in srows:
+            if s['subject_ids']:
+                ids = json.loads(s['subject_ids'])
+                names = [subj_map[i] for i in ids if i in subj_map]
+            else:
+                names = json.loads(s['subjects'] or '[]')
+            student_subj_map[s['id']] = set(names)
         c.execute('SELECT student_id, teacher_id FROM student_teacher_block')
         block_rows = c.fetchall()
         block_map_validate = {}
@@ -1199,9 +1254,19 @@ def config():
         c.execute('SELECT id, subjects FROM teachers')
         trows = c.fetchall()
         teacher_map = {t["id"]: json.loads(t["subjects"]) for t in trows}
-        c.execute('SELECT id, subjects FROM students')
+        c.execute('SELECT id, name FROM subjects')
+        subj_rows = c.fetchall()
+        subj_map = {r['id']: r['name'] for r in subj_rows}
+        c.execute('SELECT id, subject_ids, subjects FROM students')
         srows = c.fetchall()
-        student_map = {s["id"]: json.loads(s["subjects"]) for s in srows}
+        student_map = {}
+        for s in srows:
+            if s['subject_ids']:
+                ids = json.loads(s['subject_ids'])
+                names = [subj_map[i] for i in ids if i in subj_map]
+            else:
+                names = json.loads(s['subjects'] or '[]')
+            student_map[s['id']] = names
         c.execute('SELECT id, subjects FROM groups')
         grows = c.fetchall()
         group_subj = {g["id"]: json.loads(g["subjects"]) for g in grows}
@@ -1258,7 +1323,7 @@ def config():
     c.execute('SELECT * FROM teachers')
     teachers = c.fetchall()
     c.execute('SELECT * FROM students')
-    students = c.fetchall()
+    students = [dict(s) for s in c.fetchall()]
     c.execute('SELECT student_id, teacher_id FROM student_teacher_block')
     st_rows = c.fetchall()
     block_map = {}
@@ -1271,6 +1336,16 @@ def config():
         student_unavail_map.setdefault(r['student_id'], []).append(r['slot'])
     c.execute('SELECT * FROM subjects')
     subjects = c.fetchall()
+    subj_map = {sub['id']: sub['name'] for sub in subjects}
+    name_to_id = {sub['name'].lower(): sub['id'] for sub in subjects}
+    for s in students:
+        if s.get('subject_ids'):
+            ids = json.loads(s['subject_ids'])
+        else:
+            names = json.loads(s.get('subjects') or '[]')
+            ids = [name_to_id.get(n.lower()) for n in names if name_to_id.get(n.lower()) is not None]
+            s['subject_ids'] = json.dumps(ids)
+        s['subject_names'] = [subj_map.get(i, '') for i in ids]
     c.execute('SELECT * FROM groups')
     groups = c.fetchall()
     c.execute('SELECT group_id, student_id FROM group_members')
@@ -1308,7 +1383,7 @@ def config():
     for a in assignments:
         assign_map.setdefault(a['teacher_id'], []).append(a['slot'])
     teacher_map = {t['id']: json.loads(t['subjects']) for t in teachers}
-    student_map = {s['id']: json.loads(s['subjects']) for s in students}
+    student_map = {s['id']: s['subject_names'] for s in students}
     unavail_map = {}
     for u in unavailable:
         unavail_map.setdefault(u['teacher_id'], []).append(u['slot'])
@@ -1421,7 +1496,20 @@ def generate_schedule(target_date=None):
     teachers = c.fetchall()
 
     c.execute('SELECT * FROM students WHERE active=1')
-    students = c.fetchall()
+    student_rows = c.fetchall()
+    c.execute('SELECT id, name FROM subjects')
+    subj_rows = c.fetchall()
+    id_to_name = {r['id']: r['name'] for r in subj_rows}
+    students = []
+    for s in student_rows:
+        if s['subject_ids']:
+            ids = json.loads(s['subject_ids'])
+            names = [id_to_name.get(i, '') for i in ids]
+        else:
+            names = json.loads(s['subjects'] or '[]')
+        stu = dict(s)
+        stu['subjects'] = json.dumps(names)
+        students.append(stu)
     c.execute('SELECT * FROM groups')
     groups = c.fetchall()
     c.execute('SELECT id, name FROM students')

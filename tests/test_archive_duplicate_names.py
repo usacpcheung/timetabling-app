@@ -22,7 +22,7 @@ def test_deleted_students_with_same_name_are_distinct(tmp_path):
     c.execute('DELETE FROM students_archive')
     conn.commit()
 
-    c.execute("INSERT INTO students (name, subjects) VALUES (?, ?)", ("Same Student", "[]"))
+    c.execute("INSERT INTO students (name, subjects, subject_ids) VALUES (?, ?, ?)", ("Same Student", "[]", "[]"))
     first_id = c.lastrowid
     conn.commit()
     conn.close()
@@ -51,7 +51,7 @@ def test_deleted_students_with_same_name_are_distinct(tmp_path):
     conn = sqlite3.connect(app.DB_PATH)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    c.execute("INSERT INTO students (name, subjects) VALUES (?, ?)", ("Same Student", "[]"))
+    c.execute("INSERT INTO students (name, subjects, subject_ids) VALUES (?, ?, ?)", ("Same Student", "[]", "[]"))
     second_id = c.lastrowid
     conn.commit()
     conn.close()

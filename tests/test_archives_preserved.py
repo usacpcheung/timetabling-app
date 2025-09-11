@@ -100,7 +100,7 @@ def test_restore_archives_students(tmp_path):
     cur.execute('DELETE FROM students')
     cur.execute('DELETE FROM students_archive')
     cur.execute('DELETE FROM timetable')
-    cur.execute("INSERT INTO students (id, name, subjects) VALUES (1, 'Stu', '[]')")
+    cur.execute("INSERT INTO students (id, name, subjects, subject_ids) VALUES (1, 'Stu', '[]', '[]')")
     cur.execute(
         "INSERT INTO timetable (date, slot, student_id, teacher_id, subject, group_id, location_id) "
         "VALUES ('2024-01-01', 0, 1, NULL, 'Math', NULL, NULL)"

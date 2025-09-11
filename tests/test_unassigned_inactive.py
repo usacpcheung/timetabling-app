@@ -46,8 +46,8 @@ def test_worksheet_counts_separate_by_id(tmp_path):
     cur.execute("INSERT INTO students_archive (id, name) VALUES (?, ?)", (sid_old, 'Student 1'))
     cur.execute("DELETE FROM students WHERE id=?", (sid_old,))
     cur.execute(
-        "INSERT INTO students (name, subjects, active) VALUES (?, ?, 0)",
-        ('Student 1', json.dumps(['Math'])),
+        "INSERT INTO students (name, subjects, subject_ids, active) VALUES (?, ?, ?, 0)",
+        ('Student 1', json.dumps(['Math']), json.dumps([math_id])),
     )
     sid_new = cur.execute("SELECT id FROM students WHERE name='Student 1'").fetchone()[0]
     conn.commit()
@@ -170,9 +170,10 @@ def test_added_student_not_in_missing_until_refresh(tmp_path):
 
     conn = sqlite3.connect(app.DB_PATH)
     cur = conn.cursor()
+    math_id = cur.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
     cur.execute(
-        "INSERT INTO students (name, subjects, active) VALUES (?, ?, 1)",
-        ('New Student', json.dumps(['Math']))
+        "INSERT INTO students (name, subjects, subject_ids, active) VALUES (?, ?, ?, 1)",
+        ('New Student', json.dumps(['Math']), json.dumps([math_id]))
     )
     sid_new = cur.lastrowid
     conn.commit()
