@@ -1369,15 +1369,32 @@ def config():
         na_subject = request.form.get('new_assign_subject')
         na_slot = request.form.get('new_assign_slot')
         # gather data for validation
+        c.execute('SELECT id, name FROM subjects')
+        subj_lookup = {r['name']: r['id'] for r in c.fetchall()}
+
+        def to_subj_id(val):
+            try:
+                return int(val)
+            except (TypeError, ValueError):
+                return subj_lookup.get(val)
+
+        def normalize_list(raw):
+            result = []
+            for item in json.loads(raw):
+                sid = to_subj_id(item)
+                if sid is not None:
+                    result.append(sid)
+            return result
+
         c.execute('SELECT id, subjects FROM teachers')
         trows = c.fetchall()
-        teacher_map = {t["id"]: json.loads(t["subjects"]) for t in trows}
+        teacher_map = {t["id"]: normalize_list(t["subjects"]) for t in trows}
         c.execute('SELECT id, subjects FROM students')
         srows = c.fetchall()
-        student_map = {s["id"]: json.loads(s["subjects"]) for s in srows}
+        student_map = {s["id"]: normalize_list(s["subjects"]) for s in srows}
         c.execute('SELECT id, subjects FROM groups')
         grows = c.fetchall()
-        group_subj = {g["id"]: json.loads(g["subjects"]) for g in grows}
+        group_subj = {g["id"]: normalize_list(g["subjects"]) for g in grows}
         c.execute('SELECT teacher_id, slot FROM teacher_unavailable')
         unav = c.fetchall()
         unav_set = {(u['teacher_id'], u['slot']) for u in unav}
@@ -1385,10 +1402,11 @@ def config():
         fixed = c.fetchall()
         fixed_set = {(f['teacher_id'], f['slot']) for f in fixed}
 
-        if na_teacher and na_subject and na_slot and (na_student or na_group):
+        subj_id = to_subj_id(na_subject)
+        if na_teacher and subj_id is not None and na_slot and (na_student or na_group):
             tid = int(na_teacher)
             slot = int(na_slot) - 1
-            if int(na_subject) not in teacher_map.get(tid, []):
+            if subj_id not in teacher_map.get(tid, []):
                 flash('Teacher does not teach the selected subject', 'error')
                 has_error = True
             elif (tid, slot) in unav_set:
@@ -1399,20 +1417,23 @@ def config():
                 has_error = True
             elif na_group and (group_weight > 0 or not na_student):
                 gid = int(na_group)
-                if int(na_subject) not in group_subj.get(gid, []):
+                if subj_id not in group_subj.get(gid, []):
                     flash('Group does not require the selected subject', 'error')
                     has_error = True
                 else:
                     c.execute('INSERT INTO fixed_assignments (teacher_id, student_id, group_id, subject_id, slot) VALUES (?, ?, ?, ?, ?)',
-                              (tid, None, gid, int(na_subject), slot))
+                              (tid, None, gid, subj_id, slot))
             else:
                 sid = int(na_student)
-                if int(na_subject) not in student_map.get(sid, []):
+                if subj_id not in student_map.get(sid, []):
                     flash('Student does not require the selected subject', 'error')
                     has_error = True
                 else:
                     c.execute('INSERT INTO fixed_assignments (teacher_id, student_id, group_id, subject_id, slot) VALUES (?, ?, ?, ?, ?)',
-                              (tid, sid, None, int(na_subject), slot))
+                              (tid, sid, None, subj_id, slot))
+        elif na_teacher and (na_subject or na_slot or na_student or na_group) and subj_id is None:
+            flash('Invalid subject selected', 'error')
+            has_error = True
 
         if has_error:
             conn.rollback()
