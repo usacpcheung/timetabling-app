@@ -120,8 +120,15 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
     unavailable = unavailable or []
     fixed = fixed or []
     unavailable_set = {(u['teacher_id'], u['slot']) for u in unavailable}
-    fixed_set = {(f['student_id'], f['teacher_id'], f['subject'], f['slot'])
-                 for f in fixed}
+    fixed_set = {
+        (
+            f['student_id'],
+            f['teacher_id'],
+            f.get('subject_id', f.get('subject')),
+            f['slot'],
+        )
+        for f in fixed
+    }
 
     assumptions = None
     if add_assumptions:
