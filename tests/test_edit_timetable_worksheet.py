@@ -59,3 +59,25 @@ def test_worksheet_toggle(tmp_path):
     ).fetchone()
     assert row is None
     conn.close()
+
+
+def test_worksheet_blank_subject_id(tmp_path):
+    import app
+    conn = setup_db(tmp_path)
+    conn.close()
+
+    client = app.app.test_client()
+
+    resp = client.post(
+        '/edit_timetable/2024-01-01',
+        data={'action': 'worksheet', 'student_id': '1', 'subject_id': '', 'assign': '1'},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    row = c.execute('SELECT 1 FROM worksheets').fetchone()
+    assert row is None
+    conn.close()

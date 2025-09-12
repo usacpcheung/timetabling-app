@@ -2302,9 +2302,9 @@ def edit_timetable(date):
             subject_id = request.form.get('subject_id')
             assign = request.form.get('assign')
             if (
-                student_id is not None
-                and subject_id is not None
-                and assign is not None
+                student_id not in (None, "")
+                and subject_id not in (None, "")
+                and assign not in (None, "")
             ):
                 sid = int(student_id)
                 subj_id = int(subject_id)
