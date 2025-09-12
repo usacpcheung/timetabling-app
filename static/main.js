@@ -122,10 +122,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const worksheetForms = document.querySelectorAll('.worksheet-form');
     worksheetForms.forEach(function (form) {
         const cb = form.querySelector('input[type="checkbox"]');
-        const hidden = form.querySelector('input[name="assign"]');
-        if (cb && hidden) {
+        if (cb) {
             cb.addEventListener('change', function () {
-                hidden.value = cb.checked ? '1' : '0';
                 form.submit();
             });
         }
