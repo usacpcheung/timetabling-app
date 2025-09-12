@@ -481,6 +481,59 @@ def init_db():
         if removed and table_exists('timetable_snapshot'):
             c.execute('DELETE FROM timetable_snapshot')
 
+    # Rebuild remaining tables without obsolete subject name columns
+    for tbl, create_sql, cols, index_sql in [
+        (
+            'timetable',
+            '''CREATE TABLE timetable (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_id INTEGER,
+                group_id INTEGER,
+                teacher_id INTEGER,
+                subject_id INTEGER,
+                slot INTEGER,
+                location_id INTEGER,
+                date TEXT
+            )''',
+            'id, student_id, group_id, teacher_id, subject_id, slot, location_id, date',
+            None,
+        ),
+        (
+            'fixed_assignments',
+            '''CREATE TABLE fixed_assignments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                teacher_id INTEGER,
+                student_id INTEGER,
+                group_id INTEGER,
+                subject_id INTEGER,
+                slot INTEGER
+            )''',
+            'id, teacher_id, student_id, group_id, subject_id, slot',
+            'CREATE UNIQUE INDEX IF NOT EXISTS idx_fixed_assignments_unique '
+            'ON fixed_assignments(teacher_id, student_id, group_id, subject_id, slot)',
+        ),
+        (
+            'attendance_log',
+            '''CREATE TABLE attendance_log (
+                student_id INTEGER,
+                student_name TEXT,
+                subject_id INTEGER,
+                date TEXT
+            )''',
+            'student_id, student_name, subject_id, date',
+            None,
+        ),
+    ]:
+        if table_exists(tbl) and column_exists(tbl, 'subject'):
+            c.execute(f'ALTER TABLE {tbl} RENAME TO {tbl}_old')
+            c.execute(create_sql)
+            c.execute(
+                f'INSERT INTO {tbl} ({cols}) SELECT {cols} FROM {tbl}_old'
+            )
+            c.execute(f'DROP TABLE {tbl}_old')
+            if index_sql:
+                c.execute(index_sql)
+
     conn.commit()
 
     # Only insert sample data when creating a brand new database file.  If the
