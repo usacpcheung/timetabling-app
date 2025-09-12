@@ -2365,16 +2365,21 @@ def edit_timetable(date):
                     (sid, subject_id, date),
                 )
                 exists = c.fetchone() is not None
-                if assign != '0' or not exists:
-                    if not exists:
+                if assign == '0':
+                    if exists:
+                        c.execute(
+                            'DELETE FROM worksheets WHERE student_id=? AND subject_id=? AND date=?',
+                            (sid, subject_id, date),
+                        )
+                    else:
                         c.execute(
                             'INSERT INTO worksheets (student_id, subject_id, date) VALUES (?, ?, ?)',
                             (sid, subject_id, date),
                         )
                 else:
-                    if exists:
+                    if not exists:
                         c.execute(
-                            'DELETE FROM worksheets WHERE student_id=? AND subject_id=? AND date=?',
+                            'INSERT INTO worksheets (student_id, subject_id, date) VALUES (?, ?, ?)',
                             (sid, subject_id, date),
                         )
                 get_missing_and_counts(c, date, refresh=True)

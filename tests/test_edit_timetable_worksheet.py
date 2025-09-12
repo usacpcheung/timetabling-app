@@ -76,3 +76,26 @@ def test_add_worksheet_when_assign_flag_zero(tmp_path):
     ).fetchone()
     assert row is not None
     conn.close()
+
+
+def test_add_worksheet_without_assign_flag(tmp_path):
+    import app
+    conn = setup_db(tmp_path)
+    conn.close()
+
+    client = app.app.test_client()
+    resp = client.post(
+        '/edit_timetable/2024-01-01',
+        data={'action': 'worksheet', 'student_id': '1', 'subject': '1'},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+
+    conn = sqlite3.connect(app.DB_PATH)
+    cur = conn.cursor()
+    row = cur.execute(
+        'SELECT 1 FROM worksheets WHERE student_id=1 AND subject_id=1 AND date=?',
+        ('2024-01-01',),
+    ).fetchone()
+    assert row is not None
+    conn.close()
