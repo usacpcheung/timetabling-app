@@ -741,7 +741,10 @@ def calculate_missing_and_counts(c, date):
     assigned = {s['id']: set() for s in student_rows}
     lesson_counts = {s['id']: 0 for s in student_rows}
 
-    c.execute('SELECT id, name FROM subjects')
+    c.execute(
+        'SELECT id, name FROM subjects '
+        'UNION SELECT id, name FROM subjects_archive'
+    )
     subject_names = {r['id']: r['name'] for r in c.fetchall()}
 
     c.execute('SELECT student_id, group_id, subject_id FROM timetable WHERE date=?', (date,))
