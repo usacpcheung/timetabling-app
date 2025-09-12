@@ -40,7 +40,7 @@
                             <td class="px-4 py-2 border align-top">
                                 {% if entry %}
                                     <div>{{ entry.desc }}</div>
-                                    <button type="button" class="text-blue-600 hover:underline text-xs edit-lesson-btn" data-entry="{{ entry.id }}" data-student="{{ entry.student_id or '' }}" data-group="{{ entry.group_id or '' }}" data-subject="{{ entry.subject }}" data-location="{{ entry.location_id or '' }}">Edit</button>
+                                    <button type="button" class="text-blue-600 hover:underline text-xs edit-lesson-btn" data-entry="{{ entry.id }}" data-student="{{ entry.student_id or '' }}" data-group="{{ entry.group_id or '' }}" data-subject="{{ entry.subject_id }}" data-location="{{ entry.location_id or '' }}">Edit</button>
                                     <form method="post" class="delete-lesson-form mt-1">
                                         <input type="hidden" name="action" value="delete">
                                         <input type="hidden" name="entry_id" value="{{ entry.id }}">
@@ -70,7 +70,7 @@
                 <form method="post" class="inline-block ml-4 worksheet-form">
                     <input type="hidden" name="action" value="worksheet">
                     <input type="hidden" name="student_id" value="{{ sid }}">
-                    <input type="hidden" name="subject" value="{{ item.subject }}">
+                    <input type="hidden" name="subject" value="{{ item.subject_id }}">
                     <input type="hidden" name="assign" value="{{ 1 if item.assigned else 0 }}">
                     <label class="inline-flex items-center">
                         <input type="checkbox" class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500 dark:focus:ring-emerald-500 dark:ring-offset-emerald-800 focus:ring-2 dark:bg-emerald-700 dark:border-emerald-600" {% if item.assigned %}checked{% endif %}>
@@ -112,7 +112,7 @@
                 <label class="block text-sm font-medium mb-1">Subject</label>
                 <select name="subject" class="border rounded w-full p-1">
                     {% for sub in subjects %}
-                    <option value="{{ sub }}">{{ sub }}</option>
+                    <option value="{{ sub['id'] }}">{{ sub['name'] }}</option>
                     {% endfor %}
                 </select>
               </div>
@@ -158,7 +158,7 @@
                 <label class="block text-sm font-medium mb-1">Subject</label>
                 <select name="subject" id="edit-subject" class="border rounded w-full p-1">
                     {% for sub in subjects %}
-                    <option value="{{ sub }}">{{ sub }}</option>
+                    <option value="{{ sub['id'] }}">{{ sub['name'] }}</option>
                     {% endfor %}
                 </select>
               </div>

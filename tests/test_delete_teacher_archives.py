@@ -25,11 +25,12 @@ def test_deleting_teacher_archives_and_cleans(tmp_path):
     c.execute('DELETE FROM student_teacher_block')
     c.execute('DELETE FROM fixed_assignments')
     conn.commit()
+    math_id = c.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
     c.execute("INSERT INTO teachers (id, name, subjects, min_lessons, max_lessons) VALUES (1, 'Teach', '[]', 0, 0)")
-    c.execute("INSERT INTO timetable (date, slot, student_id, teacher_id, subject, group_id, location_id) VALUES ('2024-01-01', 0, NULL, 1, 'Math', NULL, NULL)")
+    c.execute("INSERT INTO timetable (date, slot, student_id, teacher_id, subject_id, group_id, location_id) VALUES ('2024-01-01', 0, NULL, 1, ?, NULL, NULL)", (math_id,))
     c.execute("INSERT INTO teacher_unavailable (teacher_id, slot) VALUES (1, 0)")
     c.execute("INSERT INTO student_teacher_block (student_id, teacher_id) VALUES (1, 1)")
-    c.execute("INSERT INTO fixed_assignments (teacher_id, student_id, group_id, subject, slot) VALUES (1, NULL, NULL, 'Math', 0)")
+    c.execute("INSERT INTO fixed_assignments (teacher_id, student_id, group_id, subject_id, slot) VALUES (1, NULL, NULL, ?, 0)", (math_id,))
     conn.commit()
     conn.close()
 

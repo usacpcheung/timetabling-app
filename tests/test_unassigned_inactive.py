@@ -35,18 +35,19 @@ def test_worksheet_counts_separate_by_id(tmp_path):
     conn = setup_db(tmp_path)
     cur = conn.cursor()
     sid_old = cur.execute("SELECT id FROM students WHERE name='Student 1'").fetchone()[0]
+    math_id = cur.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
     cur.executemany(
-        "INSERT INTO worksheets (student_id, subject, date) VALUES (?, ?, ?)",
+        "INSERT INTO worksheets (student_id, subject_id, date) VALUES (?, ?, ?)",
         [
-            (sid_old, 'Math', '2024-01-01'),
-            (sid_old, 'Math', '2024-01-02'),
+            (sid_old, math_id, '2024-01-01'),
+            (sid_old, math_id, '2024-01-02'),
         ],
     )
     cur.execute("INSERT INTO students_archive (id, name) VALUES (?, ?)", (sid_old, 'Student 1'))
     cur.execute("DELETE FROM students WHERE id=?", (sid_old,))
     cur.execute(
         "INSERT INTO students (name, subjects, active) VALUES (?, ?, 0)",
-        ('Student 1', json.dumps(['Math'])),
+        ('Student 1', json.dumps([math_id])),
     )
     sid_new = cur.execute("SELECT id FROM students WHERE name='Student 1'").fetchone()[0]
     conn.commit()
@@ -63,15 +64,16 @@ def test_highlighted_when_worksheet_on_date(tmp_path):
     conn = setup_db(tmp_path)
     cur = conn.cursor()
     sid = cur.execute("SELECT id FROM students WHERE name='Student 1'").fetchone()[0]
+    math_id = cur.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
     cur.execute(
-        "INSERT INTO worksheets (student_id, subject, date) VALUES (?, ?, ?)",
-        (sid, 'Math', '2024-01-01'),
+        "INSERT INTO worksheets (student_id, subject_id, date) VALUES (?, ?, ?)",
+        (sid, math_id, '2024-01-01'),
     )
     # insert a timetable row for another student so the view renders the timetable
     other = cur.execute("SELECT id FROM students WHERE name='Student 2'").fetchone()[0]
     cur.execute(
-        "INSERT INTO timetable (student_id, teacher_id, subject, slot, date) VALUES (?, ?, ?, ?, ?)",
-        (other, 1, 'Math', 0, '2024-01-01'),
+        "INSERT INTO timetable (student_id, teacher_id, subject_id, slot, date) VALUES (?, ?, ?, ?, ?)",
+        (other, 1, math_id, 0, '2024-01-01'),
     )
     conn.commit()
     conn.close()
@@ -89,9 +91,10 @@ def test_prior_lessons_included_in_counts(tmp_path):
     cur = conn.cursor()
     sid = cur.execute("SELECT id FROM students WHERE name='Student 1'").fetchone()[0]
     # add a previous lesson for Math
+    math_id = cur.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
     cur.execute(
-        "INSERT INTO timetable (student_id, teacher_id, subject, slot, date) VALUES (?, ?, ?, ?, ?)",
-        (sid, 1, 'Math', 0, '2024-01-01'),
+        "INSERT INTO timetable (student_id, teacher_id, subject_id, slot, date) VALUES (?, ?, ?, ?, ?)",
+        (sid, 1, math_id, 0, '2024-01-01'),
     )
     conn.commit()
     conn.close()
@@ -107,9 +110,10 @@ def test_deleted_student_preserved_in_missing(tmp_path):
     conn = setup_db(tmp_path)
     cur = conn.cursor()
     sid = cur.execute("SELECT id FROM students WHERE name='Student 1'").fetchone()[0]
+    math_id = cur.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
     cur.execute(
-        "INSERT INTO timetable (student_id, teacher_id, subject, slot, date) VALUES (?, ?, ?, ?, ?)",
-        (sid, 1, 'Math', 0, '2024-01-01'),
+        "INSERT INTO timetable (student_id, teacher_id, subject_id, slot, date) VALUES (?, ?, ?, ?, ?)",
+        (sid, 1, math_id, 0, '2024-01-01'),
     )
     conn.commit()
     conn.close()
@@ -134,9 +138,10 @@ def test_refresh_removes_deleted_student(tmp_path):
     conn = setup_db(tmp_path)
     cur = conn.cursor()
     sid = cur.execute("SELECT id FROM students WHERE name='Student 1'").fetchone()[0]
+    math_id = cur.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
     cur.execute(
-        "INSERT INTO timetable (student_id, teacher_id, subject, slot, date) VALUES (?, ?, ?, ?, ?)",
-        (sid, 1, 'Math', 0, '2024-01-01'),
+        "INSERT INTO timetable (student_id, teacher_id, subject_id, slot, date) VALUES (?, ?, ?, ?, ?)",
+        (sid, 1, math_id, 0, '2024-01-01'),
     )
     conn.commit()
     conn.close()
@@ -168,9 +173,10 @@ def test_added_student_not_in_missing_until_refresh(tmp_path):
 
     conn = sqlite3.connect(app.DB_PATH)
     cur = conn.cursor()
+    math_id = cur.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
     cur.execute(
         "INSERT INTO students (name, subjects, active) VALUES (?, ?, 1)",
-        ('New Student', json.dumps(['Math']))
+        ('New Student', json.dumps([math_id]))
     )
     sid_new = cur.lastrowid
     conn.commit()

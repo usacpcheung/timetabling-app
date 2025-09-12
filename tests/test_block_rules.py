@@ -33,9 +33,11 @@ def test_block_teacher_fixed_assignment(tmp_path, monkeypatch):
     # Pre-populate a fixed assignment so teacher ``1`` is tied to student ``1``
     # for Math in slot ``0``. This should prevent the student from blocking that
     # teacher.
+    math_id = conn.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
     conn.execute(
-        "INSERT INTO fixed_assignments (teacher_id, student_id, group_id, subject, slot)"
-        " VALUES (1, 1, NULL, 'Math', 0)"
+        "INSERT INTO fixed_assignments (teacher_id, student_id, group_id, subject_id, slot)"
+        " VALUES (1, 1, NULL, ?, 0)",
+        (math_id,)
     )
     conn.commit()
 

@@ -21,9 +21,11 @@ def test_student_deletion_blocked_by_fixed_assignment(tmp_path):
 
     conn = setup_db(tmp_path)
     c = conn.cursor()
+    math_id = c.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
     # create a fixed assignment for student 1
     c.execute(
-        "INSERT INTO fixed_assignments (teacher_id, student_id, group_id, subject, slot) VALUES (1, 1, NULL, 'Math', 0)"
+        "INSERT INTO fixed_assignments (teacher_id, student_id, group_id, subject_id, slot) VALUES (1, 1, NULL, ?, 0)",
+        (math_id,),
     )
     conn.commit()
 
