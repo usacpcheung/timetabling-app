@@ -37,6 +37,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 DB_PATH = os.path.join(DATA_DIR, "timetable.db")
 
 CURRENT_PRESET_VERSION = 1
+MAX_PRESETS = 10  # maximum number of configuration presets to keep
 
 # Tables that represent configuration data. Presets only dump and restore
 # these tables so previously generated timetables, worksheets or logs remain
@@ -346,9 +347,9 @@ def init_db():
     def cleanup_presets(cur):
         cur.execute('SELECT id, data FROM config_presets ORDER BY created_at DESC')
         rows = cur.fetchall()
-        for r in rows[5:]:
+        for r in rows[MAX_PRESETS:]:
             cur.execute('DELETE FROM config_presets WHERE id=?', (r['id'],))
-        for r in rows[:5]:
+        for r in rows[:MAX_PRESETS]:
             try:
                 json.loads(r['data'])
             except Exception:
@@ -1561,10 +1562,10 @@ def save_preset():
         (name, json.dumps(preset['data']), preset['version'], datetime.utcnow().isoformat()),
     )
     conn.commit()
-    # enforce maximum of five presets
+    # enforce maximum of MAX_PRESETS presets
     c.execute('SELECT id FROM config_presets ORDER BY created_at DESC')
     rows = c.fetchall()
-    for r in rows[5:]:
+    for r in rows[MAX_PRESETS:]:
         c.execute('DELETE FROM config_presets WHERE id=?', (r['id'],))
     conn.commit()
     conn.close()
