@@ -2357,24 +2357,26 @@ def edit_timetable(date):
             student_id = request.form.get('student_id')
             subject = request.form.get('subject')
             assign = request.form.get('assign')
-            if student_id and subject and assign is not None:
+            if student_id and subject:
                 sid = int(student_id)
                 subject_id = int(subject)
-                if assign == '1':
-                    c.execute(
-                        'SELECT 1 FROM worksheets WHERE student_id=? AND subject_id=? AND date=?',
-                        (sid, subject_id, date),
-                    )
-                    if c.fetchone() is None:
+                c.execute(
+                    'SELECT 1 FROM worksheets WHERE student_id=? AND subject_id=? AND date=?',
+                    (sid, subject_id, date),
+                )
+                exists = c.fetchone() is not None
+                if assign != '0' or not exists:
+                    if not exists:
                         c.execute(
                             'INSERT INTO worksheets (student_id, subject_id, date) VALUES (?, ?, ?)',
                             (sid, subject_id, date),
                         )
                 else:
-                    c.execute(
-                        'DELETE FROM worksheets WHERE student_id=? AND subject_id=? AND date=?',
-                        (sid, subject_id, date),
-                    )
+                    if exists:
+                        c.execute(
+                            'DELETE FROM worksheets WHERE student_id=? AND subject_id=? AND date=?',
+                            (sid, subject_id, date),
+                        )
                 get_missing_and_counts(c, date, refresh=True)
                 conn.commit()
                 flash('Worksheet assignment updated.', 'info')
