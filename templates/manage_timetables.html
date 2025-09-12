@@ -93,11 +93,11 @@
                 <p class="text-sm text-emerald-700 mt-2">Backups are verified and auto-migrated where possible; restore aborts safely if incompatible.</p>
             </form>
         </div>
-        <div class="overflow-x-auto">
-            <table class="w-full text-sm text-left text-emerald-700 dark:text-emerald-300 rounded-lg border border-emerald-200 overflow-hidden dark:border-emerald-700">
+        <div>
+            <table class="w-full table-fixed text-sm text-left text-emerald-700 dark:text-emerald-300 rounded-lg border border-emerald-200 overflow-hidden dark:border-emerald-700">
                 <thead class="text-xs text-emerald-800 uppercase bg-emerald-100 dark:bg-emerald-800 dark:text-emerald-200">
                     <tr>
-                        <th scope="col" class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">Filename</th>
+                        <th scope="col" class="px-4 py-2 border border-emerald-200 dark:border-emerald-700 w-64 break-all">Filename</th>
                         <th scope="col" class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">Created</th>
                         <th scope="col" class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">Size</th>
                         <th scope="col" class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">Actions</th>
@@ -107,7 +107,7 @@
                     {% if backups %}
                     {% for b in backups %}
                     <tr class="bg-white border-b border-emerald-100 dark:bg-emerald-900 dark:border-emerald-700">
-                        <td class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">{{ b.name }}</td>
+                        <td class="px-4 py-2 border border-emerald-200 dark:border-emerald-700 w-64 break-all">{{ b.name }}</td>
                         <td class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">{{ b.created }}</td>
                         <td class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">{{ (b.size // 1024) }} KB</td>
                         <td class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">
