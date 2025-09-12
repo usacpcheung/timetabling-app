@@ -1750,10 +1750,13 @@ def generate_schedule(target_date=None):
             for subj in required:
                 perc = (counts.get(subj, 0) / total * 100) if total else 0
                 attendance_pct.setdefault(sid, {})[subj] = perc
-                if perc < min_map.get(subj, 0):
-                    subject_weights[(sid, subj)] = 1 + attendance_weight
+                min_val = min_map.get(subj, 0)
+                if perc < min_val and min_val > 0:
+                    deficit = (min_val - perc) / min_val
+                    weight = well_attend_weight + attendance_weight * deficit
                 else:
-                    subject_weights[(sid, subj)] = well_attend_weight
+                    weight = well_attend_weight
+                subject_weights[(sid, subj)] = weight
         for g in groups:
             gid = g['id']
             gsubs = json.loads(g['subjects'])
@@ -1764,8 +1767,10 @@ def generate_schedule(target_date=None):
                     med = statistics.median(sorted(percs))
                 else:
                     med = 0
-                if med < min_map.get(subj, 0):
-                    weight = 1 + attendance_weight
+                min_val = min_map.get(subj, 0)
+                if med < min_val and min_val > 0:
+                    deficit = (min_val - med) / min_val
+                    weight = well_attend_weight + attendance_weight * deficit
                 else:
                     weight = well_attend_weight
                 subject_weights[(offset + gid, subj)] = weight
