@@ -101,7 +101,7 @@
             <ul class="list-disc ms-6 mb-4">
                 <li><strong>consecutive_weight</strong>: Reward for consecutive repeats (typical 0–10). 0 disables the preference.</li>
                 <li><strong>balance_weight</strong>: Penalty on the gap between most/least busy teachers (typical 0–10). 0 disables load balancing.</li>
-                <li><strong>attendance_weight</strong>: Extra weight for subjects where a student (or group median) is below the subject’s Min% target (typical 0–20).</li>
+                <li><strong>attendance_weight</strong>: Maximum extra weight for subjects below a subject’s Min% target; the actual weight grows as the attendance percentage falls short (typical 0–20).</li>
                 <li><strong>well_attend_weight</strong>: Weight to use for subjects already meeting the Min% target (typical 0.5–2.0).</li>
                 <li><strong>group_weight</strong>: Multiplier for group lessons to bias scheduling toward groups (typical 1.0–3.0). Set to 0 to remove the bias.</li>
             </ul>
@@ -109,7 +109,7 @@
             <p class="mb-2"><strong>Attendance Priority</strong> (optional):</p>
             <ul class="list-disc ms-6 mb-4">
                 <li>Enable <em>Attendance Priority</em> to favor subjects where a student’s attendance % is below the <em>Subjects → Min %</em> threshold.</li>
-                <li>Weights used are <em>attendance_weight</em> (below target) and <em>well_attend_weight</em> (at/above target).</li>
+                <li>Weights for below-target subjects scale from <em>well_attend_weight</em> up to <em>well_attend_weight</em> + <em>attendance_weight</em> based on how far the attendance percentage is from the target.</li>
                 <li>For groups, the median attendance among members is used to decide the weight.</li>
                 <li>Note: Combining <em>Require All Subjects</em> and <em>Attendance Priority</em> can slow solving.</li>
             </ul>
