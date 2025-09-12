@@ -129,3 +129,50 @@ def test_restore_preserves_attendance(tmp_path):
     ).fetchall()
     assert rows[0]['name'] == 'Stu'
     conn.close()
+
+
+def test_restore_archives_subjects(tmp_path):
+    import app
+    conn = setup_db(tmp_path)
+    cur = conn.cursor()
+    cur.execute('DELETE FROM subjects')
+    cur.execute('DELETE FROM subjects_archive')
+    cur.execute('DELETE FROM timetable')
+    cur.execute('DELETE FROM attendance_log')
+    cur.execute("INSERT INTO subjects (id, name, min_percentage) VALUES (1, 'OldSub', 0)")
+    cur.execute(
+        "INSERT INTO timetable (date, slot, student_id, teacher_id, subject_id, group_id, location_id) "
+        "VALUES ('2024-01-01', 0, NULL, NULL, 1, NULL, NULL)"
+    )
+    cur.execute(
+        "INSERT INTO attendance_log (student_id, student_name, subject_id, date) "
+        "VALUES (1, 'Stu', 1, '2024-01-01')"
+    )
+    conn.commit()
+
+    preset = app.dump_configuration()
+    preset['data']['subjects'] = []
+    preset['data']['subjects_archive'] = []
+    conn.close()
+
+    app.restore_configuration(preset, overwrite=True)
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    assert cur.execute('SELECT name FROM subjects_archive WHERE id=1').fetchone()[0] == 'OldSub'
+    row = cur.execute(
+        '''SELECT COALESCE(sub.name, sa.name) AS subject
+           FROM timetable t
+           LEFT JOIN subjects sub ON t.subject_id = sub.id
+           LEFT JOIN subjects_archive sa ON t.subject_id = sa.id'''
+    ).fetchone()
+    assert row['subject'] == 'OldSub'
+    row = cur.execute(
+        '''SELECT COALESCE(sub.name, sa.name) AS subject
+           FROM attendance_log al
+           LEFT JOIN subjects sub ON al.subject_id = sub.id
+           LEFT JOIN subjects_archive sa ON al.subject_id = sa.id'''
+    ).fetchone()
+    assert row['subject'] == 'OldSub'
+    conn.close()

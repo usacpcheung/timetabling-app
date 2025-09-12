@@ -48,6 +48,7 @@ CONFIG_TABLES = [
     'students',
     'students_archive',
     'subjects',
+    'subjects_archive',
     'teacher_unavailable',
     'student_unavailable',
     'fixed_assignments',
@@ -204,6 +205,12 @@ def init_db():
     else:
         if not column_exists('subjects', 'min_percentage'):
             c.execute('ALTER TABLE subjects ADD COLUMN min_percentage INTEGER')
+
+    if not table_exists('subjects_archive'):
+        c.execute('''CREATE TABLE subjects_archive (
+            id INTEGER PRIMARY KEY,
+            name TEXT
+        )''')
 
     if not table_exists('teacher_unavailable'):
         c.execute('''CREATE TABLE teacher_unavailable (
@@ -652,6 +659,20 @@ def restore_configuration(preset, overwrite=False):
         for r in c.fetchall():
             group_names.setdefault(r['id'], r['name'])
 
+    c.execute('SELECT DISTINCT subject_id FROM timetable')
+    subj_ids = {r['subject_id'] for r in c.fetchall() if r['subject_id'] is not None}
+    c.execute('SELECT DISTINCT subject_id FROM attendance_log')
+    subj_ids.update(r['subject_id'] for r in c.fetchall() if r['subject_id'] is not None)
+    subject_names = {}
+    if subj_ids:
+        placeholders = ','.join(['?'] * len(subj_ids))
+        params = list(subj_ids)
+        c.execute(f'SELECT id, name FROM subjects WHERE id IN ({placeholders})', params)
+        subject_names = {r['id']: r['name'] for r in c.fetchall()}
+        c.execute(f'SELECT id, name FROM subjects_archive WHERE id IN ({placeholders})', params)
+        for r in c.fetchall():
+            subject_names.setdefault(r['id'], r['name'])
+
     c.execute('SELECT DISTINCT student_id, student_name FROM attendance_log')
     log_students = {r['student_id']: r['student_name'] for r in c.fetchall()}
 
@@ -687,6 +708,14 @@ def restore_configuration(preset, overwrite=False):
                 name = group_names.get(gid)
                 if name:
                     c.execute('INSERT INTO groups_archive (id, name) VALUES (?, ?)', (gid, name))
+
+    # Reinsert archived subjects for references that no longer resolve.
+    for sid, name in subject_names.items():
+        c.execute('SELECT 1 FROM subjects WHERE id=?', (sid,))
+        if c.fetchone() is None:
+            c.execute('SELECT 1 FROM subjects_archive WHERE id=?', (sid,))
+            if c.fetchone() is None and name:
+                c.execute('INSERT INTO subjects_archive (id, name) VALUES (?, ?)', (sid, name))
 
     # Ensure archived names exist for any students referenced in attendance logs.
     for sid, name in log_students.items():
@@ -959,6 +988,23 @@ def config():
             min_perc = request.form.get(f'subject_min_{sid}')
             min_val = int(min_perc) if min_perc else 0
             if sid in deletes_sub:
+                c.execute('SELECT name FROM subjects WHERE id=?', (int(sid),))
+                row = c.fetchone()
+                if row:
+                    orig = row['name']
+                    c.execute('SELECT id, name FROM subjects_archive WHERE name LIKE ?', (f"{orig}%",))
+                    existing = c.fetchall()
+                    for ex in existing:
+                        if ex['name'] == orig:
+                            c.execute(
+                                'UPDATE subjects_archive SET name=? WHERE id=?',
+                                (f"{orig} (id {ex['id']})", ex['id']),
+                            )
+                    archive_name = f"{orig} (id {int(sid)})" if existing else orig
+                    c.execute(
+                        'INSERT OR IGNORE INTO subjects_archive (id, name) VALUES (?, ?)',
+                        (int(sid), archive_name),
+                    )
                 c.execute('DELETE FROM subjects WHERE id=?', (int(sid),))
             else:
                 c.execute('UPDATE subjects SET name=?, min_percentage=? WHERE id=?', (name, min_val, int(sid)))
@@ -1470,13 +1516,15 @@ def config():
     c.execute('''SELECT u.id, u.teacher_id, u.slot, t.name as teacher_name
                  FROM teacher_unavailable u JOIN teachers t ON u.teacher_id = t.id''')
     unavailable = c.fetchall()
-    c.execute('''SELECT a.id, a.teacher_id, a.student_id, a.group_id, sub.name AS subject, a.slot,
+    c.execute('''SELECT a.id, a.teacher_id, a.student_id, a.group_id,
+                        COALESCE(sub.name, sa.name) AS subject, a.slot,
                         t.name as teacher_name,
                         s.name as student_name,
                         COALESCE(g.name, ga.name) as group_name
                  FROM fixed_assignments a
                  JOIN teachers t ON a.teacher_id = t.id
                  LEFT JOIN subjects sub ON a.subject_id = sub.id
+                 LEFT JOIN subjects_archive sa ON a.subject_id = sa.id
                  LEFT JOIN students s ON a.student_id = s.id
                  LEFT JOIN groups g ON a.group_id = g.id
                  LEFT JOIN groups_archive ga ON a.group_id = ga.id''')
@@ -1883,11 +1931,13 @@ def get_timetable_data(target_date, view='teacher'):
     c.execute('''SELECT t.slot,
                         COALESCE(te.name, ta.name) as teacher,
                         COALESCE(s.name, sa.name) as student,
-                        COALESCE(g.name, ga.name) as group_name, sub.name AS subject, t.group_id,
+                        COALESCE(g.name, ga.name) as group_name,
+                        COALESCE(sub.name, sb.name) AS subject, t.group_id,
                         t.teacher_id, t.student_id, t.location_id,
                         l.name AS location_name
                  FROM timetable t
                  LEFT JOIN subjects sub ON t.subject_id = sub.id
+                 LEFT JOIN subjects_archive sb ON t.subject_id = sb.id
                  LEFT JOIN teachers te ON t.teacher_id = te.id
                  LEFT JOIN teachers_archive ta ON t.teacher_id = ta.id
                  LEFT JOIN students s ON t.student_id = s.id
@@ -2013,9 +2063,11 @@ def attendance():
     conn = get_db()
     c = conn.cursor()
     c.execute('''
-        SELECT al.student_id AS sid, s.name AS name, sub.name AS subject, al.date
+        SELECT al.student_id AS sid, s.name AS name,
+               COALESCE(sub.name, sb.name) AS subject, al.date
         FROM attendance_log al
-        JOIN subjects sub ON al.subject_id = sub.id
+        LEFT JOIN subjects sub ON al.subject_id = sub.id
+        LEFT JOIN subjects_archive sb ON al.subject_id = sb.id
         JOIN students s ON al.student_id = s.id
         WHERE s.active=1
     ''')
@@ -2023,9 +2075,10 @@ def attendance():
     c.execute('''
         SELECT al.student_id AS sid,
                COALESCE(sa.name, al.student_name) AS name,
-               sub.name AS subject, al.date
+               COALESCE(sub.name, sb.name) AS subject, al.date
         FROM attendance_log al
         LEFT JOIN subjects sub ON al.subject_id = sub.id
+        LEFT JOIN subjects_archive sb ON al.subject_id = sb.id
         LEFT JOIN students_archive sa ON al.student_id = sa.id
         LEFT JOIN students s ON al.student_id = s.id
         WHERE s.id IS NULL OR s.active=0
@@ -2363,11 +2416,13 @@ def edit_timetable(date):
 
     # Existing lessons with teacher id for grid placement
     c.execute(
-        '''SELECT t.id, t.slot, t.subject_id, sub.name AS subject, t.teacher_id, t.student_id, t.group_id,
+        '''SELECT t.id, t.slot, t.subject_id,
+                  COALESCE(sub.name, sb.name) AS subject, t.teacher_id, t.student_id, t.group_id,
                   t.location_id, COALESCE(s.name, sa.name) AS student_name,
                   COALESCE(g.name, ga.name) AS group_name, l.name AS location_name
            FROM timetable t
            LEFT JOIN subjects sub ON t.subject_id = sub.id
+           LEFT JOIN subjects_archive sb ON t.subject_id = sb.id
            LEFT JOIN students s ON t.student_id = s.id
            LEFT JOIN students_archive sa ON t.student_id = sa.id
            LEFT JOIN groups g ON t.group_id = g.id
