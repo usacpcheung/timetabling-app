@@ -1513,6 +1513,7 @@ def config():
                            slot_times=slot_times,
                            student_unavail_map=student_unavail_map,
                            student_loc_map=student_loc_map,
+                           subject_map=subj_map,
                            group_loc_map=group_loc_map,
                            presets=presets)
 
