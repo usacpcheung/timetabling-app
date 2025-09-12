@@ -2299,25 +2299,29 @@ def edit_timetable(date):
                 flash('Lesson updated.', 'info')
         elif action == 'worksheet':
             student_id = request.form.get('student_id')
-            subject = request.form.get('subject')
+            subject_id = request.form.get('subject_id')
             assign = request.form.get('assign')
-            if student_id and subject and assign is not None:
+            if (
+                student_id is not None
+                and subject_id is not None
+                and assign is not None
+            ):
                 sid = int(student_id)
-                subject_id = int(subject)
+                subj_id = int(subject_id)
                 if assign == '1':
                     c.execute(
                         'SELECT 1 FROM worksheets WHERE student_id=? AND subject_id=? AND date=?',
-                        (sid, subject_id, date),
+                        (sid, subj_id, date),
                     )
                     if c.fetchone() is None:
                         c.execute(
                             'INSERT INTO worksheets (student_id, subject_id, date) VALUES (?, ?, ?)',
-                            (sid, subject_id, date),
+                            (sid, subj_id, date),
                         )
                 else:
                     c.execute(
                         'DELETE FROM worksheets WHERE student_id=? AND subject_id=? AND date=?',
-                        (sid, subject_id, date),
+                        (sid, subj_id, date),
                     )
                 get_missing_and_counts(c, date, refresh=True)
                 conn.commit()
