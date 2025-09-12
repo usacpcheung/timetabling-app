@@ -772,6 +772,17 @@ def get_missing_and_counts(c, date, refresh=False):
         if row:
             missing = {int(k): v for k, v in json.loads(row['missing']).items()}
             lesson_counts = {int(k): v for k, v in json.loads(row['lesson_counts']).items()}
+            needs_refresh = any(
+                isinstance(subs, list)
+                and any('subject_id' not in item for item in subs)
+                for subs in missing.values()
+            )
+            if needs_refresh:
+                missing, lesson_counts = calculate_missing_and_counts(c, date)
+                c.execute(
+                    'INSERT OR REPLACE INTO timetable_snapshot (date, missing, lesson_counts) VALUES (?, ?, ?)',
+                    (date, json.dumps(missing), json.dumps(lesson_counts)),
+                )
             return missing, lesson_counts
 
     missing, lesson_counts = calculate_missing_and_counts(c, date)

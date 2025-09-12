@@ -1,6 +1,7 @@
 import os
 import sys
 import sqlite3
+import json
 
 # ensure app can be imported
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -80,4 +81,34 @@ def test_worksheet_blank_subject_id(tmp_path):
     c = conn.cursor()
     row = c.execute('SELECT 1 FROM worksheets').fetchone()
     assert row is None
+    conn.close()
+
+
+def test_refreshes_old_snapshot_without_subject_id(tmp_path):
+    import app
+    conn = setup_db(tmp_path)
+    c = conn.cursor()
+    math_id = c.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
+    old_missing = {1: [{"subject": "Math", "count": 0, "assigned": False}]}
+    lesson_counts = {1: 0}
+    c.execute(
+        'INSERT INTO timetable_snapshot (date, missing, lesson_counts) VALUES (?, ?, ?)',
+        ('2024-01-01', json.dumps(old_missing), json.dumps(lesson_counts)),
+    )
+    conn.commit()
+    conn.close()
+
+    client = app.app.test_client()
+    resp = client.get('/edit_timetable/2024-01-01')
+    assert resp.status_code == 200
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    row = c.execute(
+        'SELECT missing FROM timetable_snapshot WHERE date=?', ('2024-01-01',)
+    ).fetchone()
+    data = json.loads(row['missing'])
+    assert 'subject_id' in data['1'][0]
+    assert data['1'][0]['subject_id'] == math_id
     conn.close()
