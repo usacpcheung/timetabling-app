@@ -97,6 +97,42 @@ def test_restore_archives_groups(tmp_path):
     conn.close()
 
 
+def test_restore_archives_subjects(tmp_path):
+    import app
+    conn = setup_db(tmp_path)
+    cur = conn.cursor()
+    cur.execute('DELETE FROM subjects')
+    cur.execute('DELETE FROM subjects_archive')
+    cur.execute('DELETE FROM timetable')
+    cur.execute("INSERT INTO subjects (id, name, min_percentage) VALUES (1, 'Sub', 0)")
+    cur.execute(
+        "INSERT INTO timetable (date, slot, student_id, teacher_id, subject_id, group_id, location_id) "
+        "VALUES ('2024-01-01', 0, NULL, NULL, 1, NULL, NULL)"
+    )
+    conn.commit()
+
+    preset = app.dump_configuration()
+    preset['data']['subjects'] = []
+    preset['data']['subjects_archive'] = []
+    conn.close()
+
+    app.restore_configuration(preset, overwrite=True)
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    assert cur.execute('SELECT COUNT(*) FROM timetable').fetchone()[0] == 1
+    assert cur.execute('SELECT name FROM subjects_archive WHERE id=1').fetchone()[0] == 'Sub'
+    assert cur.execute('SELECT COUNT(*) FROM subjects WHERE id=1').fetchone()[0] == 0
+    row = cur.execute(
+        '''SELECT COALESCE(sub.name, suba.name) AS subject FROM timetable t
+           LEFT JOIN subjects sub ON t.subject_id = sub.id
+           LEFT JOIN subjects_archive suba ON t.subject_id = suba.id'''
+    ).fetchone()
+    assert row['subject'] == 'Sub'
+    conn.close()
+
+
 def test_restore_preserves_attendance(tmp_path):
     import app
     conn = setup_db(tmp_path)
