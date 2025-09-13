@@ -52,7 +52,25 @@
         {% endfor %}
     </ul>
     {% endif %}
-    {% endwith %}
+{% endwith %}
+    <div class="mb-6">
+        <h2 class="text-xl text-emerald-900 font-semibold mb-2">Presets</h2>
+        <form method="post" action="{{ url_for('save_preset') }}" class="flex gap-2 mb-2">
+            <input type="text" name="name" placeholder="Preset name" class="border border-emerald-300 rounded-lg p-2.5 flex-1">
+            <button type="submit" class="bg-emerald-500 text-white px-4 py-2 rounded">Save</button>
+        </form>
+        <form id="load-form" method="post" action="{{ url_for('load_preset') }}" class="flex gap-2">
+            <select name="preset_id" class="border border-emerald-300 rounded-lg p-2.5 flex-1">
+                {% for p in presets %}
+                <option value="{{ p['id'] }}">{{ p['name'] }}</option>
+                {% endfor %}
+            </select>
+            <input type="hidden" name="overwrite" id="overwrite" value="0">
+            <button type="submit" onclick="return confirmLoad()" class="bg-emerald-500 text-white px-4 py-2 rounded">Load</button>
+            <button type="submit" formaction="{{ url_for('delete_preset') }}" class="bg-red-500 text-white px-4 py-2 rounded">Delete</button>
+        </form>
+    </div>
+
 <form method="post" class="space-y-6">
 <div id="config-accordion" data-accordion="open" data-active-classes="bg-emerald-300" data-inactive-classes="text-grey-900" class="mb-4">
     <!-- Help & Guidance -->
@@ -83,7 +101,7 @@
             <ul class="list-disc ms-6 mb-4">
                 <li><strong>consecutive_weight</strong>: Reward for consecutive repeats (typical 0–10). 0 disables the preference.</li>
                 <li><strong>balance_weight</strong>: Penalty on the gap between most/least busy teachers (typical 0–10). 0 disables load balancing.</li>
-                <li><strong>attendance_weight</strong>: Extra weight for subjects where a student (or group median) is below the subject’s Min% target (typical 0–20).</li>
+                <li><strong>attendance_weight</strong>: Maximum extra weight for subjects below a subject’s Min% target; the actual weight grows as the attendance percentage falls short (typical 0–20).</li>
                 <li><strong>well_attend_weight</strong>: Weight to use for subjects already meeting the Min% target (typical 0.5–2.0).</li>
                 <li><strong>group_weight</strong>: Multiplier for group lessons to bias scheduling toward groups (typical 1.0–3.0). Set to 0 to remove the bias.</li>
             </ul>
@@ -91,7 +109,7 @@
             <p class="mb-2"><strong>Attendance Priority</strong> (optional):</p>
             <ul class="list-disc ms-6 mb-4">
                 <li>Enable <em>Attendance Priority</em> to favor subjects where a student’s attendance % is below the <em>Subjects → Min %</em> threshold.</li>
-                <li>Weights used are <em>attendance_weight</em> (below target) and <em>well_attend_weight</em> (at/above target).</li>
+                <li>Weights for below-target subjects scale from <em>well_attend_weight</em> up to <em>well_attend_weight</em> + <em>attendance_weight</em> based on how far the attendance percentage is from the target.</li>
                 <li>For groups, the median attendance among members is used to decide the weight.</li>
                 <li>Note: Combining <em>Require All Subjects</em> and <em>Attendance Priority</em> can slow solving.</li>
             </ul>
@@ -251,11 +269,11 @@
                 <input type="text" name="teacher_name_{{ t['id'] }}" value="{{ t['name'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
             <label class="block">Subjects:
-                <select multiple name="teacher_subjects_{{ t['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
-                    {% for sub in subjects %}
-                    <option value="{{ sub['name'] }}" {% if sub['name'] in json.loads(t['subjects']) %}selected{% endif %}>{{ sub['name'] }}</option>
-                    {% endfor %}
-                </select>
+                  <select multiple name="teacher_subjects_{{ t['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                      {% for sub in subjects %}
+                      <option value="{{ sub['id'] }}" {% if sub['id'] in teacher_map[t['id']] %}selected{% endif %}>{{ sub['name'] }}</option>
+                      {% endfor %}
+                  </select>
             </label>
             <label class="block">Min:
                 <input type="number" name="teacher_min_{{ t['id'] }}" value="{{ t['min_lessons'] if t['min_lessons'] is not none else '' }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
@@ -271,11 +289,11 @@
                 <input type="text" name="new_teacher_name" class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
             <label class="block">Subjects:
-                <select multiple name="new_teacher_subjects" class="border border-emerald-300 rounded-lg p-2.5 w-full">
-                    {% for sub in subjects %}
-                    <option value="{{ sub['name'] }}">{{ sub['name'] }}</option>
-                    {% endfor %}
-                </select>
+                  <select multiple name="new_teacher_subjects" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                      {% for sub in subjects %}
+                      <option value="{{ sub['id'] }}">{{ sub['name'] }}</option>
+                      {% endfor %}
+                  </select>
             </label>
             <label class="block">Min:
                 <input type="number" name="new_teacher_min" class="border border-emerald-300 rounded-lg p-2.5 w-full">
@@ -303,11 +321,11 @@
                 <input type="text" name="student_name_{{ s['id'] }}" value="{{ s['name'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
             <label class="block">Subjects:
-                <select multiple name="student_subjects_{{ s['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
-                    {% for sub in subjects %}
-                    <option value="{{ sub['name'] }}" {% if sub['name'] in json.loads(s['subjects']) %}selected{% endif %}>{{ sub['name'] }}</option>
-                    {% endfor %}
-                </select>
+                  <select multiple name="student_subjects_{{ s['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                      {% for sub in subjects %}
+                      <option value="{{ sub['id'] }}" {% if sub['id'] in student_map[s['id']] %}selected{% endif %}>{{ sub['name'] }}</option>
+                      {% endfor %}
+                  </select>
             </label>
             <label class="flex items-center gap-2">Needs lessons?
                 <input type="checkbox" name="student_active_{{ s['id'] }}" value="1" {% if s['active'] %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
@@ -375,11 +393,11 @@
                 <input type="text" name="new_student_name" class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
             <label class="block">Subjects:
-                <select multiple name="new_student_subjects" class="border border-emerald-300 rounded-lg p-2.5 w-full">
-                    {% for sub in subjects %}
-                    <option value="{{ sub['name'] }}">{{ sub['name'] }}</option>
-                    {% endfor %}
-                </select>
+                  <select multiple name="new_student_subjects" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                      {% for sub in subjects %}
+                      <option value="{{ sub['id'] }}">{{ sub['name'] }}</option>
+                      {% endfor %}
+                  </select>
             </label>
             <label class="block">Forbidden Teachers:
                 <select multiple name="new_student_block" class="border border-emerald-300 rounded-lg p-2.5 w-full">
@@ -456,11 +474,11 @@
                 <input type="text" name="group_name_{{ g['id'] }}" value="{{ g['name'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
             <label class="block">Subjects:
-                <select multiple name="group_subjects_{{ g['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
-                    {% for sub in subjects %}
-                    <option value="{{ sub['name'] }}" {% if sub['name'] in json.loads(g['subjects']) %}selected{% endif %}>{{ sub['name'] }}</option>
-                    {% endfor %}
-                </select>
+                  <select multiple name="group_subjects_{{ g['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                      {% for sub in subjects %}
+                      <option value="{{ sub['id'] }}" {% if sub['id'] in group_subj_map[g['id']] %}selected{% endif %}>{{ sub['name'] }}</option>
+                      {% endfor %}
+                  </select>
             </label>
             <label class="block">Members:
                 <select multiple name="group_members_{{ g['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
@@ -484,11 +502,11 @@
                 <input type="text" name="new_group_name" class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
             <label class="block">Subjects:
-                <select multiple name="new_group_subjects" class="border border-emerald-300 rounded-lg p-2.5 w-full">
-                    {% for sub in subjects %}
-                    <option value="{{ sub['name'] }}">{{ sub['name'] }}</option>
-                    {% endfor %}
-                </select>
+                  <select multiple name="new_group_subjects" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                      {% for sub in subjects %}
+                      <option value="{{ sub['id'] }}">{{ sub['name'] }}</option>
+                      {% endfor %}
+                  </select>
             </label>
             <label class="block">Members:
                 <select multiple name="new_group_members" class="border border-emerald-300 rounded-lg p-2.5 w-full">
@@ -634,7 +652,17 @@
     <script id="group-data" type="application/json">{{ group_subj_map | tojson }}</script>
     <script id="unavail-data" type="application/json">{{ unavail_map | tojson }}</script>
     <script id="assign-data" type="application/json">{{ assign_map | tojson }}</script>
+    <script id="subject-map" type="application/json">{{ subject_map | tojson }}</script>
     <script id="slot-times-data" type="application/json">{{ slot_times | tojson }}</script>
+    <script>
+    function confirmLoad() {
+        if (confirm('Load preset and overwrite current configuration? Existing timetables remain unchanged.')) {
+            document.getElementById('overwrite').value = '1';
+            return true;
+        }
+        return false;
+    }
+    </script>
     <script src="{{ url_for('static', filename='config.js') }}"></script>
     <script src="{{ url_for('static', filename='ui.js') }}"></script>
     <script src="{{ url_for('static', filename='main.js') }}"></script>

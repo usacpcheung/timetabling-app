@@ -19,9 +19,10 @@ def test_group_fixed_assignment_priority(tmp_path):
     import app, json
     conn = setup_db(tmp_path)
     c = conn.cursor()
+    math_id = c.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
     # create groups and members
-    c.execute("INSERT INTO groups (name, subjects) VALUES ('Group A', ?)", (json.dumps(['Math']),))
-    c.execute("INSERT INTO groups (name, subjects) VALUES ('Group B', ?)", (json.dumps(['Math']),))
+    c.execute("INSERT INTO groups (name, subjects) VALUES ('Group A', ?)", (json.dumps([math_id]),))
+    c.execute("INSERT INTO groups (name, subjects) VALUES ('Group B', ?)", (json.dumps([math_id]),))
     c.execute("INSERT INTO group_members (group_id, student_id) VALUES (1,1)")
     c.execute("INSERT INTO group_members (group_id, student_id) VALUES (2,2)")
     conn.commit()
@@ -36,18 +37,18 @@ def test_group_fixed_assignment_priority(tmp_path):
         'attendance_weight':'10', 'well_attend_weight':'1',
         'group_weight':'2.0', 'balance_weight':'1',
         'new_assign_teacher':'1', 'new_assign_group':'2',
-        'new_assign_student':'1', 'new_assign_subject':'Math',
+        'new_assign_student':'1', 'new_assign_subject':str(math_id),
         'new_assign_slot':'1', **slot_starts
     }
     with app.app.test_request_context('/config', method='POST', data=data):
         app.config()
 
-    row = conn.execute('SELECT teacher_id, student_id, group_id, subject, slot FROM fixed_assignments').fetchone()
+    row = conn.execute('SELECT teacher_id, student_id, group_id, subject_id, slot FROM fixed_assignments').fetchone()
     conn.close()
     assert row['student_id'] is None
     assert row['group_id'] == 2
     assert row['teacher_id'] == 1
-    assert row['subject'] == 'Math'
+    assert row['subject_id'] == math_id
     assert row['slot'] == 0
 
 
@@ -55,8 +56,9 @@ def test_group_fixed_assignment_suppressed(tmp_path):
     import app, json
     conn = setup_db(tmp_path)
     c = conn.cursor()
-    c.execute("INSERT INTO groups (name, subjects) VALUES ('Group A', ?)", (json.dumps(['Math']),))
-    c.execute("INSERT INTO groups (name, subjects) VALUES ('Group B', ?)", (json.dumps(['Math']),))
+    math_id = c.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
+    c.execute("INSERT INTO groups (name, subjects) VALUES ('Group A', ?)", (json.dumps([math_id]),))
+    c.execute("INSERT INTO groups (name, subjects) VALUES ('Group B', ?)", (json.dumps([math_id]),))
     c.execute("INSERT INTO group_members (group_id, student_id) VALUES (1,1)")
     c.execute("INSERT INTO group_members (group_id, student_id) VALUES (2,2)")
     conn.commit()
@@ -70,18 +72,18 @@ def test_group_fixed_assignment_suppressed(tmp_path):
         'attendance_weight':'10', 'well_attend_weight':'1',
         'group_weight':'0', 'balance_weight':'1',
         'new_assign_teacher':'1', 'new_assign_group':'2',
-        'new_assign_student':'1', 'new_assign_subject':'Math',
+        'new_assign_student':'1', 'new_assign_subject':str(math_id),
         'new_assign_slot':'1', **slot_starts,
     }
     with app.app.test_request_context('/config', method='POST', data=data):
         app.config()
 
-    row = conn.execute('SELECT teacher_id, student_id, group_id, subject, slot FROM fixed_assignments').fetchone()
+    row = conn.execute('SELECT teacher_id, student_id, group_id, subject_id, slot FROM fixed_assignments').fetchone()
     conn.close()
     assert row['group_id'] is None
     assert row['student_id'] == 1
     assert row['teacher_id'] == 1
-    assert row['subject'] == 'Math'
+    assert row['subject_id'] == math_id
     assert row['slot'] == 0
 
 
@@ -90,11 +92,12 @@ def test_group_deletion_blocked_by_fixed_assignment(tmp_path):
 
     conn = setup_db(tmp_path)
     c = conn.cursor()
-    c.execute("INSERT INTO groups (name, subjects) VALUES (?, ?)", ('Group A', json.dumps(['Math'])))
+    math_id = c.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
+    c.execute("INSERT INTO groups (name, subjects) VALUES (?, ?)", ('Group A', json.dumps([math_id])))
     gid = c.lastrowid
     c.execute(
-        "INSERT INTO fixed_assignments (teacher_id, group_id, student_id, subject, slot) VALUES (1, ?, NULL, 'Math', 0)",
-        (gid,),
+        "INSERT INTO fixed_assignments (teacher_id, group_id, student_id, subject_id, slot) VALUES (1, ?, NULL, ?, 0)",
+        (gid, math_id),
     )
     conn.commit()
 

@@ -18,6 +18,7 @@ def test_new_entity_location_restrictions(tmp_path):
     import app
     conn = setup_db(tmp_path)
     c = conn.cursor()
+    math_id = c.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
     # create a location to reference
     c.execute("INSERT INTO locations (name) VALUES ('Room A')")
     conn.commit()
@@ -31,10 +32,10 @@ def test_new_entity_location_restrictions(tmp_path):
         'attendance_weight':'10', 'well_attend_weight':'1',
         'group_weight':'2.0', 'balance_weight':'1',
         'new_student_name':'Charlie',
-        'new_student_subjects':['Math'],
+        'new_student_subjects':[str(math_id)],
         'new_student_locs':['1'],
         'new_group_name':'Group C',
-        'new_group_subjects':['Math'],
+        'new_group_subjects':[str(math_id)],
         'new_group_members':['1'],
         'new_group_locs':['1'],
         **slot_starts,

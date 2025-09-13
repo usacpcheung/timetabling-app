@@ -19,6 +19,8 @@ def test_add_and_edit_lesson(tmp_path):
     import app
     conn = setup_db(tmp_path)
     c = conn.cursor()
+    math_id = c.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
+    eng_id = c.execute("SELECT id FROM subjects WHERE name='English'").fetchone()[0]
     c.execute("INSERT INTO locations (name) VALUES ('Room A')")
     c.execute("INSERT INTO locations (name) VALUES ('Room B')")
     conn.commit()
@@ -32,7 +34,7 @@ def test_add_and_edit_lesson(tmp_path):
         'slot': '0',
         'teacher': '1',
         'student_group': 's1',
-        'subject': 'Math',
+        'subject': str(math_id),
         'location': '1',
     }, follow_redirects=True)
     assert resp.status_code == 200
@@ -40,15 +42,15 @@ def test_add_and_edit_lesson(tmp_path):
     conn = sqlite3.connect(app.DB_PATH)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    c.execute("SELECT id, student_id, subject, location_id FROM timetable WHERE date='2024-01-01'")
+    c.execute("SELECT id, student_id, subject_id, location_id FROM timetable WHERE date='2024-01-01'")
     row = c.fetchone()
     assert row['student_id'] == 1
-    assert row['subject'] == 'Math'
+    assert row['subject_id'] == math_id
     assert row['location_id'] == 1
     entry_id = row['id']
-    c.execute("SELECT student_id, subject FROM attendance_log WHERE date='2024-01-01'")
+    c.execute("SELECT student_id, subject_id FROM attendance_log WHERE date='2024-01-01'")
     log = c.fetchone()
-    assert log['student_id'] == 1 and log['subject'] == 'Math'
+    assert log['student_id'] == 1 and log['subject_id'] == math_id
     conn.close()
 
     # edit lesson to different student, subject and location
@@ -56,7 +58,7 @@ def test_add_and_edit_lesson(tmp_path):
         'action': 'edit',
         'entry_id': str(entry_id),
         'student_group': 's2',
-        'subject': 'English',
+        'subject': str(eng_id),
         'location': '2',
     }, follow_redirects=True)
     assert resp.status_code == 200
@@ -64,13 +66,13 @@ def test_add_and_edit_lesson(tmp_path):
     conn = sqlite3.connect(app.DB_PATH)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    c.execute("SELECT student_id, subject, location_id FROM timetable WHERE id=?", (entry_id,))
+    c.execute("SELECT student_id, subject_id, location_id FROM timetable WHERE id=?", (entry_id,))
     row = c.fetchone()
     assert row['student_id'] == 2
-    assert row['subject'] == 'English'
+    assert row['subject_id'] == eng_id
     assert row['location_id'] == 2
-    c.execute("SELECT student_id, subject FROM attendance_log WHERE date='2024-01-01'")
+    c.execute("SELECT student_id, subject_id FROM attendance_log WHERE date='2024-01-01'")
     logs = c.fetchall()
     assert len(logs) == 1
-    assert logs[0]['student_id'] == 2 and logs[0]['subject'] == 'English'
+    assert logs[0]['student_id'] == 2 and logs[0]['subject_id'] == eng_id
     conn.close()

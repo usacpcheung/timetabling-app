@@ -19,8 +19,10 @@ def test_location_shown_in_timetable_grid(tmp_path):
     c = conn.cursor()
     # create a location and assign it to a timetable entry
     c.execute("INSERT INTO locations (name) VALUES ('Room A')")
+    math_id = c.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
     c.execute(
-        "INSERT INTO timetable (student_id, teacher_id, subject, slot, location_id, date) VALUES (1, 1, 'Math', 0, 1, '2024-01-01')"
+        "INSERT INTO timetable (student_id, teacher_id, subject_id, slot, location_id, date) VALUES (1, 1, ?, 0, 1, '2024-01-01')",
+        (math_id,),
     )
     conn.commit()
     conn.close()
@@ -35,8 +37,10 @@ def test_location_view_groups_by_location(tmp_path):
     conn = setup_db(tmp_path)
     c = conn.cursor()
     c.execute("INSERT INTO locations (name) VALUES ('Room A')")
+    math_id = c.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
     c.execute(
-        "INSERT INTO timetable (student_id, teacher_id, subject, slot, location_id, date) VALUES (1, 1, 'Math', 0, 1, '2024-01-01')"
+        "INSERT INTO timetable (student_id, teacher_id, subject_id, slot, location_id, date) VALUES (1, 1, ?, 0, 1, '2024-01-01')",
+        (math_id,),
     )
     conn.commit()
     conn.close()
@@ -51,8 +55,10 @@ def test_patient_only_view(tmp_path):
     conn = setup_db(tmp_path)
     c = conn.cursor()
     c.execute("INSERT INTO locations (name) VALUES ('Room A')")
+    math_id = c.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
     c.execute(
-        "INSERT INTO timetable (student_id, teacher_id, subject, slot, location_id, date) VALUES (1, 1, 'Math', 0, 1, '2024-01-01')"
+        "INSERT INTO timetable (student_id, teacher_id, subject_id, slot, location_id, date) VALUES (1, 1, ?, 0, 1, '2024-01-01')",
+        (math_id,),
     )
     conn.commit()
     conn.close()
