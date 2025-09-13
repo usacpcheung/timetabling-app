@@ -2,5 +2,6 @@ __pycache__/
 timetable.db
 .venv/
 
-data/backups/*.zip
-data/timetable_pre_restore*.db
+.pytest_tmp/
+data/backup/*.zip
+time_table_pre_restore*.db
