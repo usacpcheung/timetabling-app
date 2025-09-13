@@ -1740,10 +1740,11 @@ def generate_schedule(target_date=None):
     for r in gl_rows:
         group_loc_map.setdefault(r['group_id'], set()).add(r['location_id'])
 
-    # clear previous timetable, attendance logs, and worksheet assignments for the target date
+    # clear previous timetable, attendance logs, worksheet assignments, and snapshot for the target date
     c.execute('DELETE FROM timetable WHERE date=?', (target_date,))
     c.execute('DELETE FROM attendance_log WHERE date=?', (target_date,))
     c.execute('DELETE FROM worksheets WHERE date=?', (target_date,))
+    c.execute('DELETE FROM timetable_snapshot WHERE date=?', (target_date,))
 
     # Build and solve CP-SAT model
     allow_repeats = bool(cfg['allow_repeats'])
@@ -2065,6 +2066,7 @@ def generate():
         conn.execute('DELETE FROM timetable WHERE date=?', (gen_date,))
         conn.execute('DELETE FROM attendance_log WHERE date=?', (gen_date,))
         conn.execute('DELETE FROM worksheets WHERE date=?', (gen_date,))
+        conn.execute('DELETE FROM timetable_snapshot WHERE date=?', (gen_date,))
         conn.commit()
         conn.close()
     generate_schedule(gen_date)
@@ -2544,6 +2546,7 @@ def delete_timetables():
         c.execute('DELETE FROM timetable')
         c.execute('DELETE FROM attendance_log')
         c.execute('DELETE FROM worksheets')
+        c.execute('DELETE FROM timetable_snapshot')
         conn.commit()
         conn.close()
         flash('All timetables deleted.', 'info')
@@ -2555,6 +2558,7 @@ def delete_timetables():
             c.execute('DELETE FROM timetable WHERE date=?', (d,))
             c.execute('DELETE FROM attendance_log WHERE date=?', (d,))
             c.execute('DELETE FROM worksheets WHERE date=?', (d,))
+            c.execute('DELETE FROM timetable_snapshot WHERE date=?', (d,))
         conn.commit()
         conn.close()
         flash(f'Deleted timetables for {len(dates)} date(s).', 'info')
