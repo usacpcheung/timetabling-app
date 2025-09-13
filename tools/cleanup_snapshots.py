@@ -22,6 +22,16 @@ def cleanup():
         )
         """
     )
+    removed_dups = c.rowcount
+
+    # Remove snapshots for dates that no longer have timetable entries
+    c.execute(
+        """
+        DELETE FROM timetable_snapshot
+        WHERE date NOT IN (SELECT DISTINCT date FROM timetable)
+        """
+    )
+    removed_orphaned = c.rowcount
 
     rows = c.execute("SELECT date, missing FROM timetable_snapshot").fetchall()
     dates_to_delete = []
@@ -46,10 +56,19 @@ def cleanup():
             dates_to_delete.append(row["date"])
 
     if dates_to_delete:
-        c.executemany("DELETE FROM timetable_snapshot WHERE date = ?", [(d,) for d in dates_to_delete])
+        c.executemany(
+            "DELETE FROM timetable_snapshot WHERE date = ?",
+            [(d,) for d in dates_to_delete],
+        )
+
+    removed_outdated = len(dates_to_delete)
 
     conn.commit()
-    print(f"Deduplicated and removed {len(dates_to_delete)} old snapshots")
+    print(
+        "Deduplicated {0} rows, removed {1} orphaned snapshots and {2} outdated snapshots".format(
+            removed_dups, removed_orphaned, removed_outdated
+        )
+    )
     conn.close()
 
 
