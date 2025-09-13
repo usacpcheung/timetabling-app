@@ -1905,7 +1905,6 @@ def generate_schedule(target_date=None):
             flash('No feasible timetable could be generated.', 'error')
             for name in core:
                 flash(reason_map.get(name, name), 'error')
-    get_missing_and_counts(c, target_date, refresh=True)
     conn.commit()
     conn.close()
 
@@ -2070,6 +2069,11 @@ def generate():
         conn.commit()
         conn.close()
     generate_schedule(gen_date)
+    conn = get_db()
+    c = conn.cursor()
+    get_missing_and_counts(c, gen_date, refresh=True)
+    conn.commit()
+    conn.close()
     return redirect(url_for('index', date=gen_date))
 
 

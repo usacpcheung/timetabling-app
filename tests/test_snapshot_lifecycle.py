@@ -29,6 +29,24 @@ def test_generate_creates_snapshot(tmp_path):
     assert row is not None
 
 
+def test_regenerate_updates_snapshot(tmp_path):
+    import app
+    conn = setup_db(tmp_path)
+    conn.close()
+
+    client = app.app.test_client()
+    resp = client.post('/generate', data={'date': '2024-01-01', 'confirm': '1'}, follow_redirects=True)
+    assert resp.status_code == 200
+
+    resp = client.post('/generate', data={'date': '2024-01-01', 'confirm': '1'}, follow_redirects=True)
+    assert resp.status_code == 200
+
+    conn = sqlite3.connect(app.DB_PATH)
+    row = conn.execute("SELECT 1 FROM timetable_snapshot WHERE date='2024-01-01'").fetchone()
+    conn.close()
+    assert row is not None
+
+
 def test_delete_timetables_removes_snapshot(tmp_path):
     import app
     conn = setup_db(tmp_path)
