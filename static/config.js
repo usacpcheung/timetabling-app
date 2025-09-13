@@ -66,6 +66,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const groupData = JSON.parse(document.getElementById('group-data').textContent);
     const unavailData = JSON.parse(document.getElementById('unavail-data').textContent);
     const assignData = JSON.parse(document.getElementById('assign-data').textContent);
+    const subjectMap = JSON.parse(document.getElementById('subject-map').textContent);
     const totalSlots = parseInt(slotSelect.dataset.totalSlots, 10);
 
     const configForm = document.querySelector('form[method="post"]:not([action])');
@@ -149,7 +150,7 @@ document.addEventListener('DOMContentLoaded', function () {
         common.forEach(sub => {
             const opt = document.createElement('option');
             opt.value = sub;
-            opt.textContent = sub;
+            opt.textContent = subjectMap[sub] || sub;
             subjectSelect.appendChild(opt);
         });
 

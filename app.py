@@ -37,6 +37,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 DB_PATH = os.path.join(DATA_DIR, "timetable.db")
 
 CURRENT_PRESET_VERSION = 1
+MAX_PRESETS = 10  # maximum number of configuration presets to keep
 
 # Tables that represent configuration data. Presets only dump and restore
 # these tables so previously generated timetables, worksheets or logs remain
@@ -346,9 +347,9 @@ def init_db():
     def cleanup_presets(cur):
         cur.execute('SELECT id, data FROM config_presets ORDER BY created_at DESC')
         rows = cur.fetchall()
-        for r in rows[5:]:
+        for r in rows[MAX_PRESETS:]:
             cur.execute('DELETE FROM config_presets WHERE id=?', (r['id'],))
-        for r in rows[:5]:
+        for r in rows[:MAX_PRESETS]:
             try:
                 json.loads(r['data'])
             except Exception:
@@ -772,6 +773,17 @@ def get_missing_and_counts(c, date, refresh=False):
         if row:
             missing = {int(k): v for k, v in json.loads(row['missing']).items()}
             lesson_counts = {int(k): v for k, v in json.loads(row['lesson_counts']).items()}
+            needs_refresh = any(
+                isinstance(subs, list)
+                and any('subject_id' not in item for item in subs)
+                for subs in missing.values()
+            )
+            if needs_refresh:
+                missing, lesson_counts = calculate_missing_and_counts(c, date)
+                c.execute(
+                    'INSERT OR REPLACE INTO timetable_snapshot (date, missing, lesson_counts) VALUES (?, ?, ?)',
+                    (date, json.dumps(missing), json.dumps(lesson_counts)),
+                )
             return missing, lesson_counts
 
     missing, lesson_counts = calculate_missing_and_counts(c, date)
@@ -1358,15 +1370,32 @@ def config():
         na_subject = request.form.get('new_assign_subject')
         na_slot = request.form.get('new_assign_slot')
         # gather data for validation
+        c.execute('SELECT id, name FROM subjects')
+        subj_lookup = {r['name']: r['id'] for r in c.fetchall()}
+
+        def to_subj_id(val):
+            try:
+                return int(val)
+            except (TypeError, ValueError):
+                return subj_lookup.get(val)
+
+        def normalize_list(raw):
+            result = []
+            for item in json.loads(raw):
+                sid = to_subj_id(item)
+                if sid is not None:
+                    result.append(sid)
+            return result
+
         c.execute('SELECT id, subjects FROM teachers')
         trows = c.fetchall()
-        teacher_map = {t["id"]: json.loads(t["subjects"]) for t in trows}
+        teacher_map = {t["id"]: normalize_list(t["subjects"]) for t in trows}
         c.execute('SELECT id, subjects FROM students')
         srows = c.fetchall()
-        student_map = {s["id"]: json.loads(s["subjects"]) for s in srows}
+        student_map = {s["id"]: normalize_list(s["subjects"]) for s in srows}
         c.execute('SELECT id, subjects FROM groups')
         grows = c.fetchall()
-        group_subj = {g["id"]: json.loads(g["subjects"]) for g in grows}
+        group_subj = {g["id"]: normalize_list(g["subjects"]) for g in grows}
         c.execute('SELECT teacher_id, slot FROM teacher_unavailable')
         unav = c.fetchall()
         unav_set = {(u['teacher_id'], u['slot']) for u in unav}
@@ -1374,10 +1403,11 @@ def config():
         fixed = c.fetchall()
         fixed_set = {(f['teacher_id'], f['slot']) for f in fixed}
 
-        if na_teacher and na_subject and na_slot and (na_student or na_group):
+        subj_id = to_subj_id(na_subject)
+        if na_teacher and subj_id is not None and na_slot and (na_student or na_group):
             tid = int(na_teacher)
             slot = int(na_slot) - 1
-            if int(na_subject) not in teacher_map.get(tid, []):
+            if subj_id not in teacher_map.get(tid, []):
                 flash('Teacher does not teach the selected subject', 'error')
                 has_error = True
             elif (tid, slot) in unav_set:
@@ -1388,20 +1418,23 @@ def config():
                 has_error = True
             elif na_group and (group_weight > 0 or not na_student):
                 gid = int(na_group)
-                if int(na_subject) not in group_subj.get(gid, []):
+                if subj_id not in group_subj.get(gid, []):
                     flash('Group does not require the selected subject', 'error')
                     has_error = True
                 else:
                     c.execute('INSERT INTO fixed_assignments (teacher_id, student_id, group_id, subject_id, slot) VALUES (?, ?, ?, ?, ?)',
-                              (tid, None, gid, int(na_subject), slot))
+                              (tid, None, gid, subj_id, slot))
             else:
                 sid = int(na_student)
-                if int(na_subject) not in student_map.get(sid, []):
+                if subj_id not in student_map.get(sid, []):
                     flash('Student does not require the selected subject', 'error')
                     has_error = True
                 else:
                     c.execute('INSERT INTO fixed_assignments (teacher_id, student_id, group_id, subject_id, slot) VALUES (?, ?, ?, ?, ?)',
-                              (tid, sid, None, int(na_subject), slot))
+                              (tid, sid, None, subj_id, slot))
+        elif na_teacher and (na_subject or na_slot or na_student or na_group) and subj_id is None:
+            flash('Invalid subject selected', 'error')
+            has_error = True
 
         if has_error:
             conn.rollback()
@@ -1502,6 +1535,7 @@ def config():
                            slot_times=slot_times,
                            student_unavail_map=student_unavail_map,
                            student_loc_map=student_loc_map,
+                           subject_map=subj_map,
                            group_loc_map=group_loc_map,
                            presets=presets)
 
@@ -1528,10 +1562,10 @@ def save_preset():
         (name, json.dumps(preset['data']), preset['version'], datetime.utcnow().isoformat()),
     )
     conn.commit()
-    # enforce maximum of five presets
+    # enforce maximum of MAX_PRESETS presets
     c.execute('SELECT id FROM config_presets ORDER BY created_at DESC')
     rows = c.fetchall()
-    for r in rows[5:]:
+    for r in rows[MAX_PRESETS:]:
         c.execute('DELETE FROM config_presets WHERE id=?', (r['id'],))
     conn.commit()
     conn.close()
@@ -1717,10 +1751,13 @@ def generate_schedule(target_date=None):
             for subj in required:
                 perc = (counts.get(subj, 0) / total * 100) if total else 0
                 attendance_pct.setdefault(sid, {})[subj] = perc
-                if perc < min_map.get(subj, 0):
-                    subject_weights[(sid, subj)] = 1 + attendance_weight
+                min_val = min_map.get(subj, 0)
+                if perc < min_val and min_val > 0:
+                    deficit = (min_val - perc) / min_val
+                    weight = well_attend_weight + attendance_weight * deficit
                 else:
-                    subject_weights[(sid, subj)] = well_attend_weight
+                    weight = well_attend_weight
+                subject_weights[(sid, subj)] = weight
         for g in groups:
             gid = g['id']
             gsubs = json.loads(g['subjects'])
@@ -1731,8 +1768,10 @@ def generate_schedule(target_date=None):
                     med = statistics.median(sorted(percs))
                 else:
                     med = 0
-                if med < min_map.get(subj, 0):
-                    weight = 1 + attendance_weight
+                min_val = min_map.get(subj, 0)
+                if med < min_val and min_val > 0:
+                    deficit = (min_val - med) / min_val
+                    weight = well_attend_weight + attendance_weight * deficit
                 else:
                     weight = well_attend_weight
                 subject_weights[(offset + gid, subj)] = weight
@@ -2299,25 +2338,29 @@ def edit_timetable(date):
                 flash('Lesson updated.', 'info')
         elif action == 'worksheet':
             student_id = request.form.get('student_id')
-            subject = request.form.get('subject')
+            subject_id = request.form.get('subject_id')
             assign = request.form.get('assign')
-            if student_id and subject and assign is not None:
+            if (
+                student_id not in (None, "")
+                and subject_id not in (None, "")
+                and assign not in (None, "")
+            ):
                 sid = int(student_id)
-                subject_id = int(subject)
+                subj_id = int(subject_id)
                 if assign == '1':
                     c.execute(
                         'SELECT 1 FROM worksheets WHERE student_id=? AND subject_id=? AND date=?',
-                        (sid, subject_id, date),
+                        (sid, subj_id, date),
                     )
                     if c.fetchone() is None:
                         c.execute(
                             'INSERT INTO worksheets (student_id, subject_id, date) VALUES (?, ?, ?)',
-                            (sid, subject_id, date),
+                            (sid, subj_id, date),
                         )
                 else:
                     c.execute(
                         'DELETE FROM worksheets WHERE student_id=? AND subject_id=? AND date=?',
-                        (sid, subject_id, date),
+                        (sid, subj_id, date),
                     )
                 get_missing_and_counts(c, date, refresh=True)
                 conn.commit()
