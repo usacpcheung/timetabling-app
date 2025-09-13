@@ -1,3 +1,6 @@
 __pycache__/
 timetable.db
 .venv/
+
+data/backups/*.zip
+data/timetable_pre_restore*.db
