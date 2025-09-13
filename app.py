@@ -415,9 +415,8 @@ def init_db():
             c.execute('SELECT 1 FROM subjects WHERE id=?', (sid,))
             if c.fetchone():
                 return sid
-            name = str(value)
-        else:
-            name = value
+            return None
+        name = value
         sid = subj_map.get(name)
         if sid is None:
             c.execute('INSERT INTO subjects (name) VALUES (?)', (name,))
@@ -435,7 +434,11 @@ def init_db():
                     items = json.loads(row['subjects']) if row['subjects'] else []
                 except Exception:
                     items = []
-                ids = [ensure_subject(it) for it in items]
+                ids = []
+                for it in items:
+                    sid = ensure_subject(it)
+                    if sid is not None:
+                        ids.append(sid)
                 c.execute(
                     f'UPDATE {table} SET subjects=? WHERE id=?',
                     (json.dumps(ids), row['id'])
@@ -454,10 +457,11 @@ def init_db():
             )
             for r in c.fetchall():
                 sid = ensure_subject(r['subject'])
-                c.execute(
-                    f'UPDATE {tbl} SET subject_id=? WHERE rowid=?',
-                    (sid, r['rid'])
-                )
+                if sid is not None:
+                    c.execute(
+                        f'UPDATE {tbl} SET subject_id=? WHERE rowid=?',
+                        (sid, r['rid'])
+                    )
 
     # Remove legacy subject column from worksheets now that IDs are populated
     if table_exists('worksheets'):
