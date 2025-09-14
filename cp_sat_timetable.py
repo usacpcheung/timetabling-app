@@ -404,7 +404,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
     return model, vars_, loc_vars, assumptions
 
 
-def solve_and_print(model, vars_, loc_vars, assumptions=None):
+def solve_and_print(model, vars_, loc_vars, assumptions=None, time_limit=None, progress_callback=None):
     """Run the OR-Tools solver and collect the results.
 
     Args:
@@ -415,6 +415,9 @@ def solve_and_print(model, vars_, loc_vars, assumptions=None):
         assumptions: Optional dictionary of assumption indicators.  When the
             model is infeasible these help identify which group of constraints
             caused the problem.
+        time_limit: Optional maximum solving time in seconds.
+        progress_callback: Optional callable invoked with a progress message
+            each time the solver finds a better solution.
 
     Returns:
         ``status``: Solver status value from OR-Tools.
@@ -423,23 +426,39 @@ def solve_and_print(model, vars_, loc_vars, assumptions=None):
         locations.
         ``core``: If infeasible and assumptions were used, names of the
         constraint groups that could not be satisfied.
+        ``progress``: List of textual progress messages describing each
+        improved solution encountered during search.
     """
 
     # Instantiate the solver and let it process the model.
     solver = cp_model.CpSolver()
-    # Solve with assumptions if API supports it; otherwise rely on AddAssumption + Solve.
-    if assumptions and hasattr(solver, 'SolveWithAssumptions'):
-        # Use a fixed key order for stable core mapping
-        assumption_keys = [
-            'teacher_availability',
-            'teacher_limits',
-            'student_limits',
-            'repeat_restrictions',
-        ]
-        assumption_list = [assumptions[k] for k in assumption_keys if k in assumptions]
-        status = solver.SolveWithAssumptions(model, assumption_list)
-    else:
-        status = solver.Solve(model)
+    if time_limit is not None:
+        # ``max_time_in_seconds`` is the canonical wall time limit used by OR-Tools.
+        solver.parameters.max_time_in_seconds = time_limit
+
+    progress = []
+
+    class _ProgressCollector(cp_model.CpSolverSolutionCallback):
+        def __init__(self, limit):
+            super().__init__()
+            self._count = 0
+            self._limit = limit
+
+        def OnSolutionCallback(self):
+            self._count += 1
+            msg = f"Solution {self._count}: score {self.ObjectiveValue():.1f} (higher is better)"
+            progress.append(msg)
+            if progress_callback:
+                progress_callback(msg)
+            # ``WallTime`` is measured in seconds and allows us to stop the
+            # search if the solver's internal limit fails for any reason.
+            if self._limit is not None and self.WallTime() >= self._limit:
+                self.StopSearch()
+
+    callback = _ProgressCollector(time_limit)
+
+    # Solve the model while tracking progress using the modern ``solve`` API.
+    status = solver.solve(model, callback)
 
     assignments = []
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
@@ -469,4 +488,4 @@ def solve_and_print(model, vars_, loc_vars, assumptions=None):
 
     # ``core`` gives a minimal set of unsatisfied assumption groups when no
     # feasible schedule exists.  ``assignments`` is empty in that case.
-    return status, assignments, core
+    return status, assignments, core, progress
