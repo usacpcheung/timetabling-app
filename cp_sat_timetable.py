@@ -433,14 +433,19 @@ def solve_and_print(model, vars_, loc_vars, assumptions=None, time_limit=None, p
     # Instantiate the solver and let it process the model.
     solver = cp_model.CpSolver()
     if time_limit is not None:
+        # ``max_time_in_seconds`` is the canonical wall time limit, but we also
+        # mirror it to ``max_deterministic_time`` to ensure the solver respects
+        # the limit even when deterministic time is used internally.
         solver.parameters.max_time_in_seconds = time_limit
+        solver.parameters.max_deterministic_time = time_limit
 
     progress = []
 
     class _ProgressCollector(cp_model.CpSolverSolutionCallback):
-        def __init__(self):
+        def __init__(self, limit):
             super().__init__()
             self._count = 0
+            self._limit = limit
 
         def OnSolutionCallback(self):
             self._count += 1
@@ -448,8 +453,12 @@ def solve_and_print(model, vars_, loc_vars, assumptions=None, time_limit=None, p
             progress.append(msg)
             if progress_callback:
                 progress_callback(msg)
+            # ``WallTime`` is measured in seconds and allows us to stop the
+            # search if the solver's internal limit fails for any reason.
+            if self._limit is not None and self.WallTime() >= self._limit:
+                self.StopSearch()
 
-    callback = _ProgressCollector()
+    callback = _ProgressCollector(time_limit)
 
     # Solve the model while tracking progress.
     status = solver.solve(model, callback)
