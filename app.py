@@ -368,6 +368,25 @@ def init_db():
 
     cleanup_presets(c)
 
+    # Backfill any missing fields in existing presets. Older presets may not
+    # include recently introduced configuration options such as
+    # ``solver_time_limit`` which is added via ``migrate_preset``.  Update each
+    # stored preset so it contains the latest fields without requiring the user
+    # to manually load and re-save it.
+    c.execute('SELECT id, data, version FROM config_presets')
+    for row in c.fetchall():
+        try:
+            preset = {'version': row['version'], 'data': json.loads(row['data'])}
+        except Exception:
+            continue
+        migrated = migrate_preset(preset)
+        if migrated != preset or row['version'] < CURRENT_PRESET_VERSION:
+            c.execute(
+                'UPDATE config_presets SET data=?, version=? WHERE id=?',
+                (json.dumps(migrated['data']), CURRENT_PRESET_VERSION, row['id']),
+            )
+
+
     # --- migrate subjects from names to ids and populate subject_id columns ---
     # Earlier versions stored subject names directly which caused issues when
     # migrating to integer IDs.  Some runs also introduced duplicate subject
