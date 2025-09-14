@@ -446,7 +446,7 @@ def solve_and_print(model, vars_, loc_vars, assumptions=None, time_limit=None, p
 
         def OnSolutionCallback(self):
             self._count += 1
-            msg = f"Solution {self._count} with objective {self.ObjectiveValue()}"
+            msg = f"Solution {self._count}: score {self.ObjectiveValue():.1f} (higher is better)"
             progress.append(msg)
             if progress_callback:
                 progress_callback(msg)

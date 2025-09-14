@@ -43,7 +43,7 @@ This module isolates the OR-Tools logic from the web code. ``build_model`` const
 
 The function can also attach assumption indicators to major constraint groups. When enabled, these indicators help explain which group caused the model to be infeasible.
 
-``solve_and_print`` runs the solver, emitting progress messages for each improved solution. It returns the chosen assignments, any conflicting assumption groups, and the list of progress messages.
+``solve_and_print`` runs the solver, emitting progress messages for each feasible solution (higher scores indicate better timetables). It returns the chosen assignments, any conflicting assumption groups, and the list of progress messages.
 
 Static files and templates
 --------------------------
