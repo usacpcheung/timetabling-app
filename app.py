@@ -1690,6 +1690,7 @@ def generate_schedule(target_date=None):
     max_lessons = cfg['max_lessons']
     teacher_min = cfg['teacher_min_lessons']
     teacher_max = cfg['teacher_max_lessons']
+    solver_time_limit = cfg['solver_time_limit']
 
     c.execute('SELECT * FROM teachers')
     teachers = c.fetchall()
@@ -1869,7 +1870,9 @@ def generate_schedule(target_date=None):
         student_multi_teacher=student_multi,
         locations=locations,
         location_restrict=loc_restrict)
-    status, assignments, core, _ = solve_and_print(model, vars_, loc_vars, assumptions)
+    status, assignments, core, _ = solve_and_print(
+        model, vars_, loc_vars, assumptions, time_limit=solver_time_limit
+    )
 
     # Insert solver results into DB
     if assignments:

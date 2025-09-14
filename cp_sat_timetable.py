@@ -461,7 +461,7 @@ def solve_and_print(model, vars_, loc_vars, assumptions=None, time_limit=None, p
     callback = _ProgressCollector(time_limit)
 
     # Solve the model while tracking progress.
-    status = solver.solve(model, callback)
+    status = solver.SolveWithSolutionCallback(model, callback)
 
     assignments = []
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
