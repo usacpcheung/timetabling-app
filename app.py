@@ -36,7 +36,7 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 DB_PATH = os.path.join(DATA_DIR, "timetable.db")
 
-CURRENT_PRESET_VERSION = 1
+CURRENT_PRESET_VERSION = 2
 MAX_PRESETS = 10  # maximum number of configuration presets to keep
 
 # Tables that represent configuration data. Presets only dump and restore
