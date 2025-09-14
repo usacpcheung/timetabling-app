@@ -36,7 +36,7 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 DB_PATH = os.path.join(DATA_DIR, "timetable.db")
 
-CURRENT_PRESET_VERSION = 1
+CURRENT_PRESET_VERSION = 2
 MAX_PRESETS = 10  # maximum number of configuration presets to keep
 
 # Tables that represent configuration data. Presets only dump and restore
@@ -626,7 +626,7 @@ def migrate_preset(preset):
     return preset
 
 
-def restore_configuration(preset, overwrite=False):
+def restore_configuration(preset, overwrite=False, preset_id=None):
     """Restore configuration tables from a preset dump.
 
     Existing timetables and worksheet counts remain unchanged. When ``overwrite``
@@ -639,6 +639,12 @@ def restore_configuration(preset, overwrite=False):
     preset = migrate_preset(preset)
     conn = get_db()
     c = conn.cursor()
+    if preset_id is not None:
+        c.execute(
+            'UPDATE config_presets SET data=?, version=? WHERE id=?',
+            (json.dumps(preset['data']), CURRENT_PRESET_VERSION, preset_id),
+        )
+        conn.commit()
     current = dump_configuration()['data']
     if not overwrite and current != preset['data']:
         conn.close()
@@ -1651,7 +1657,7 @@ def load_preset():
         flash('Preset not found.', 'error')
         return redirect(url_for('config'))
     preset = {'version': row['version'], 'data': json.loads(row['data'])}
-    ok = restore_configuration(preset, overwrite=overwrite)
+    ok = restore_configuration(preset, overwrite=overwrite, preset_id=preset_id)
     if not ok:
         flash('Preset differs from current data. Confirm overwrite to load.', 'warning')
     else:

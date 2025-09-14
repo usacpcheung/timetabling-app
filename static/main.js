@@ -63,6 +63,38 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    const backupForm = document.getElementById('backup-form');
+    if (backupForm) {
+        backupForm.addEventListener('submit', async function (e) {
+            e.preventDefault();
+            try {
+                const resp = await fetch(backupForm.action, {
+                    method: 'POST',
+                    credentials: 'same-origin'
+                });
+                const blob = await resp.blob();
+                let filename = 'backup.zip';
+                const disposition = resp.headers.get('Content-Disposition');
+                if (disposition && disposition.includes('filename=')) {
+                    filename = disposition.split('filename=')[1].split(';')[0].trim().replace(/"/g, '');
+                }
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(function () {
+                    window.URL.revokeObjectURL(url);
+                    a.remove();
+                    window.location.reload();
+                }, 100);
+            } catch (err) {
+                window.location.reload();
+            }
+        });
+    }
+
     const lessonDeleteForms = document.querySelectorAll('.delete-lesson-form');
     lessonDeleteForms.forEach(function (form) {
         form.addEventListener('submit', function (e) {
