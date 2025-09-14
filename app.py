@@ -49,6 +49,7 @@ CONFIG_TABLES = [
     'students',
     'students_archive',
     'subjects',
+    'subjects_archive',
     'teacher_unavailable',
     'student_unavailable',
     'fixed_assignments',
@@ -121,7 +122,8 @@ def init_db():
             allow_multi_teacher INTEGER,
             balance_teacher_load INTEGER,
             balance_weight INTEGER,
-            well_attend_weight REAL
+            well_attend_weight REAL,
+            solver_time_limit INTEGER DEFAULT 120
         )''')
     else:
         if not column_exists('config', 'slot_start_times'):
@@ -142,6 +144,8 @@ def init_db():
             c.execute('ALTER TABLE config ADD COLUMN balance_weight INTEGER DEFAULT 1')
         if not column_exists('config', 'well_attend_weight'):
             c.execute('ALTER TABLE config ADD COLUMN well_attend_weight REAL DEFAULT 1')
+        if not column_exists('config', 'solver_time_limit'):
+            c.execute('ALTER TABLE config ADD COLUMN solver_time_limit INTEGER DEFAULT 120')
 
     if not table_exists('teachers'):
         c.execute('''CREATE TABLE teachers (
@@ -205,6 +209,12 @@ def init_db():
     else:
         if not column_exists('subjects', 'min_percentage'):
             c.execute('ALTER TABLE subjects ADD COLUMN min_percentage INTEGER')
+
+    if not table_exists('subjects_archive'):
+        c.execute('''CREATE TABLE subjects_archive (
+            id INTEGER PRIMARY KEY,
+            name TEXT
+        )''')
 
     if not table_exists('teacher_unavailable'):
         c.execute('''CREATE TABLE teacher_unavailable (
@@ -408,9 +418,8 @@ def init_db():
             c.execute('SELECT 1 FROM subjects WHERE id=?', (sid,))
             if c.fetchone():
                 return sid
-            name = str(value)
-        else:
-            name = value
+            return None
+        name = value
         sid = subj_map.get(name)
         if sid is None:
             c.execute('INSERT INTO subjects (name) VALUES (?)', (name,))
@@ -428,7 +437,11 @@ def init_db():
                     items = json.loads(row['subjects']) if row['subjects'] else []
                 except Exception:
                     items = []
-                ids = [ensure_subject(it) for it in items]
+                ids = []
+                for it in items:
+                    sid = ensure_subject(it)
+                    if sid is not None:
+                        ids.append(sid)
                 c.execute(
                     f'UPDATE {table} SET subjects=? WHERE id=?',
                     (json.dumps(ids), row['id'])
@@ -447,10 +460,11 @@ def init_db():
             )
             for r in c.fetchall():
                 sid = ensure_subject(r['subject'])
-                c.execute(
-                    f'UPDATE {tbl} SET subject_id=? WHERE rowid=?',
-                    (sid, r['rid'])
-                )
+                if sid is not None:
+                    c.execute(
+                        f'UPDATE {tbl} SET subject_id=? WHERE rowid=?',
+                        (sid, r['rid'])
+                    )
 
     # Remove legacy subject column from worksheets now that IDs are populated
     if table_exists('worksheets'):
@@ -553,8 +567,8 @@ def init_db():
             prefer_consecutive, allow_consecutive, consecutive_weight,
             require_all_subjects, use_attendance_priority, attendance_weight, group_weight,
             allow_multi_teacher, balance_teacher_load, balance_weight,
-            well_attend_weight
-        ) VALUES (1, 8, 30, ?, 1, 4, 1, 8, 0, 2, 0, 1, 3, 1, 0, 10, 2.0, 1, 0, 1, 1)''',
+            well_attend_weight, solver_time_limit
+        ) VALUES (1, 8, 30, ?, 1, 4, 1, 8, 0, 2, 0, 1, 3, 1, 0, 10, 2.0, 1, 0, 1, 1, 120)''',
                   (json.dumps(times),))
         subjects = [
             ('Math', 0),
@@ -606,7 +620,9 @@ def dump_configuration():
 
 def migrate_preset(preset):
     """Upgrade preset data from older versions to CURRENT_PRESET_VERSION."""
-    # Currently only version 1 exists. Future migrations will modify ``preset``.
+    data = preset.get('data', {})
+    for row in data.get('config', []):
+        row.setdefault('solver_time_limit', 120)
     return preset
 
 
@@ -620,8 +636,7 @@ def restore_configuration(preset, overwrite=False):
     version = preset.get('version', 0)
     if version > CURRENT_PRESET_VERSION:
         raise ValueError('Preset version is newer than supported.')
-    if version < CURRENT_PRESET_VERSION:
-        preset = migrate_preset(preset)
+    preset = migrate_preset(preset)
     conn = get_db()
     c = conn.cursor()
     current = dump_configuration()['data']
@@ -652,6 +667,19 @@ def restore_configuration(preset, overwrite=False):
         c.execute(f'SELECT id, name FROM groups_archive WHERE id IN ({placeholders})', g_ids)
         for r in c.fetchall():
             group_names.setdefault(r['id'], r['name'])
+
+    c.execute('SELECT DISTINCT subject_id FROM timetable')
+    s_ids = [r['subject_id'] for r in c.fetchall() if r['subject_id'] is not None]
+    c.execute('SELECT DISTINCT subject_id FROM attendance_log')
+    s_ids.extend([r['subject_id'] for r in c.fetchall() if r['subject_id'] is not None and r['subject_id'] not in s_ids])
+    subject_names = {}
+    if s_ids:
+        placeholders = ','.join(['?'] * len(s_ids))
+        c.execute(f'SELECT id, name FROM subjects WHERE id IN ({placeholders})', s_ids)
+        subject_names = {r['id']: r['name'] for r in c.fetchall()}
+        c.execute(f'SELECT id, name FROM subjects_archive WHERE id IN ({placeholders})', s_ids)
+        for r in c.fetchall():
+            subject_names.setdefault(r['id'], r['name'])
 
     c.execute('SELECT DISTINCT student_id, student_name FROM attendance_log')
     log_students = {r['student_id']: r['student_name'] for r in c.fetchall()}
@@ -688,6 +716,16 @@ def restore_configuration(preset, overwrite=False):
                 name = group_names.get(gid)
                 if name:
                     c.execute('INSERT INTO groups_archive (id, name) VALUES (?, ?)', (gid, name))
+
+    # Reinsert archived subjects for timetable or attendance references that no longer resolve.
+    for sid in set(s_ids):
+        c.execute('SELECT 1 FROM subjects WHERE id=?', (sid,))
+        if c.fetchone() is None:
+            c.execute('SELECT 1 FROM subjects_archive WHERE id=?', (sid,))
+            if c.fetchone() is None:
+                name = subject_names.get(sid)
+                if name:
+                    c.execute('INSERT INTO subjects_archive (id, name) VALUES (?, ?)', (sid, name))
 
     # Ensure archived names exist for any students referenced in attendance logs.
     for sid, name in log_students.items():
@@ -928,6 +966,18 @@ def config():
         allow_multi_teacher = 1 if request.form.get('allow_multi_teacher') else 0
         balance_teacher_load = 1 if request.form.get('balance_teacher_load') else 0
         balance_weight = int(request.form['balance_weight'])
+        solver_time_limit_raw = request.form.get('solver_time_limit', '').strip()
+        if solver_time_limit_raw:
+            try:
+                solver_time_limit = int(solver_time_limit_raw)
+                if solver_time_limit <= 0:
+                    raise ValueError
+            except ValueError:
+                flash('Solver time limit must be a positive integer', 'error')
+                has_error = True
+                solver_time_limit = c.execute('SELECT solver_time_limit FROM config WHERE id=1').fetchone()[0]
+        else:
+            solver_time_limit = c.execute('SELECT solver_time_limit FROM config WHERE id=1').fetchone()[0]
 
         if require_all_subjects and use_attendance_priority:
             flash(
@@ -955,14 +1005,14 @@ def config():
                      allow_repeats=?, max_repeats=?,
                      prefer_consecutive=?, allow_consecutive=?, consecutive_weight=?,
                      require_all_subjects=?, use_attendance_priority=?, attendance_weight=?,
-                     group_weight=?, well_attend_weight=?, allow_multi_teacher=?, balance_teacher_load=?, balance_weight=?
+                     group_weight=?, well_attend_weight=?, allow_multi_teacher=?, balance_teacher_load=?, balance_weight=?, solver_time_limit=?
                      WHERE id=1""",
                   (slots_per_day, slot_duration, json.dumps(start_times), min_lessons,
                    max_lessons, t_min_lessons, t_max_lessons,
                    allow_repeats, max_repeats, prefer_consecutive,
                    allow_consecutive, consecutive_weight, require_all_subjects,
                    use_attendance_priority, attendance_weight, group_weight, well_attend_weight,
-                   allow_multi_teacher, balance_teacher_load, balance_weight))
+                   allow_multi_teacher, balance_teacher_load, balance_weight, solver_time_limit))
         # update subjects
         subj_ids = request.form.getlist('subject_id')
         deletes_sub = set(request.form.getlist('subject_delete'))
@@ -971,6 +1021,19 @@ def config():
             min_perc = request.form.get(f'subject_min_{sid}')
             min_val = int(min_perc) if min_perc else 0
             if sid in deletes_sub:
+                c.execute('SELECT name FROM subjects WHERE id=?', (int(sid),))
+                row = c.fetchone()
+                if row:
+                    sname = row['name']
+                    c.execute('SELECT id, name FROM subjects_archive WHERE name LIKE ?', (f"{sname}%",))
+                    existing = c.fetchall()
+                    for ex in existing:
+                        if ex['name'] == sname:
+                            c.execute('UPDATE subjects_archive SET name=? WHERE id=?',
+                                      (f"{sname} (id {ex['id']})", ex['id']))
+                    archive_name = f"{sname} (id {int(sid)})" if existing else sname
+                    c.execute('INSERT OR IGNORE INTO subjects_archive (id, name) VALUES (?, ?)',
+                              (int(sid), archive_name))
                 c.execute('DELETE FROM subjects WHERE id=?', (int(sid),))
             else:
                 c.execute('UPDATE subjects SET name=?, min_percentage=? WHERE id=?', (name, min_val, int(sid)))
@@ -1503,13 +1566,15 @@ def config():
     c.execute('''SELECT u.id, u.teacher_id, u.slot, t.name as teacher_name
                  FROM teacher_unavailable u JOIN teachers t ON u.teacher_id = t.id''')
     unavailable = c.fetchall()
-    c.execute('''SELECT a.id, a.teacher_id, a.student_id, a.group_id, sub.name AS subject, a.slot,
+    c.execute('''SELECT a.id, a.teacher_id, a.student_id, a.group_id,
+                        COALESCE(sub.name, suba.name) AS subject, a.slot,
                         t.name as teacher_name,
                         s.name as student_name,
                         COALESCE(g.name, ga.name) as group_name
                  FROM fixed_assignments a
                  JOIN teachers t ON a.teacher_id = t.id
                  LEFT JOIN subjects sub ON a.subject_id = sub.id
+                 LEFT JOIN subjects_archive suba ON a.subject_id = suba.id
                  LEFT JOIN students s ON a.student_id = s.id
                  LEFT JOIN groups g ON a.group_id = g.id
                  LEFT JOIN groups_archive ga ON a.group_id = ga.id''')
@@ -1625,6 +1690,7 @@ def generate_schedule(target_date=None):
     max_lessons = cfg['max_lessons']
     teacher_min = cfg['teacher_min_lessons']
     teacher_max = cfg['teacher_max_lessons']
+    solver_time_limit = cfg['solver_time_limit']
 
     c.execute('SELECT * FROM teachers')
     teachers = c.fetchall()
@@ -1691,10 +1757,11 @@ def generate_schedule(target_date=None):
     for r in gl_rows:
         group_loc_map.setdefault(r['group_id'], set()).add(r['location_id'])
 
-    # clear previous timetable, attendance logs, and worksheet assignments for the target date
+    # clear previous timetable, attendance logs, worksheet assignments, and snapshot for the target date
     c.execute('DELETE FROM timetable WHERE date=?', (target_date,))
     c.execute('DELETE FROM attendance_log WHERE date=?', (target_date,))
     c.execute('DELETE FROM worksheets WHERE date=?', (target_date,))
+    c.execute('DELETE FROM timetable_snapshot WHERE date=?', (target_date,))
 
     # Build and solve CP-SAT model
     allow_repeats = bool(cfg['allow_repeats'])
@@ -1803,7 +1870,30 @@ def generate_schedule(target_date=None):
         student_multi_teacher=student_multi,
         locations=locations,
         location_restrict=loc_restrict)
-    status, assignments, core = solve_and_print(model, vars_, loc_vars, assumptions)
+
+    progress_messages = []
+
+    def progress_cb(msg):
+        progress_messages.append(msg)
+        app.logger.info(msg)
+
+    status, assignments, core, progress = solve_and_print(
+        model,
+        vars_,
+        loc_vars,
+        assumptions,
+        time_limit=solver_time_limit,
+        progress_callback=progress_cb,
+    )
+
+    from ortools.sat.python import cp_model
+    if status == cp_model.OPTIMAL:
+        flash('Optimal timetable found.', 'success')
+    elif status == cp_model.FEASIBLE:
+        flash('Feasible timetable found before time limit.', 'info')
+
+    for msg in progress:
+        flash(msg, 'info')
 
     # Insert solver results into DB
     if assignments:
@@ -1842,7 +1932,6 @@ def generate_schedule(target_date=None):
             c.executemany('INSERT INTO attendance_log (student_id, student_name, subject_id, date) VALUES (?, ?, ?, ?)',
                           attendance_rows)
     else:
-        from ortools.sat.python import cp_model
         if status == cp_model.INFEASIBLE:
             # Map assumption literals from the unsat core to human readable
             # messages explaining why the model is infeasible.
@@ -1855,7 +1944,6 @@ def generate_schedule(target_date=None):
             flash('No feasible timetable could be generated.', 'error')
             for name in core:
                 flash(reason_map.get(name, name), 'error')
-    get_missing_and_counts(c, target_date, refresh=True)
     conn.commit()
     conn.close()
 
@@ -1922,11 +2010,13 @@ def get_timetable_data(target_date, view='teacher'):
     c.execute('''SELECT t.slot,
                         COALESCE(te.name, ta.name) as teacher,
                         COALESCE(s.name, sa.name) as student,
-                        COALESCE(g.name, ga.name) as group_name, sub.name AS subject, t.group_id,
+                        COALESCE(g.name, ga.name) as group_name,
+                        COALESCE(sub.name, suba.name) AS subject, t.group_id,
                         t.teacher_id, t.student_id, t.location_id,
                         l.name AS location_name
                  FROM timetable t
                  LEFT JOIN subjects sub ON t.subject_id = sub.id
+                 LEFT JOIN subjects_archive suba ON t.subject_id = suba.id
                  LEFT JOIN teachers te ON t.teacher_id = te.id
                  LEFT JOIN teachers_archive ta ON t.teacher_id = ta.id
                  LEFT JOIN students s ON t.student_id = s.id
@@ -2014,9 +2104,15 @@ def generate():
         conn.execute('DELETE FROM timetable WHERE date=?', (gen_date,))
         conn.execute('DELETE FROM attendance_log WHERE date=?', (gen_date,))
         conn.execute('DELETE FROM worksheets WHERE date=?', (gen_date,))
+        conn.execute('DELETE FROM timetable_snapshot WHERE date=?', (gen_date,))
         conn.commit()
         conn.close()
     generate_schedule(gen_date)
+    conn = get_db()
+    c = conn.cursor()
+    get_missing_and_counts(c, gen_date, refresh=True)
+    conn.commit()
+    conn.close()
     return redirect(url_for('index', date=gen_date))
 
 
@@ -2052,19 +2148,22 @@ def attendance():
     conn = get_db()
     c = conn.cursor()
     c.execute('''
-        SELECT al.student_id AS sid, s.name AS name, sub.name AS subject, al.date
+        SELECT al.student_id AS sid, s.name AS name,
+               COALESCE(sub.name, suba.name) AS subject, al.date
         FROM attendance_log al
-        JOIN subjects sub ON al.subject_id = sub.id
         JOIN students s ON al.student_id = s.id
+        LEFT JOIN subjects sub ON al.subject_id = sub.id
+        LEFT JOIN subjects_archive suba ON al.subject_id = suba.id
         WHERE s.active=1
     ''')
     active_rows = c.fetchall()
     c.execute('''
         SELECT al.student_id AS sid,
                COALESCE(sa.name, al.student_name) AS name,
-               sub.name AS subject, al.date
+               COALESCE(sub.name, suba.name) AS subject, al.date
         FROM attendance_log al
         LEFT JOIN subjects sub ON al.subject_id = sub.id
+        LEFT JOIN subjects_archive suba ON al.subject_id = suba.id
         LEFT JOIN students_archive sa ON al.student_id = sa.id
         LEFT JOIN students s ON al.student_id = s.id
         WHERE s.id IS NULL OR s.active=0
@@ -2406,11 +2505,13 @@ def edit_timetable(date):
 
     # Existing lessons with teacher id for grid placement
     c.execute(
-        '''SELECT t.id, t.slot, t.subject_id, sub.name AS subject, t.teacher_id, t.student_id, t.group_id,
+        '''SELECT t.id, t.slot, t.subject_id,
+                  COALESCE(sub.name, suba.name) AS subject, t.teacher_id, t.student_id, t.group_id,
                   t.location_id, COALESCE(s.name, sa.name) AS student_name,
                   COALESCE(g.name, ga.name) AS group_name, l.name AS location_name
            FROM timetable t
            LEFT JOIN subjects sub ON t.subject_id = sub.id
+           LEFT JOIN subjects_archive suba ON t.subject_id = suba.id
            LEFT JOIN students s ON t.student_id = s.id
            LEFT JOIN students_archive sa ON t.student_id = sa.id
            LEFT JOIN groups g ON t.group_id = g.id
@@ -2488,6 +2589,7 @@ def delete_timetables():
         c.execute('DELETE FROM timetable')
         c.execute('DELETE FROM attendance_log')
         c.execute('DELETE FROM worksheets')
+        c.execute('DELETE FROM timetable_snapshot')
         conn.commit()
         conn.close()
         flash('All timetables deleted.', 'info')
@@ -2499,6 +2601,7 @@ def delete_timetables():
             c.execute('DELETE FROM timetable WHERE date=?', (d,))
             c.execute('DELETE FROM attendance_log WHERE date=?', (d,))
             c.execute('DELETE FROM worksheets WHERE date=?', (d,))
+            c.execute('DELETE FROM timetable_snapshot WHERE date=?', (d,))
         conn.commit()
         conn.close()
         flash(f'Deleted timetables for {len(dates)} date(s).', 'info')

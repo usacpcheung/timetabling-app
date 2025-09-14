@@ -21,9 +21,10 @@ def test_no_locations_allows_schedule():
         add_assumptions=True,
         locations=None,  # no locations configured
     )
-    status, assignments, core = solve_and_print(model, vars_, loc_vars, assumptions)
+    status, assignments, core, progress = solve_and_print(model, vars_, loc_vars, assumptions)
     assert status in (cp_model.OPTIMAL, cp_model.FEASIBLE)
     assert len(assignments) > 0, "Expected some lessons to be scheduled without locations"
+    assert progress, "Expected at least one progress message"
 
 
 def test_multi_teacher_disallowed_allows_repeats_same_teacher():
@@ -43,13 +44,14 @@ def test_multi_teacher_disallowed_allows_repeats_same_teacher():
         student_limits={1: (2, 2)},
         locations=[],
     )
-    status, assignments, core = solve_and_print(model, vars_, loc_vars, assumptions)
+    status, assignments, core, progress = solve_and_print(model, vars_, loc_vars, assumptions)
     assert status in (cp_model.OPTIMAL, cp_model.FEASIBLE)
     # Both slots scheduled, but with the same teacher id
     assigned = [(sid, tid, subj, sl) for (sid, tid, subj, sl, loc) in assignments]
     assert len(assigned) == 2
     tids = {t for (_, t, _, _) in assigned}
     assert len(tids) == 1, f"Expected one teacher only; got {tids}"
+    assert progress, "Expected progress messages for feasible solve"
 
 
 def test_unsat_core_present_on_conflict():
@@ -69,11 +71,12 @@ def test_unsat_core_present_on_conflict():
         student_limits={1: (1, 1)},
         locations=[],
     )
-    status, assignments, core = solve_and_print(model, vars_, loc_vars, assumptions)
+    status, assignments, core, progress = solve_and_print(model, vars_, loc_vars, assumptions)
     assert status == cp_model.INFEASIBLE, "Expected infeasible due to teacher unavailability and student min"
     assert core, "Expected an unsat core to be reported"
     # Core likely includes teacher_availability and student_limits
     assert any(k in core for k in ("teacher_availability", "student_limits")), f"Unexpected core: {core}"
+    assert progress == [], "No progress messages expected when infeasible"
 
 
 def main():
