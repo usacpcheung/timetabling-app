@@ -433,11 +433,8 @@ def solve_and_print(model, vars_, loc_vars, assumptions=None, time_limit=None, p
     # Instantiate the solver and let it process the model.
     solver = cp_model.CpSolver()
     if time_limit is not None:
-        # ``max_time_in_seconds`` is the canonical wall time limit, but we also
-        # mirror it to ``max_deterministic_time`` to ensure the solver respects
-        # the limit even when deterministic time is used internally.
+        # ``max_time_in_seconds`` is the canonical wall time limit used by OR-Tools.
         solver.parameters.max_time_in_seconds = time_limit
-        solver.parameters.max_deterministic_time = time_limit
 
     progress = []
 
