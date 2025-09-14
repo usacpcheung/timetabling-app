@@ -626,7 +626,7 @@ def migrate_preset(preset):
     return preset
 
 
-def restore_configuration(preset, overwrite=False):
+def restore_configuration(preset, overwrite=False, preset_id=None):
     """Restore configuration tables from a preset dump.
 
     Existing timetables and worksheet counts remain unchanged. When ``overwrite``
@@ -639,6 +639,12 @@ def restore_configuration(preset, overwrite=False):
     preset = migrate_preset(preset)
     conn = get_db()
     c = conn.cursor()
+    if preset_id is not None:
+        c.execute(
+            'UPDATE config_presets SET data=?, version=? WHERE id=?',
+            (json.dumps(preset['data']), CURRENT_PRESET_VERSION, preset_id),
+        )
+        conn.commit()
     current = dump_configuration()['data']
     if not overwrite and current != preset['data']:
         conn.close()
@@ -1651,7 +1657,7 @@ def load_preset():
         flash('Preset not found.', 'error')
         return redirect(url_for('config'))
     preset = {'version': row['version'], 'data': json.loads(row['data'])}
-    ok = restore_configuration(preset, overwrite=overwrite)
+    ok = restore_configuration(preset, overwrite=overwrite, preset_id=preset_id)
     if not ok:
         flash('Preset differs from current data. Confirm overwrite to load.', 'warning')
     else:
