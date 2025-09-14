@@ -1690,6 +1690,7 @@ def generate_schedule(target_date=None):
     max_lessons = cfg['max_lessons']
     teacher_min = cfg['teacher_min_lessons']
     teacher_max = cfg['teacher_max_lessons']
+    solver_time_limit = cfg['solver_time_limit']
 
     c.execute('SELECT * FROM teachers')
     teachers = c.fetchall()
@@ -1869,7 +1870,30 @@ def generate_schedule(target_date=None):
         student_multi_teacher=student_multi,
         locations=locations,
         location_restrict=loc_restrict)
-    status, assignments, core = solve_and_print(model, vars_, loc_vars, assumptions)
+
+    progress_messages = []
+
+    def progress_cb(msg):
+        progress_messages.append(msg)
+        app.logger.info(msg)
+
+    status, assignments, core, progress = solve_and_print(
+        model,
+        vars_,
+        loc_vars,
+        assumptions,
+        time_limit=solver_time_limit,
+        progress_callback=progress_cb,
+    )
+
+    from ortools.sat.python import cp_model
+    if status == cp_model.OPTIMAL:
+        flash('Optimal timetable found.', 'success')
+    elif status == cp_model.FEASIBLE:
+        flash('Feasible timetable found before time limit.', 'info')
+
+    for msg in progress:
+        flash(msg, 'info')
 
     # Insert solver results into DB
     if assignments:
@@ -1908,7 +1932,6 @@ def generate_schedule(target_date=None):
             c.executemany('INSERT INTO attendance_log (student_id, student_name, subject_id, date) VALUES (?, ?, ?, ?)',
                           attendance_rows)
     else:
-        from ortools.sat.python import cp_model
         if status == cp_model.INFEASIBLE:
             # Map assumption literals from the unsat core to human readable
             # messages explaining why the model is infeasible.

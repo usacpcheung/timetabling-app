@@ -17,7 +17,8 @@ def test_fixed_assignment_handles_subject_id():
     model, vars_, loc_vars, _ = build_model(
         students, teachers, slots=1, min_lessons=0, max_lessons=1, fixed=fixed
     )
-    status, assignments, _ = solve_and_print(model, vars_, loc_vars)
+    status, assignments, _, progress = solve_and_print(model, vars_, loc_vars)
 
     # The fixed assignment should appear in the solver output
     assert (1, 1, 1, 0, None) in assignments
+    assert isinstance(progress, list)
