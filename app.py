@@ -1869,7 +1869,7 @@ def generate_schedule(target_date=None):
         student_multi_teacher=student_multi,
         locations=locations,
         location_restrict=loc_restrict)
-    status, assignments, core = solve_and_print(model, vars_, loc_vars, assumptions)
+    status, assignments, core, _ = solve_and_print(model, vars_, loc_vars, assumptions)
 
     # Insert solver results into DB
     if assignments:
