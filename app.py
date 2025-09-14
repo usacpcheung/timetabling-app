@@ -122,7 +122,8 @@ def init_db():
             allow_multi_teacher INTEGER,
             balance_teacher_load INTEGER,
             balance_weight INTEGER,
-            well_attend_weight REAL
+            well_attend_weight REAL,
+            solver_time_limit INTEGER DEFAULT 120
         )''')
     else:
         if not column_exists('config', 'slot_start_times'):
@@ -143,6 +144,8 @@ def init_db():
             c.execute('ALTER TABLE config ADD COLUMN balance_weight INTEGER DEFAULT 1')
         if not column_exists('config', 'well_attend_weight'):
             c.execute('ALTER TABLE config ADD COLUMN well_attend_weight REAL DEFAULT 1')
+        if not column_exists('config', 'solver_time_limit'):
+            c.execute('ALTER TABLE config ADD COLUMN solver_time_limit INTEGER DEFAULT 120')
 
     if not table_exists('teachers'):
         c.execute('''CREATE TABLE teachers (
@@ -564,8 +567,8 @@ def init_db():
             prefer_consecutive, allow_consecutive, consecutive_weight,
             require_all_subjects, use_attendance_priority, attendance_weight, group_weight,
             allow_multi_teacher, balance_teacher_load, balance_weight,
-            well_attend_weight
-        ) VALUES (1, 8, 30, ?, 1, 4, 1, 8, 0, 2, 0, 1, 3, 1, 0, 10, 2.0, 1, 0, 1, 1)''',
+            well_attend_weight, solver_time_limit
+        ) VALUES (1, 8, 30, ?, 1, 4, 1, 8, 0, 2, 0, 1, 3, 1, 0, 10, 2.0, 1, 0, 1, 1, 120)''',
                   (json.dumps(times),))
         subjects = [
             ('Math', 0),
@@ -617,7 +620,9 @@ def dump_configuration():
 
 def migrate_preset(preset):
     """Upgrade preset data from older versions to CURRENT_PRESET_VERSION."""
-    # Currently only version 1 exists. Future migrations will modify ``preset``.
+    data = preset.get('data', {})
+    for row in data.get('config', []):
+        row.setdefault('solver_time_limit', 120)
     return preset
 
 
@@ -631,8 +636,7 @@ def restore_configuration(preset, overwrite=False):
     version = preset.get('version', 0)
     if version > CURRENT_PRESET_VERSION:
         raise ValueError('Preset version is newer than supported.')
-    if version < CURRENT_PRESET_VERSION:
-        preset = migrate_preset(preset)
+    preset = migrate_preset(preset)
     conn = get_db()
     c = conn.cursor()
     current = dump_configuration()['data']
@@ -962,6 +966,18 @@ def config():
         allow_multi_teacher = 1 if request.form.get('allow_multi_teacher') else 0
         balance_teacher_load = 1 if request.form.get('balance_teacher_load') else 0
         balance_weight = int(request.form['balance_weight'])
+        solver_time_limit_raw = request.form.get('solver_time_limit', '').strip()
+        if solver_time_limit_raw:
+            try:
+                solver_time_limit = int(solver_time_limit_raw)
+                if solver_time_limit <= 0:
+                    raise ValueError
+            except ValueError:
+                flash('Solver time limit must be a positive integer', 'error')
+                has_error = True
+                solver_time_limit = c.execute('SELECT solver_time_limit FROM config WHERE id=1').fetchone()[0]
+        else:
+            solver_time_limit = c.execute('SELECT solver_time_limit FROM config WHERE id=1').fetchone()[0]
 
         if require_all_subjects and use_attendance_priority:
             flash(
@@ -989,14 +1005,14 @@ def config():
                      allow_repeats=?, max_repeats=?,
                      prefer_consecutive=?, allow_consecutive=?, consecutive_weight=?,
                      require_all_subjects=?, use_attendance_priority=?, attendance_weight=?,
-                     group_weight=?, well_attend_weight=?, allow_multi_teacher=?, balance_teacher_load=?, balance_weight=?
+                     group_weight=?, well_attend_weight=?, allow_multi_teacher=?, balance_teacher_load=?, balance_weight=?, solver_time_limit=?
                      WHERE id=1""",
                   (slots_per_day, slot_duration, json.dumps(start_times), min_lessons,
                    max_lessons, t_min_lessons, t_max_lessons,
                    allow_repeats, max_repeats, prefer_consecutive,
                    allow_consecutive, consecutive_weight, require_all_subjects,
                    use_attendance_priority, attendance_weight, group_weight, well_attend_weight,
-                   allow_multi_teacher, balance_teacher_load, balance_weight))
+                   allow_multi_teacher, balance_teacher_load, balance_weight, solver_time_limit))
         # update subjects
         subj_ids = request.form.getlist('subject_id')
         deletes_sub = set(request.form.getlist('subject_delete'))
@@ -1674,6 +1690,7 @@ def generate_schedule(target_date=None):
     max_lessons = cfg['max_lessons']
     teacher_min = cfg['teacher_min_lessons']
     teacher_max = cfg['teacher_max_lessons']
+    solver_time_limit = cfg['solver_time_limit']
 
     c.execute('SELECT * FROM teachers')
     teachers = c.fetchall()
@@ -1740,10 +1757,11 @@ def generate_schedule(target_date=None):
     for r in gl_rows:
         group_loc_map.setdefault(r['group_id'], set()).add(r['location_id'])
 
-    # clear previous timetable, attendance logs, and worksheet assignments for the target date
+    # clear previous timetable, attendance logs, worksheet assignments, and snapshot for the target date
     c.execute('DELETE FROM timetable WHERE date=?', (target_date,))
     c.execute('DELETE FROM attendance_log WHERE date=?', (target_date,))
     c.execute('DELETE FROM worksheets WHERE date=?', (target_date,))
+    c.execute('DELETE FROM timetable_snapshot WHERE date=?', (target_date,))
 
     # Build and solve CP-SAT model
     allow_repeats = bool(cfg['allow_repeats'])
@@ -1852,7 +1870,30 @@ def generate_schedule(target_date=None):
         student_multi_teacher=student_multi,
         locations=locations,
         location_restrict=loc_restrict)
-    status, assignments, core = solve_and_print(model, vars_, loc_vars, assumptions)
+
+    progress_messages = []
+
+    def progress_cb(msg):
+        progress_messages.append(msg)
+        app.logger.info(msg)
+
+    status, assignments, core, progress = solve_and_print(
+        model,
+        vars_,
+        loc_vars,
+        assumptions,
+        time_limit=solver_time_limit,
+        progress_callback=progress_cb,
+    )
+
+    from ortools.sat.python import cp_model
+    if status == cp_model.OPTIMAL:
+        flash('Optimal timetable found.', 'success')
+    elif status == cp_model.FEASIBLE:
+        flash('Feasible timetable found before time limit.', 'info')
+
+    for msg in progress:
+        flash(msg, 'info')
 
     # Insert solver results into DB
     if assignments:
@@ -1891,7 +1932,6 @@ def generate_schedule(target_date=None):
             c.executemany('INSERT INTO attendance_log (student_id, student_name, subject_id, date) VALUES (?, ?, ?, ?)',
                           attendance_rows)
     else:
-        from ortools.sat.python import cp_model
         if status == cp_model.INFEASIBLE:
             # Map assumption literals from the unsat core to human readable
             # messages explaining why the model is infeasible.
@@ -1904,7 +1944,6 @@ def generate_schedule(target_date=None):
             flash('No feasible timetable could be generated.', 'error')
             for name in core:
                 flash(reason_map.get(name, name), 'error')
-    get_missing_and_counts(c, target_date, refresh=True)
     conn.commit()
     conn.close()
 
@@ -2065,9 +2104,15 @@ def generate():
         conn.execute('DELETE FROM timetable WHERE date=?', (gen_date,))
         conn.execute('DELETE FROM attendance_log WHERE date=?', (gen_date,))
         conn.execute('DELETE FROM worksheets WHERE date=?', (gen_date,))
+        conn.execute('DELETE FROM timetable_snapshot WHERE date=?', (gen_date,))
         conn.commit()
         conn.close()
     generate_schedule(gen_date)
+    conn = get_db()
+    c = conn.cursor()
+    get_missing_and_counts(c, gen_date, refresh=True)
+    conn.commit()
+    conn.close()
     return redirect(url_for('index', date=gen_date))
 
 
@@ -2544,6 +2589,7 @@ def delete_timetables():
         c.execute('DELETE FROM timetable')
         c.execute('DELETE FROM attendance_log')
         c.execute('DELETE FROM worksheets')
+        c.execute('DELETE FROM timetable_snapshot')
         conn.commit()
         conn.close()
         flash('All timetables deleted.', 'info')
@@ -2555,6 +2601,7 @@ def delete_timetables():
             c.execute('DELETE FROM timetable WHERE date=?', (d,))
             c.execute('DELETE FROM attendance_log WHERE date=?', (d,))
             c.execute('DELETE FROM worksheets WHERE date=?', (d,))
+            c.execute('DELETE FROM timetable_snapshot WHERE date=?', (d,))
         conn.commit()
         conn.close()
         flash(f'Deleted timetables for {len(dates)} date(s).', 'info')
