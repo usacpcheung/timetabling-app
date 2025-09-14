@@ -217,6 +217,9 @@
             <label class="block">Balance weight:
                 <input type="number" name="balance_weight" value="{{ config['balance_weight'] }}" min="1" class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
+            <label class="block">Solver time limit (seconds):
+                <input type="number" name="solver_time_limit" value="{{ config['solver_time_limit']|default(120, true) }}" min="1" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+            </label>
         </fieldset>
     </div>
     <!-- Subjects -->
