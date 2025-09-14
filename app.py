@@ -351,6 +351,9 @@ def init_db():
             version INTEGER,
             created_at TEXT
         )''')
+    else:
+        if not column_exists('config_presets', 'version'):
+            c.execute('ALTER TABLE config_presets ADD COLUMN version INTEGER DEFAULT 0')
 
 
     # prune corrupt or excess presets
