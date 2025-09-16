@@ -91,6 +91,7 @@
                 <li><strong>Teacher min/max lessons</strong>: Global defaults used when a teacher’s own Min/Max is left blank.</li>
                 <li><strong>Allow repeated lessons</strong>: If off, each (student, teacher, subject) can occur at most once.</li>
                 <li><strong>Max repeats</strong>: Upper limit when repeats are allowed (applies per student–teacher–subject).</li>
+                <li><strong>Repeatable subjects</strong>: Advanced student setting that restricts which subjects may repeat. Leave blank to allow repeats for all of a student's subjects.</li>
                 <li><strong>Allow consecutive repeats</strong>: If off, repeated lessons for the same triple cannot be in adjacent slots.</li>
                 <li><strong>Prefer consecutive repeats</strong>: Adds a bonus to schedule back‑to‑back repeats (only takes effect when consecutive is allowed).</li>
                 <li><strong>Allow different teachers per subject</strong>: If off, a student can study a subject with at most one teacher; repeats with that same teacher are still allowed.</li>
@@ -367,7 +368,16 @@
                                 <input type="number" name="student_max_{{ s['id'] }}" value="{{ s['max_lessons'] if s['max_lessons'] is not none else config['max_lessons'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
                             </label>
                             <label class="flex items-center gap-2">Allow repeated lessons?
-                                <input type="checkbox" name="student_allow_repeats_{{ s['id'] }}" {% if (s['allow_repeats'] if s['allow_repeats'] is not none else config['allow_repeats']) %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
+                                <input type="checkbox" name="student_allow_repeats_{{ s['id'] }}" data-repeat-target="student_repeat_subjects_{{ s['id'] }}" {% if (s['allow_repeats'] if s['allow_repeats'] is not none else config['allow_repeats']) %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
+                            </label>
+                            <label class="block">Repeatable subjects:
+                                <select id="student_repeat_subjects_{{ s['id'] }}" multiple name="student_repeat_subjects_{{ s['id'] }}" {% if not (s['allow_repeats'] if s['allow_repeats'] is not none else config['allow_repeats']) %}disabled{% endif %} class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                                    {% for sub in subjects %}
+                                        {% if sub['id'] in student_map[s['id']] %}
+                                            <option value="{{ sub['id'] }}" {% if sub['id'] in s['repeat_subjects'] %}selected{% endif %}>{{ sub['name'] }}</option>
+                                        {% endif %}
+                                    {% endfor %}
+                                </select>
                             </label>
                             <label class="flex items-center gap-2">Allow different teachers per subject?
                                 <input type="checkbox" name="student_multi_teacher_{{ s['id'] }}" {% if (s['allow_multi_teacher'] if s['allow_multi_teacher'] is not none else config['allow_multi_teacher']) %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
@@ -436,7 +446,14 @@
                                 <input type="number" name="new_student_max" value="{{ config['max_lessons'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
                             </label>
                             <label class="flex items-center gap-2">Allow repeated lessons?
-                                <input type="checkbox" name="new_student_allow_repeats" {% if config['allow_repeats'] %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
+                                <input type="checkbox" name="new_student_allow_repeats" data-repeat-target="new_student_repeat_subjects" {% if config['allow_repeats'] %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
+                            </label>
+                            <label class="block">Repeatable subjects:
+                                <select id="new_student_repeat_subjects" multiple name="new_student_repeat_subjects" {% if not config['allow_repeats'] %}disabled{% endif %} class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                                    {% for sub in subjects %}
+                                        <option value="{{ sub['id'] }}">{{ sub['name'] }}</option>
+                                    {% endfor %}
+                                </select>
                             </label>
                             <label class="flex items-center gap-2">Allow different teachers per subject?
                                 <input type="checkbox" name="new_student_multi_teacher" {% if config['allow_multi_teacher'] %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
@@ -665,6 +682,26 @@
         }
         return false;
     }
+
+    function bindRepeatToggle(toggle) {
+        const targetId = toggle.dataset.repeatTarget;
+        if (!targetId) {
+            return;
+        }
+        const select = document.getElementById(targetId);
+        if (!select) {
+            return;
+        }
+        const updateDisabledState = () => {
+            select.disabled = !toggle.checked;
+        };
+        toggle.addEventListener('change', updateDisabledState);
+        updateDisabledState();
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('[data-repeat-target]').forEach(bindRepeatToggle);
+    });
     </script>
     <script src="{{ url_for('static', filename='config.js') }}"></script>
     <script src="{{ url_for('static', filename='ui.js') }}"></script>

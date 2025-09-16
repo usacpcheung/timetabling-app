@@ -174,7 +174,8 @@ def init_db():
             max_repeats INTEGER,
             allow_consecutive INTEGER,
             prefer_consecutive INTEGER,
-            allow_multi_teacher INTEGER
+            allow_multi_teacher INTEGER,
+            repeat_subjects TEXT
         )''')
     else:
         if not column_exists('students', 'active'):
@@ -193,6 +194,8 @@ def init_db():
             c.execute('ALTER TABLE students ADD COLUMN prefer_consecutive INTEGER')
         if not column_exists('students', 'allow_multi_teacher'):
             c.execute('ALTER TABLE students ADD COLUMN allow_multi_teacher INTEGER')
+        if not column_exists('students', 'repeat_subjects'):
+            c.execute('ALTER TABLE students ADD COLUMN repeat_subjects TEXT')
 
     if not table_exists('students_archive'):
         c.execute('''CREATE TABLE students_archive (
@@ -1173,17 +1176,19 @@ def config():
                 allow_con = 1 if request.form.get(f'student_allow_consecutive_{sid}') else 0
                 prefer_con = 1 if request.form.get(f'student_prefer_consecutive_{sid}') else 0
                 allow_multi = 1 if request.form.get(f'student_multi_teacher_{sid}') else 0
+                rep_subs = [int(x) for x in request.form.getlist(f'student_repeat_subjects_{sid}')]
                 subj_json = json.dumps(subs)
                 min_val = int(smin) if smin else None
                 max_val = int(smax) if smax else None
                 max_rep_val = int(max_rep) if max_rep else None
+                rep_sub_json = json.dumps(rep_subs) if rep_subs else None
                 c.execute('''UPDATE students SET name=?, subjects=?, active=?,
                              min_lessons=?, max_lessons=?, allow_repeats=?,
                              max_repeats=?, allow_consecutive=?, prefer_consecutive=?,
-                             allow_multi_teacher=? WHERE id=?''',
+                             allow_multi_teacher=?, repeat_subjects=? WHERE id=?''',
                           (name, subj_json, active, min_val, max_val,
                            allow_rep, max_rep_val, allow_con, prefer_con,
-                           allow_multi, int(sid)))
+                           allow_multi, rep_sub_json, int(sid)))
                 slots = request.form.getlist(f'student_unavail_{sid}')
                 c.execute('DELETE FROM student_unavailable WHERE student_id=?', (int(sid),))
                 for sl in slots:
@@ -1214,16 +1219,18 @@ def config():
         new_allow_con = 1 if request.form.get('new_student_allow_consecutive') else 0
         new_prefer_con = 1 if request.form.get('new_student_prefer_consecutive') else 0
         new_allow_multi = 1 if request.form.get('new_student_multi_teacher') else 0
+        new_rep_subs = [int(x) for x in request.form.getlist('new_student_repeat_subjects')]
         if new_sname and new_ssubs:
             subj_json = json.dumps(new_ssubs)
             min_val = int(new_smin) if new_smin else None
             max_val = int(new_smax) if new_smax else None
             max_rep_val = int(new_max_rep) if new_max_rep else None
+            rep_sub_json = json.dumps(new_rep_subs) if new_rep_subs else None
             c.execute('''INSERT INTO students (name, subjects, active, min_lessons, max_lessons,
-                      allow_repeats, max_repeats, allow_consecutive, prefer_consecutive, allow_multi_teacher)
-                      VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?)''',
+                      allow_repeats, max_repeats, allow_consecutive, prefer_consecutive, allow_multi_teacher, repeat_subjects)
+                      VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)''',
                       (new_sname, subj_json, min_val, max_val, new_allow_rep,
-                       max_rep_val, new_allow_con, new_prefer_con, new_allow_multi))
+                       max_rep_val, new_allow_con, new_prefer_con, new_allow_multi, rep_sub_json))
             new_sid = c.lastrowid
             for sl in new_unav:
                 c.execute('INSERT INTO student_unavailable (student_id, slot) VALUES (?, ?)',
@@ -1547,6 +1554,7 @@ def config():
     # Build mappings of subject IDs for form selections
     teacher_map = {t['id']: json.loads(t['subjects']) for t in teacher_rows}
     student_map = {s['id']: json.loads(s['subjects']) for s in student_rows}
+    student_repeat_map = {s['id']: json.loads(s['repeat_subjects']) if s['repeat_subjects'] else [] for s in student_rows}
     teachers = [dict(t) for t in teacher_rows]
     students = [dict(s) for s in student_rows]
     groups = [dict(g) for g in group_rows]
@@ -1555,6 +1563,7 @@ def config():
         t['subjects'] = json.dumps([subj_map.get(i, str(i)) for i in teacher_map.get(t['id'], [])])
     for s in students:
         s['subjects'] = json.dumps([subj_map.get(i, str(i)) for i in student_map.get(s['id'], [])])
+        s['repeat_subjects'] = student_repeat_map.get(s['id'], [])
     for g in groups:
         g['subjects'] = json.dumps([subj_map.get(i, str(i)) for i in group_subj_map.get(g['id'], [])])
     c.execute('SELECT * FROM locations')
@@ -1791,11 +1800,37 @@ def generate_schedule(target_date=None):
         student_limits[sid] = (
             s['min_lessons'] if s['min_lessons'] is not None else min_lessons,
             s['max_lessons'] if s['max_lessons'] is not None else max_lessons)
+        repeat_raw = s['repeat_subjects']
+        repeat_list = None
+        if repeat_raw:
+            try:
+                parsed = json.loads(repeat_raw)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                parsed = None
+            if isinstance(parsed, list):
+                cleaned = []
+                for value in parsed:
+                    try:
+                        cleaned.append(int(value))
+                    except (TypeError, ValueError):
+                        app.logger.warning(
+                            'Ignoring non-numeric repeat subject %r for student %s',
+                            value,
+                            sid,
+                        )
+                repeat_list = cleaned or None
+            elif parsed is not None:
+                app.logger.warning(
+                    'Unexpected repeat_subjects value for student %s: %r',
+                    sid,
+                    parsed,
+                )
         student_repeat[sid] = {
             'allow_repeats': bool(s['allow_repeats']) if s['allow_repeats'] is not None else allow_repeats,
             'max_repeats': s['max_repeats'] if s['max_repeats'] is not None else max_repeats,
             'allow_consecutive': bool(s['allow_consecutive']) if s['allow_consecutive'] is not None else allow_consecutive,
             'prefer_consecutive': bool(s['prefer_consecutive']) if s['prefer_consecutive'] is not None else prefer_consecutive,
+            'repeat_subjects': repeat_list,
         }
         student_multi[sid] = bool(s['allow_multi_teacher']) if s['allow_multi_teacher'] is not None else allow_multi_teacher
     # Build the CP-SAT model with assumption literals so that we can obtain

@@ -82,6 +82,9 @@ prioritize consecutive placement over other constraints. Another checkbox lets
 you allow or forbid a student taking the same subject from different teachers.
 When this is disabled the repeat option must also remain off, effectively
 limiting each student/subject pair to a single lesson per timetable.
+Individual students can further restrict repeated lessons to specific subjects
+via their advanced settings. Leaving this selection empty allows repeats for
+any of the student's subjects.
 
 Another option lets you disable the rule that every student must attend at
 least one lesson for each of their subjects. When unchecked the solver may skip

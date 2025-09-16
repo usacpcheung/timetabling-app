@@ -67,7 +67,8 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             the global student lesson limits.
         student_repeat: optional mapping ``student_id -> dict`` specifying
             repeat preferences (``allow_repeats``, ``max_repeats``,
-            ``allow_consecutive`` and ``prefer_consecutive``).
+            ``allow_consecutive``, ``prefer_consecutive`` and
+            ``repeat_subjects`` – a list of subjects eligible for repeats).
         student_unavailable: optional mapping ``student_id -> set(slots)`` of
             time slots where the student cannot attend lessons.
         student_multi_teacher: optional mapping ``student_id -> bool``
@@ -266,7 +267,10 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         max_rep = cfg.get('max_repeats', max_repeats)
         allow_consec_s = cfg.get('allow_consecutive', allow_consecutive)
         prefer_consec_s = cfg.get('prefer_consecutive', prefer_consecutive)
+        repeat_subs = cfg.get('repeat_subjects')
         repeat_limit = max_rep if allow_rep else 1
+        if repeat_subs is not None and subj not in repeat_subs:
+            repeat_limit = 1
         vars_list = list(slot_map.values())
         ct = model.Add(sum(vars_list) <= repeat_limit)
         if add_assumptions:
