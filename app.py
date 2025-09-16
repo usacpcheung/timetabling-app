@@ -1800,12 +1800,37 @@ def generate_schedule(target_date=None):
         student_limits[sid] = (
             s['min_lessons'] if s['min_lessons'] is not None else min_lessons,
             s['max_lessons'] if s['max_lessons'] is not None else max_lessons)
+        repeat_raw = s['repeat_subjects']
+        repeat_list = None
+        if repeat_raw:
+            try:
+                parsed = json.loads(repeat_raw)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                parsed = None
+            if isinstance(parsed, list):
+                cleaned = []
+                for value in parsed:
+                    try:
+                        cleaned.append(int(value))
+                    except (TypeError, ValueError):
+                        app.logger.warning(
+                            'Ignoring non-numeric repeat subject %r for student %s',
+                            value,
+                            sid,
+                        )
+                repeat_list = cleaned or None
+            elif parsed is not None:
+                app.logger.warning(
+                    'Unexpected repeat_subjects value for student %s: %r',
+                    sid,
+                    parsed,
+                )
         student_repeat[sid] = {
             'allow_repeats': bool(s['allow_repeats']) if s['allow_repeats'] is not None else allow_repeats,
             'max_repeats': s['max_repeats'] if s['max_repeats'] is not None else max_repeats,
             'allow_consecutive': bool(s['allow_consecutive']) if s['allow_consecutive'] is not None else allow_consecutive,
             'prefer_consecutive': bool(s['prefer_consecutive']) if s['prefer_consecutive'] is not None else prefer_consecutive,
-            'repeat_subjects': s['repeat_subjects'] if s['repeat_subjects'] else None,
+            'repeat_subjects': repeat_list,
         }
         student_multi[sid] = bool(s['allow_multi_teacher']) if s['allow_multi_teacher'] is not None else allow_multi_teacher
     # Build the CP-SAT model with assumption literals so that we can obtain
