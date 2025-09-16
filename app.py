@@ -2196,6 +2196,23 @@ def get_timetable_data(target_date, view='teacher'):
     c.execute('SELECT id, name FROM students_archive')
     for row in c.fetchall():
         student_names.setdefault(row['id'], row['name'])
+
+    missing, lesson_counts, group_data = get_missing_and_counts(c, target_date)
+
+    snapshot_members = {}
+    for gid, info in group_data.items():
+        member_ids = []
+        for member in info.get('members', []):
+            sid = member.get('id')
+            if sid is None:
+                continue
+            member_ids.append(sid)
+            name = member.get('name')
+            if name:
+                student_names.setdefault(sid, name)
+        if member_ids:
+            snapshot_members[gid] = member_ids
+
     grid = {slot: {col['id']: None for col in columns} for slot in range(slots)}
     for r in rows:
         if view in location_views:
@@ -2203,8 +2220,10 @@ def get_timetable_data(target_date, view='teacher'):
             if lid is None:
                 continue
             if r['group_id']:
-                members = group_students.get(r['group_id'], [])
-                names = ', '.join(student_names.get(m, 'Unknown') for m in members)
+                members = group_students.get(r['group_id'])
+                if not members:
+                    members = snapshot_members.get(r['group_id'], [])
+                names = ', '.join(student_names.get(m, f'Student {m}') for m in members)
                 if view == 'patient_only':
                     desc = f"{r['group_name']} [{names}]"
                 else:
@@ -2219,14 +2238,15 @@ def get_timetable_data(target_date, view='teacher'):
             tid = r['teacher_id']
             loc = f" @ {r['location_name']}" if r['location_name'] else ''
             if r['group_id']:
-                members = group_students.get(r['group_id'], [])
-                names = ', '.join(student_names.get(m, 'Unknown') for m in members)
+                members = group_students.get(r['group_id'])
+                if not members:
+                    members = snapshot_members.get(r['group_id'], [])
+                names = ', '.join(student_names.get(m, f'Student {m}') for m in members)
                 desc = f"{r['group_name']} [{names}] ({r['subject']}){loc}"
             else:
                 desc = f"{r['student']} ({r['subject']}){loc}"
             grid[r['slot']][tid] = desc
 
-    missing, lesson_counts, group_data = get_missing_and_counts(c, target_date)
     conn.commit()
     missing_view = {
         sid: [{'subject': item['subject'], 'count': item['count'], 'today': item['assigned']}
