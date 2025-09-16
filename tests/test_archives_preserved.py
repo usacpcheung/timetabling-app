@@ -64,8 +64,11 @@ def test_restore_archives_groups(tmp_path):
     cur = conn.cursor()
     cur.execute('DELETE FROM groups')
     cur.execute('DELETE FROM groups_archive')
+    cur.execute('DELETE FROM group_members')
+    cur.execute('DELETE FROM group_members_archive')
     cur.execute('DELETE FROM timetable')
     cur.execute("INSERT INTO groups (id, name, subjects) VALUES (1, 'G1', '[]')")
+    cur.execute('INSERT INTO group_members (group_id, student_id) VALUES (1, 1)')
     math_id = cur.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
     cur.execute(
         "INSERT INTO timetable (date, slot, student_id, teacher_id, subject_id, group_id, location_id) "
@@ -78,6 +81,7 @@ def test_restore_archives_groups(tmp_path):
     preset['data']['groups'] = []
     preset['data']['group_members'] = []
     preset['data']['groups_archive'] = []
+    preset['data']['group_members_archive'] = []
     conn.close()
 
     app.restore_configuration(preset, overwrite=True)
@@ -94,6 +98,10 @@ def test_restore_archives_groups(tmp_path):
            LEFT JOIN groups_archive ga ON t.group_id = ga.id'''
     ).fetchone()
     assert row['gname'] == 'G1'
+    archive_member = cur.execute(
+        'SELECT student_id FROM group_members_archive WHERE group_id=1'
+    ).fetchone()
+    assert archive_member is not None and archive_member['student_id'] == 1
     conn.close()
 
 
@@ -131,6 +139,40 @@ def test_restore_archives_subjects(tmp_path):
     ).fetchone()
     assert row['subject'] == 'Sub'
     conn.close()
+
+
+def test_timetable_uses_archived_group_members(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    cur = conn.cursor()
+    cur.execute('DELETE FROM timetable')
+    cur.execute('DELETE FROM groups')
+    cur.execute('DELETE FROM groups_archive')
+    cur.execute('DELETE FROM group_members')
+    cur.execute('DELETE FROM group_members_archive')
+    cur.execute("INSERT INTO groups (id, name, subjects) VALUES (1, 'G1', '[]')")
+    cur.execute('INSERT INTO group_members (group_id, student_id) VALUES (1, 1)')
+    math_id = cur.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
+    teacher_id = cur.execute("SELECT id FROM teachers WHERE name='Teacher A'").fetchone()[0]
+    cur.execute(
+        "INSERT INTO timetable (date, slot, student_id, teacher_id, subject_id, group_id, location_id) "
+        "VALUES ('2024-01-01', 0, NULL, ?, ?, 1, NULL)",
+        (teacher_id, math_id),
+    )
+    conn.commit()
+    cur.execute("INSERT OR IGNORE INTO groups_archive (id, name) VALUES (1, 'G1')")
+    cur.execute(
+        "INSERT OR IGNORE INTO group_members_archive (group_id, student_id) VALUES (1, 1)"
+    )
+    cur.execute('DELETE FROM group_members WHERE group_id=1')
+    cur.execute('DELETE FROM groups WHERE id=1')
+    conn.commit()
+    conn.close()
+
+    _, _, _, grid, _, _, _, _, _ = app.get_timetable_data('2024-01-01')
+    assert grid[0][teacher_id] is not None
+    assert 'Student 1' in grid[0][teacher_id]
 
 
 def test_restore_preserves_attendance(tmp_path):

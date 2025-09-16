@@ -55,6 +55,7 @@ CONFIG_TABLES = [
     'fixed_assignments',
     'groups',
     'group_members',
+    'group_members_archive',
     'groups_archive',
     'student_teacher_block',
     'locations',
@@ -331,6 +332,13 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             group_id INTEGER,
             student_id INTEGER
+        )''')
+
+    if not table_exists('group_members_archive'):
+        c.execute('''CREATE TABLE group_members_archive (
+            group_id INTEGER,
+            student_id INTEGER,
+            PRIMARY KEY (group_id, student_id)
         )''')
 
     if not table_exists('groups_archive'):
@@ -676,6 +684,18 @@ def restore_configuration(preset, overwrite=False, preset_id=None):
         c.execute(f'SELECT id, name FROM groups_archive WHERE id IN ({placeholders})', g_ids)
         for r in c.fetchall():
             group_names.setdefault(r['id'], r['name'])
+        group_member_cache = {}
+        c.execute(f'SELECT group_id, student_id FROM group_members WHERE group_id IN ({placeholders})', g_ids)
+        for row in c.fetchall():
+            group_member_cache.setdefault(row['group_id'], set()).add(row['student_id'])
+        c.execute(
+            f'SELECT group_id, student_id FROM group_members_archive WHERE group_id IN ({placeholders})',
+            g_ids,
+        )
+        for row in c.fetchall():
+            group_member_cache.setdefault(row['group_id'], set()).add(row['student_id'])
+    else:
+        group_member_cache = {}
 
     c.execute('SELECT DISTINCT subject_id FROM timetable')
     s_ids = [r['subject_id'] for r in c.fetchall() if r['subject_id'] is not None]
@@ -694,7 +714,9 @@ def restore_configuration(preset, overwrite=False, preset_id=None):
     log_students = {r['student_id']: r['student_name'] for r in c.fetchall()}
 
     for table in CONFIG_TABLES:
-        rows = preset['data'].get(table, [])
+        rows = preset['data'].get(table)
+        if rows is None:
+            continue
         c.execute(f'DELETE FROM {table}')
         if rows:
             cols = rows[0].keys()
@@ -704,6 +726,18 @@ def restore_configuration(preset, overwrite=False, preset_id=None):
                     f"INSERT INTO {table} ({','.join(cols)}) VALUES ({placeholders})",
                     [row[col] for col in cols],
                 )
+
+    for gid, members in group_member_cache.items():
+        if not members:
+            continue
+        c.execute('SELECT 1 FROM group_members WHERE group_id=?', (gid,))
+        if c.fetchone() is not None:
+            continue
+        c.execute('DELETE FROM group_members_archive WHERE group_id=?', (gid,))
+        c.executemany(
+            'INSERT OR IGNORE INTO group_members_archive (group_id, student_id) VALUES (?, ?)',
+            [(gid, sid) for sid in members],
+        )
 
     # Reinsert archived teachers for any timetable references that no longer
     # resolve to an active teacher.
@@ -747,12 +781,47 @@ def restore_configuration(preset, overwrite=False, preset_id=None):
     return True
 
 
+def load_group_members(cursor, include_archived=False):
+    """Return a mapping of group IDs to student IDs.
+
+    When ``include_archived`` is ``True`` the mapping also contains members
+    stored in ``group_members_archive`` for groups that no longer exist in the
+    active configuration.
+    """
+
+    members = {}
+    cursor.execute('SELECT group_id, student_id FROM group_members')
+    for row in cursor.fetchall():
+        members.setdefault(row['group_id'], []).append(row['student_id'])
+    if include_archived:
+        cursor.execute('SELECT group_id, student_id FROM group_members_archive')
+        for row in cursor.fetchall():
+            gid = row['group_id']
+            sid = row['student_id']
+            if gid in members:
+                continue
+            group_list = members.setdefault(gid, [])
+            if sid not in group_list:
+                group_list.append(sid)
+    return members
+
+
+def load_members_for_group(cursor, group_id):
+    """Return the list of student IDs for a specific group."""
+
+    rows = cursor.execute(
+        'SELECT student_id FROM group_members WHERE group_id=?', (group_id,)
+    ).fetchall()
+    if rows:
+        return [row['student_id'] for row in rows]
+    rows = cursor.execute(
+        'SELECT student_id FROM group_members_archive WHERE group_id=?', (group_id,)
+    ).fetchall()
+    return [row['student_id'] for row in rows]
+
+
 def calculate_missing_and_counts(c, date):
-    c.execute('SELECT group_id, student_id FROM group_members')
-    gm_rows = c.fetchall()
-    group_students = {}
-    for gm in gm_rows:
-        group_students.setdefault(gm['group_id'], []).append(gm['student_id'])
+    group_students = load_group_members(c, include_archived=True)
 
     c.execute('SELECT id, name, subjects, active FROM students')
     student_rows = c.fetchall()
@@ -1286,6 +1355,15 @@ def config():
                 if row:
                     c.execute('INSERT OR IGNORE INTO groups_archive (id, name) VALUES (?, ?)',
                               (int(gid), row['name']))
+                members = c.execute(
+                    'SELECT student_id FROM group_members WHERE group_id=?', (int(gid),)
+                ).fetchall()
+                if members:
+                    c.execute('DELETE FROM group_members_archive WHERE group_id=?', (int(gid),))
+                    c.executemany(
+                        'INSERT OR IGNORE INTO group_members_archive (group_id, student_id) VALUES (?, ?)',
+                        [(int(gid), m['student_id']) for m in members],
+                    )
                 c.execute('DELETE FROM groups WHERE id=?', (int(gid),))
                 c.execute('DELETE FROM group_members WHERE group_id=?', (int(gid),))
                 c.execute('DELETE FROM group_locations WHERE group_id=?', (int(gid),))
@@ -2067,11 +2145,7 @@ def get_timetable_data(target_date, view='teacher'):
                  LEFT JOIN locations l ON t.location_id = l.id
                  WHERE t.date=?''', (target_date,))
     rows = c.fetchall()
-    c.execute('SELECT group_id, student_id FROM group_members')
-    gm_rows = c.fetchall()
-    group_students = {}
-    for gm in gm_rows:
-        group_students.setdefault(gm['group_id'], []).append(gm['student_id'])
+    group_students = load_group_members(c, include_archived=True)
     c.execute('SELECT id, name, subjects, active FROM students')
     student_rows = c.fetchall()
     student_names = {s['id']: s['name'] for s in student_rows}
@@ -2310,12 +2384,8 @@ def edit_timetable(date):
                             c.execute('DELETE FROM attendance_log WHERE rowid=?', (r['rowid'],))
                     elif row['group_id'] is not None:
                         gid = row['group_id']
-                        members = c.execute(
-                            'SELECT student_id FROM group_members WHERE group_id=?',
-                            (gid,),
-                        ).fetchall()
-                        for m in members:
-                            sid = m['student_id']
+                        members = load_members_for_group(c, gid)
+                        for sid in members:
                             c.execute(
                                 'SELECT rowid FROM attendance_log WHERE student_id=? AND subject_id=? AND date=? LIMIT 1',
                                 (sid, subj, date),
@@ -2364,13 +2434,9 @@ def edit_timetable(date):
                         (student_id, name, subject_id, date),
                     )
                 elif group_id is not None:
-                    members = c.execute(
-                        'SELECT student_id FROM group_members WHERE group_id=?',
-                        (group_id,),
-                    ).fetchall()
+                    members = load_members_for_group(c, group_id)
                     rows = []
-                    for m in members:
-                        sid = m['student_id']
+                    for sid in members:
                         c.execute('SELECT name FROM students WHERE id=?', (sid,))
                         r = c.fetchone()
                         if r:
@@ -2412,12 +2478,8 @@ def edit_timetable(date):
                             c.execute('DELETE FROM attendance_log WHERE rowid=?', (r['rowid'],))
                     elif old['group_id'] is not None:
                         gid = old['group_id']
-                        members = c.execute(
-                            'SELECT student_id FROM group_members WHERE group_id=?',
-                            (gid,),
-                        ).fetchall()
-                        for m in members:
-                            sid = m['student_id']
+                        members = load_members_for_group(c, gid)
+                        for sid in members:
                             c.execute(
                                 'SELECT rowid FROM attendance_log WHERE student_id=? AND subject_id=? AND date=? LIMIT 1',
                                 (sid, old_subj, date),
@@ -2452,13 +2514,9 @@ def edit_timetable(date):
                         (new_student_id, name, new_subject_id, date),
                     )
                 elif new_group_id is not None:
-                    members = c.execute(
-                        'SELECT student_id FROM group_members WHERE group_id=?',
-                        (new_group_id,),
-                    ).fetchall()
+                    members = load_members_for_group(c, new_group_id)
                     rows = []
-                    for m in members:
-                        sid = m['student_id']
+                    for sid in members:
                         c.execute('SELECT name FROM students WHERE id=?', (sid,))
                         r = c.fetchone()
                         if r:
