@@ -275,8 +275,20 @@ def init_db():
         c.execute('''CREATE TABLE timetable_snapshot (
             date TEXT PRIMARY KEY,
             missing TEXT,
-            lesson_counts TEXT
+            lesson_counts TEXT,
+            group_data TEXT
         )''')
+    else:
+        if not column_exists('timetable_snapshot', 'group_data'):
+            c.execute('ALTER TABLE timetable_snapshot ADD COLUMN group_data TEXT')
+        rows = c.execute(
+            "SELECT date FROM timetable_snapshot WHERE group_data IS NULL OR TRIM(group_data) = ''"
+        ).fetchall()
+        for row in rows:
+            try:
+                get_missing_and_counts(c, row['date'], refresh=True)
+            except Exception:
+                logging.exception('Failed to refresh timetable snapshot for %s', row['date'])
 
     if not table_exists('locations'):
         c.execute('''CREATE TABLE locations (
@@ -752,10 +764,21 @@ def calculate_missing_and_counts(c, date):
     gm_rows = c.fetchall()
     group_students = {}
     for gm in gm_rows:
-        group_students.setdefault(gm['group_id'], []).append(gm['student_id'])
+        group_students.setdefault(gm['group_id'], set()).add(gm['student_id'])
 
     c.execute('SELECT id, name, subjects, active FROM students')
     student_rows = c.fetchall()
+
+    student_names = {s['id']: s['name'] for s in student_rows}
+    c.execute('SELECT id, name FROM students_archive')
+    for row in c.fetchall():
+        student_names.setdefault(row['id'], row['name'])
+
+    c.execute('SELECT id, name FROM groups')
+    group_names = {row['id']: row['name'] for row in c.fetchall()}
+    c.execute('SELECT id, name FROM groups_archive')
+    for row in c.fetchall():
+        group_names.setdefault(row['id'], row['name'])
 
     assigned = {s['id']: set() for s in student_rows}
     lesson_counts = {s['id']: 0 for s in student_rows}
@@ -765,12 +788,15 @@ def calculate_missing_and_counts(c, date):
 
     c.execute('SELECT student_id, group_id, subject_id FROM timetable WHERE date=?', (date,))
     lessons = c.fetchall()
+    used_groups = set()
     for les in lessons:
         subj = les['subject_id']
         if subj is None:
             continue
         if les['group_id']:
-            for sid in group_students.get(les['group_id'], []):
+            gid = les['group_id']
+            used_groups.add(gid)
+            for sid in group_students.get(gid, []):
                 assigned.setdefault(sid, set()).add(subj)
                 lesson_counts[sid] = lesson_counts.get(sid, 0) + 1
         elif les['student_id']:
@@ -808,37 +834,128 @@ def calculate_missing_and_counts(c, date):
                 })
             missing[s['id']] = subj_list
 
-    return missing, lesson_counts
+    group_data = {}
+    for gid in sorted(used_groups):
+        members = []
+        for sid in sorted(group_students.get(gid, [])):
+            member_name = student_names.get(sid) or f'Student {sid}'
+            members.append({'id': sid, 'name': member_name})
+        group_name = group_names.get(gid) or f'Group {gid}'
+        group_data[gid] = {'name': group_name, 'members': members}
+
+    return missing, lesson_counts, group_data
 
 
 def get_missing_and_counts(c, date, refresh=False):
+    def _parse_group_data(raw_value):
+        if not raw_value:
+            return {}, True
+        try:
+            data = json.loads(raw_value)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return {}, True
+        if not isinstance(data, dict):
+            return {}, True
+        cleaned = {}
+        needs_refresh = False
+        for key, info in data.items():
+            try:
+                gid = int(key)
+            except (TypeError, ValueError):
+                needs_refresh = True
+                continue
+            if not isinstance(info, dict):
+                needs_refresh = True
+                continue
+            members_raw = info.get('members')
+            if members_raw is None:
+                needs_refresh = True
+                members_raw = []
+            elif not isinstance(members_raw, list):
+                needs_refresh = True
+                if isinstance(members_raw, (tuple, set)):
+                    members_raw = list(members_raw)
+                else:
+                    members_raw = []
+            cleaned_members = []
+            for member in members_raw:
+                if isinstance(member, dict):
+                    if 'id' not in member:
+                        needs_refresh = True
+                        continue
+                    try:
+                        mid = int(member['id'])
+                    except (TypeError, ValueError):
+                        needs_refresh = True
+                        continue
+                    cleaned_members.append({'id': mid, 'name': member.get('name')})
+                else:
+                    try:
+                        mid = int(member)
+                    except (TypeError, ValueError):
+                        needs_refresh = True
+                        continue
+                    cleaned_members.append({'id': mid, 'name': None})
+                    needs_refresh = True
+            cleaned[gid] = {'name': info.get('name'), 'members': cleaned_members}
+        return cleaned, needs_refresh
+
     if not refresh:
         row = c.execute(
-            'SELECT missing, lesson_counts FROM timetable_snapshot WHERE date=?',
+            'SELECT missing, lesson_counts, group_data FROM timetable_snapshot WHERE date=?',
             (date,),
         ).fetchone()
         if row:
-            missing = {int(k): v for k, v in json.loads(row['missing']).items()}
-            lesson_counts = {int(k): v for k, v in json.loads(row['lesson_counts']).items()}
-            needs_refresh = any(
-                isinstance(subs, list)
-                and any('subject_id' not in item for item in subs)
-                for subs in missing.values()
-            )
-            if needs_refresh:
-                missing, lesson_counts = calculate_missing_and_counts(c, date)
-                c.execute(
-                    'INSERT OR REPLACE INTO timetable_snapshot (date, missing, lesson_counts) VALUES (?, ?, ?)',
-                    (date, json.dumps(missing), json.dumps(lesson_counts)),
+            needs_refresh_missing = False
+            needs_refresh_counts = False
+            try:
+                raw_missing = json.loads(row['missing']) if row['missing'] else {}
+            except (TypeError, ValueError, json.JSONDecodeError):
+                raw_missing = {}
+                needs_refresh_missing = True
+            missing = {}
+            if not needs_refresh_missing:
+                try:
+                    missing = {int(k): v for k, v in raw_missing.items()}
+                except (TypeError, ValueError):
+                    missing = {}
+                    needs_refresh_missing = True
+            if not needs_refresh_missing:
+                needs_refresh_missing = any(
+                    isinstance(subs, list)
+                    and any('subject_id' not in item for item in subs)
+                    for subs in missing.values()
                 )
-            return missing, lesson_counts
 
-    missing, lesson_counts = calculate_missing_and_counts(c, date)
+            try:
+                raw_counts = json.loads(row['lesson_counts']) if row['lesson_counts'] else {}
+            except (TypeError, ValueError, json.JSONDecodeError):
+                raw_counts = {}
+                needs_refresh_counts = True
+            lesson_counts = {}
+            if not needs_refresh_counts:
+                try:
+                    lesson_counts = {int(k): v for k, v in raw_counts.items()}
+                except (TypeError, ValueError):
+                    lesson_counts = {}
+                    needs_refresh_counts = True
+
+            group_data, needs_refresh_groups = _parse_group_data(row['group_data'] if 'group_data' in row.keys() else None)
+
+            if needs_refresh_missing or needs_refresh_counts or needs_refresh_groups:
+                missing, lesson_counts, group_data = calculate_missing_and_counts(c, date)
+                c.execute(
+                    'INSERT OR REPLACE INTO timetable_snapshot (date, missing, lesson_counts, group_data) VALUES (?, ?, ?, ?)',
+                    (date, json.dumps(missing), json.dumps(lesson_counts), json.dumps(group_data)),
+                )
+            return missing, lesson_counts, group_data
+
+    missing, lesson_counts, group_data = calculate_missing_and_counts(c, date)
     c.execute(
-        'INSERT OR REPLACE INTO timetable_snapshot (date, missing, lesson_counts) VALUES (?, ?, ?)',
-        (date, json.dumps(missing), json.dumps(lesson_counts)),
+        'INSERT OR REPLACE INTO timetable_snapshot (date, missing, lesson_counts, group_data) VALUES (?, ?, ?, ?)',
+        (date, json.dumps(missing), json.dumps(lesson_counts), json.dumps(group_data)),
     )
-    return missing, lesson_counts
+    return missing, lesson_counts, group_data
 
 
 @app.route('/check_timetable')
@@ -870,7 +987,7 @@ def index():
     if selected:
         data = get_timetable_data(selected, view=mode)
         (sel_date, slots, columns, grid, missing,
-         student_names, slot_labels, has_rows, lesson_counts) = data
+         student_names, slot_labels, has_rows, lesson_counts, group_data) = data
         if not has_rows:
             flash('No timetable available. Generate one from the home page.',
                   'error')
@@ -886,6 +1003,7 @@ def index():
             'has_rows': has_rows,
             'json': json,
             'lesson_counts': lesson_counts,
+            'group_data': group_data,
         })
     return render_template('index.html', **context)
 
@@ -2108,7 +2226,7 @@ def get_timetable_data(target_date, view='teacher'):
                 desc = f"{r['student']} ({r['subject']}){loc}"
             grid[r['slot']][tid] = desc
 
-    missing, lesson_counts = get_missing_and_counts(c, target_date)
+    missing, lesson_counts, group_data = get_missing_and_counts(c, target_date)
     conn.commit()
     missing_view = {
         sid: [{'subject': item['subject'], 'count': item['count'], 'today': item['assigned']}
@@ -2116,11 +2234,23 @@ def get_timetable_data(target_date, view='teacher'):
         for sid, subs in missing.items()
     }
 
+    group_view = {}
+    for gid, info in group_data.items():
+        members = []
+        for member in info.get('members', []):
+            sid = member.get('id')
+            name = member.get('name')
+            if sid is not None and (name is None or name == ''):
+                name = student_names.get(sid, f'Student {sid}')
+            members.append({'id': sid, 'name': name})
+        group_name = info.get('name') or f'Group {gid}'
+        group_view[gid] = {'name': group_name, 'members': members}
+
     conn.close()
 
     has_rows = bool(rows)
     return (target_date, range(slots), columns, grid, missing_view,
-            student_names, slot_labels, has_rows, lesson_counts)
+            student_names, slot_labels, has_rows, lesson_counts, group_view)
 
 
 @app.route('/generate', methods=['POST'])
@@ -2168,7 +2298,7 @@ def timetable():
     target_date = request.args.get('date')
     mode = request.args.get('mode', 'teacher')
     (t_date, slots, columns, grid,
-     missing, student_names, slot_labels, has_rows, lesson_counts) = get_timetable_data(target_date, view=mode)
+     missing, student_names, slot_labels, has_rows, lesson_counts, group_data) = get_timetable_data(target_date, view=mode)
     if not has_rows:
         flash('No timetable available. Generate one from the home page.', 'error')
     return render_template('timetable.html', slots=slots, columns=columns,
@@ -2176,6 +2306,7 @@ def timetable():
                            missing=missing, student_names=student_names,
                            slot_labels=slot_labels,
                            lesson_counts=lesson_counts,
+                           group_data=group_data,
                            view_mode=mode)
 
 
@@ -2595,7 +2726,7 @@ def edit_timetable(date):
     for row in c.fetchall():
         student_names.setdefault(row['id'], row['name'])
 
-    missing, lesson_counts = get_missing_and_counts(c, date)
+    missing, lesson_counts, group_data = get_missing_and_counts(c, date)
     conn.commit()
     conn.close()
     return render_template(
@@ -2612,6 +2743,7 @@ def edit_timetable(date):
         student_names=student_names,
         slots=slots,
         lesson_counts=lesson_counts,
+        group_data=group_data,
         json=json,
     )
 

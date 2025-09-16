@@ -24,7 +24,7 @@ def test_inactive_student_listed_in_missing(tmp_path):
     conn.commit()
     conn.close()
 
-    _, _, _, _, missing, _, _, _, _ = app.get_timetable_data('2024-01-01')
+    _, _, _, _, missing, _, _, _, _, _ = app.get_timetable_data('2024-01-01')
     assert sid in missing
     subjects = {item['subject'] for item in missing[sid]}
     assert subjects == {'Math', 'English'}
@@ -53,7 +53,7 @@ def test_worksheet_counts_separate_by_id(tmp_path):
     conn.commit()
     conn.close()
 
-    _, _, _, _, missing, _, _, _, _ = app.get_timetable_data('2024-01-03')
+    _, _, _, _, missing, _, _, _, _, _ = app.get_timetable_data('2024-01-03')
     assert sid_new in missing
     math = next(item for item in missing[sid_new] if item['subject'] == 'Math')
     assert math['count'] == 0
@@ -100,7 +100,7 @@ def test_prior_lessons_included_in_counts(tmp_path):
     conn.close()
 
     # Now counts reflect worksheets only; a prior lesson does not increment worksheet count
-    _, _, _, _, missing, _, _, _, _ = app.get_timetable_data('2024-01-02')
+    _, _, _, _, missing, _, _, _, _, _ = app.get_timetable_data('2024-01-02')
     math = next(item for item in missing[sid] if item['subject'] == 'Math')
     assert math['count'] == 0
 
@@ -127,7 +127,7 @@ def test_deleted_student_preserved_in_missing(tmp_path):
     conn.commit()
     conn.close()
 
-    _, _, _, _, missing, _, _, _, _ = app.get_timetable_data('2024-01-01')
+    _, _, _, _, missing, _, _, _, _, _ = app.get_timetable_data('2024-01-01')
     assert sid in missing
     subjects = {item['subject'] for item in missing[sid]}
     assert subjects == {'English'}
@@ -159,7 +159,7 @@ def test_refresh_removes_deleted_student(tmp_path):
     resp = client.post('/edit_timetable/2024-01-01', data={'action': 'refresh'})
     assert resp.status_code == 302
 
-    _, _, _, _, missing, _, _, _, _ = app.get_timetable_data('2024-01-01')
+    _, _, _, _, missing, _, _, _, _, _ = app.get_timetable_data('2024-01-01')
     assert sid not in missing
 
 
@@ -186,11 +186,11 @@ def test_added_student_not_in_missing_until_refresh(tmp_path):
     app.init_db()
 
     # new student should not appear in existing missing list
-    _, _, _, _, missing, _, _, _, _ = app.get_timetable_data('2024-01-01')
+    _, _, _, _, missing, _, _, _, _, _ = app.get_timetable_data('2024-01-01')
     assert sid_new not in missing
 
     # after manual refresh the student is included
     client = app.app.test_client()
     client.post('/edit_timetable/2024-01-01', data={'action': 'refresh'})
-    _, _, _, _, missing2, _, _, _, _ = app.get_timetable_data('2024-01-01')
+    _, _, _, _, missing2, _, _, _, _, _ = app.get_timetable_data('2024-01-01')
     assert sid_new in missing2
