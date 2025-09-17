@@ -92,8 +92,8 @@ def test_refreshes_old_snapshot_without_subject_id(tmp_path):
     old_missing = {1: [{"subject": "Math", "count": 0, "assigned": False}]}
     lesson_counts = {1: 0}
     c.execute(
-        'INSERT INTO timetable_snapshot (date, missing, lesson_counts) VALUES (?, ?, ?)',
-        ('2024-01-01', json.dumps(old_missing), json.dumps(lesson_counts)),
+        'INSERT INTO timetable_snapshot (date, missing, lesson_counts, location_data) VALUES (?, ?, ?, ?)',
+        ('2024-01-01', json.dumps(old_missing), json.dumps(lesson_counts), json.dumps({})),
     )
     conn.commit()
     conn.close()
@@ -106,9 +106,10 @@ def test_refreshes_old_snapshot_without_subject_id(tmp_path):
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     row = c.execute(
-        'SELECT missing FROM timetable_snapshot WHERE date=?', ('2024-01-01',)
+        'SELECT missing, group_data FROM timetable_snapshot WHERE date=?', ('2024-01-01',)
     ).fetchone()
     data = json.loads(row['missing'])
+    assert row['group_data'] is not None
     assert 'subject_id' in data['1'][0]
     assert data['1'][0]['subject_id'] == math_id
     conn.close()

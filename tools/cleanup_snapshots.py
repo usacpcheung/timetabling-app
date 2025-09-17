@@ -33,25 +33,81 @@ def cleanup():
     )
     removed_orphaned = c.rowcount
 
-    rows = c.execute("SELECT date, missing FROM timetable_snapshot").fetchall()
+    rows = c.execute("SELECT date, missing, group_data, location_data FROM timetable_snapshot").fetchall()
     dates_to_delete = []
     for row in rows:
         missing = row["missing"]
-        if not missing:
-            continue
-        try:
-            data = json.loads(missing)
-        except json.JSONDecodeError:
-            dates_to_delete.append(row["date"])
-            continue
         outdated = False
-        for subjects in data.values():
-            for entry in subjects:
-                if not isinstance(entry, dict) or "subject_id" not in entry:
+        if missing:
+            try:
+                data = json.loads(missing)
+            except json.JSONDecodeError:
+                outdated = True
+            else:
+                for subjects in data.values():
+                    for entry in subjects:
+                        if not isinstance(entry, dict) or "subject_id" not in entry:
+                            outdated = True
+                            break
+                    if outdated:
+                        break
+        group_raw = row["group_data"]
+        if not outdated:
+            if not group_raw:
+                outdated = True
+            else:
+                try:
+                    group_info = json.loads(group_raw)
+                except json.JSONDecodeError:
                     outdated = True
-                    break
-            if outdated:
-                break
+                else:
+                    if not isinstance(group_info, dict):
+                        outdated = True
+                    else:
+                        for info in group_info.values():
+                            if not isinstance(info, dict):
+                                outdated = True
+                                break
+                            members = info.get("members")
+                            if not isinstance(members, list):
+                                outdated = True
+                                break
+                            for member in members:
+                                if not isinstance(member, dict) or "id" not in member:
+                                    outdated = True
+                                    break
+                            if outdated:
+                                break
+        loc_raw = row["location_data"]
+        if not outdated:
+            if not loc_raw:
+                outdated = True
+            else:
+                try:
+                    loc_info = json.loads(loc_raw)
+                except json.JSONDecodeError:
+                    outdated = True
+                else:
+                    if not isinstance(loc_info, dict):
+                        outdated = True
+                    else:
+                        for key, info in loc_info.items():
+                            try:
+                                int(key)
+                            except (TypeError, ValueError):
+                                outdated = True
+                                break
+                            if info is None:
+                                continue
+                            if not isinstance(info, dict):
+                                outdated = True
+                                break
+                            name = info.get("name")
+                            if name is not None and not isinstance(name, str):
+                                outdated = True
+                                break
+                        if outdated:
+                            pass
         if outdated:
             dates_to_delete.append(row["date"])
 
