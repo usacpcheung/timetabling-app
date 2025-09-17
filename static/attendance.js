@@ -6,42 +6,10 @@ const TABLE_OPTIONS = {
   perPageSelect: [5, 10, 15, 20]
 };
 
-function cloneOptions() {
-  return {
-    searchable: TABLE_OPTIONS.searchable,
-    perPage: TABLE_OPTIONS.perPage,
-    perPageSelect: Array.isArray(TABLE_OPTIONS.perPageSelect)
-      ? [...TABLE_OPTIONS.perPageSelect]
-      : TABLE_OPTIONS.perPageSelect
-  };
-}
+const TABLE_IDS = ["active-table", "deleted-table"];
 
-function extractHeadings(table) {
-  const head = table.tHead;
-  if (!head || !head.rows.length) {
-    return [];
-  }
-  return Array.from(head.rows[0].cells, cell => cell.innerHTML.trim());
-}
-
-function extractRows(table) {
-  if (!table.tBodies || !table.tBodies.length) {
-    return [];
-  }
-  const rows = [];
-  Array.from(table.tBodies).forEach(tbody => {
-    Array.from(tbody.rows).forEach(row => {
-      const cells = Array.from(row.cells, cell => cell.innerHTML.trim());
-      if (cells.length) {
-        rows.push(cells);
-      }
-    });
-  });
-  return rows;
-}
-
-function resolveConstructor() {
-  if (window.simpleDatatables && window.simpleDatatables.DataTable) {
+function resolveDataTable() {
+  if (window.simpleDatatables && typeof window.simpleDatatables.DataTable === "function") {
     return window.simpleDatatables.DataTable;
   }
   if (typeof window.DataTable === "function") {
@@ -50,36 +18,21 @@ function resolveConstructor() {
   return null;
 }
 
-function enhanceTable(table) {
-  if (!table || table.dataset.datatableInitialised === "true") {
-    return true;
-  }
-  const Ctor = resolveConstructor();
-  if (!Ctor) {
-    return false;
-  }
-  const options = cloneOptions();
-  const dataRows = extractRows(table);
-  if (dataRows.length) {
-    options.data = {
-      headings: extractHeadings(table),
-      data: dataRows
-    };
-  }
-  new Ctor(table, options);
-  table.dataset.datatableInitialised = "true";
-  return true;
-}
-
 function initialiseTables() {
-  const tables = [
-    document.getElementById("active-table"),
-    document.getElementById("deleted-table")
-  ];
-  const allReady = tables.every(enhanceTable);
-  if (!allReady) {
+  const Ctor = resolveDataTable();
+  if (!Ctor) {
     window.setTimeout(initialiseTables, 50);
+    return;
   }
+
+  TABLE_IDS.forEach(id => {
+    const table = document.getElementById(id);
+    if (!table || table.dataset.datatableInitialised === "true") {
+      return;
+    }
+    new Ctor(table, TABLE_OPTIONS);
+    table.dataset.datatableInitialised = "true";
+  });
 }
 
 if (document.readyState === "loading") {
