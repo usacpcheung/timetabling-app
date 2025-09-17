@@ -29,6 +29,10 @@ static/                         # Front-end scripts and styles
     main.js                     # Confirmation prompts and timetable checks
     ui.js                       # Initialises Flowbite UI components
     style.css                   # Basic styling shared by all pages
+    tailwind-input.css          # Source file compiled by Tailwind CLI
+    tailwind.css                # Generated Tailwind + Flowbite utilities
+    vendor/flowbite.min.js      # Flowbite components (local copy)
+    vendor/flowbite-datepicker.min.js  # Flowbite datepicker (local copy)
     flowbite-accordion-selectinput-fix.css  # Workaround for a Flowbite bug
 templates/                      # HTML templates rendered by Flask
     index.html
@@ -48,6 +52,14 @@ Install Flask and OR-Tools before running the application:
 
 ```bash
 pip install Flask ortools
+```
+
+Build the Tailwind CSS bundle (once after cloning, and whenever you change
+`static/tailwind-input.css` or the HTML templates):
+
+```bash
+npm install
+npm run build:css
 ```
 
 Then start the development server:

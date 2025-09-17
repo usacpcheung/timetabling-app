@@ -5,8 +5,7 @@
     <meta charset="UTF-8">
     <title>Timetabling App</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.3.0/flowbite.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}">
 </head>
 <body class="bg-emerald-50 min-h-screen">
     <div class="max-w-4xl mx-auto mt-10 p-6">
@@ -133,8 +132,8 @@
         {% endif %}
         <!-- Form posts to /generate; JavaScript warns if a timetable already exists -->
     </div>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.3.0/flowbite.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.3.0/datepicker.min.js"></script>
+    <script src="{{ url_for('static', filename='vendor/flowbite.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/flowbite-datepicker.min.js') }}"></script>
     <script src="{{ url_for('static', filename='ui.js') }}"></script>
     <script src="{{ url_for('static', filename='main.js') }}"></script>
 </body>

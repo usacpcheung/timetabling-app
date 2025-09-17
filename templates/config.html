@@ -5,10 +5,8 @@
     <meta charset="UTF-8">
     <title>Configuration</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@4.1.11/index.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flowbite@3.1.2/dist/flowbite.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='flowbite-accordion-selectinput-fix.css') }}">    
+    <link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='flowbite-accordion-selectinput-fix.css') }}">
     <style>
     /* Fix bottom rounding and border visibility for the last accordion item */
     #heading-assign > button[aria-expanded="true"] {
@@ -707,6 +705,6 @@
     <script src="{{ url_for('static', filename='ui.js') }}"></script>
     <script src="{{ url_for('static', filename='main.js') }}"></script>
     </div>
-    <script src="https://cdn.jsdelivr.net/npm/flowbite@3.1.2/dist/flowbite.min.js"></script>
+    <script src="{{ url_for('static', filename='vendor/flowbite.min.js') }}"></script>
 </body>
 </html>

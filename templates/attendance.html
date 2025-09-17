@@ -5,8 +5,7 @@
     <meta charset="UTF-8">
     <title>Attendance Report</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@4.1.11/index.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flowbite@3.1.2/dist/flowbite.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}">
     <style>
         body.attendance-page { background-color: #ecfdf5; }
         .attendance-page .title-color { color: #064e3b; }
@@ -162,7 +161,7 @@
         </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/simple-datatables@9.0.3" defer></script>
-    <script src="https://cdn.jsdelivr.net/npm/flowbite@3.1.2/dist/flowbite.min.js" defer></script>
+    <script src="{{ url_for('static', filename='vendor/flowbite.min.js') }}" defer></script>
     <script src="{{ url_for('static', filename='ui.js') }}"></script>
     <script src="{{ url_for('static', filename='main.js') }}"></script>
     <script src="{{ url_for('static', filename='attendance.js') }}" defer></script>
