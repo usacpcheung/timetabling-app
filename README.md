@@ -33,6 +33,8 @@ static/                         # Front-end scripts and styles
     tailwind.css                # Generated Tailwind + Flowbite utilities
     vendor/flowbite.min.js      # Flowbite components (local copy)
     vendor/flowbite-datepicker.min.js  # Flowbite datepicker (local copy)
+    vendor/simple-datatables.min.js    # Simple-DataTables (local copy)
+    vendor/simple-datatables.css       # Styling for attendance tables
     flowbite-accordion-selectinput-fix.css  # Workaround for a Flowbite bug
 templates/                      # HTML templates rendered by Flask
     index.html
