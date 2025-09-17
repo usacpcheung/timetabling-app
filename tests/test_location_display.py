@@ -108,3 +108,37 @@ def test_deleted_group_members_display_from_snapshot(tmp_path):
 
     members = group_view[gid]['members']
     assert {m['name'] for m in members} >= {'Student 1', 'Student 2'}
+
+
+def test_deleted_location_displayed_from_snapshot(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    c = conn.cursor()
+
+    math_id = c.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
+    teacher_id = c.execute("SELECT id FROM teachers WHERE name='Teacher A'").fetchone()[0]
+
+    c.execute("INSERT INTO locations (name) VALUES ('Room A')")
+    c.execute(
+        "INSERT INTO timetable (student_id, teacher_id, subject_id, slot, location_id, date) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (1, teacher_id, math_id, 0, 1, '2024-01-01'),
+    )
+
+    app.get_missing_and_counts(c, '2024-01-01', refresh=True)
+    conn.commit()
+
+    c.execute("INSERT INTO locations_archive (id, name) VALUES (?, ?)", (1, 'Room A'))
+    c.execute('DELETE FROM locations WHERE id=?', (1,))
+    conn.commit()
+    conn.close()
+
+    (_, _, _, teacher_grid, _, _, _, _, _, _) = app.get_timetable_data('2024-01-01')
+    teacher_entry = teacher_grid[0][teacher_id]
+    assert 'Room A' in teacher_entry
+
+    (_, _, locations, location_grid, _, _, _, _, _, _) = app.get_timetable_data('2024-01-01', view='location')
+    archived_col = next(col for col in locations if col['id'] == 1)
+    assert archived_col['name'] == 'Room A'
+    assert location_grid[0][1] == 'Student 1 (Math) with Teacher A'
