@@ -272,29 +272,6 @@ def init_db():
         if not column_exists('timetable', 'subject_id'):
             c.execute('ALTER TABLE timetable ADD COLUMN subject_id INTEGER')
 
-    if not table_exists('timetable_snapshot'):
-        c.execute('''CREATE TABLE timetable_snapshot (
-            date TEXT PRIMARY KEY,
-            missing TEXT,
-            lesson_counts TEXT,
-            group_data TEXT,
-            location_data TEXT
-        )''')
-    else:
-        if not column_exists('timetable_snapshot', 'group_data'):
-            c.execute('ALTER TABLE timetable_snapshot ADD COLUMN group_data TEXT')
-        if not column_exists('timetable_snapshot', 'location_data'):
-            c.execute('ALTER TABLE timetable_snapshot ADD COLUMN location_data TEXT')
-        rows = c.execute(
-            "SELECT date FROM timetable_snapshot WHERE group_data IS NULL OR TRIM(group_data) = '' "
-            "OR location_data IS NULL OR TRIM(location_data) = ''"
-        ).fetchall()
-        for row in rows:
-            try:
-                get_missing_and_counts(c, row['date'], refresh=True)
-            except Exception:
-                logging.exception('Failed to refresh timetable snapshot for %s', row['date'])
-
     if not table_exists('locations'):
         c.execute('''CREATE TABLE locations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -318,6 +295,29 @@ def init_db():
             group_id INTEGER,
             location_id INTEGER
         )''')
+
+    if not table_exists('timetable_snapshot'):
+        c.execute('''CREATE TABLE timetable_snapshot (
+            date TEXT PRIMARY KEY,
+            missing TEXT,
+            lesson_counts TEXT,
+            group_data TEXT,
+            location_data TEXT
+        )''')
+    else:
+        if not column_exists('timetable_snapshot', 'group_data'):
+            c.execute('ALTER TABLE timetable_snapshot ADD COLUMN group_data TEXT')
+        if not column_exists('timetable_snapshot', 'location_data'):
+            c.execute('ALTER TABLE timetable_snapshot ADD COLUMN location_data TEXT')
+        rows = c.execute(
+            "SELECT date FROM timetable_snapshot WHERE group_data IS NULL OR TRIM(group_data) = '' "
+            "OR location_data IS NULL OR TRIM(location_data) = ''"
+        ).fetchall()
+        for row in rows:
+            try:
+                get_missing_and_counts(c, row['date'], refresh=True)
+            except Exception:
+                logging.exception('Failed to refresh timetable snapshot for %s', row['date'])
 
     if not table_exists('attendance_log'):
         c.execute('''CREATE TABLE attendance_log (
