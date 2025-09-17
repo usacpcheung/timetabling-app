@@ -92,8 +92,8 @@ def test_refreshes_old_snapshot_without_subject_id(tmp_path):
     old_missing = {1: [{"subject": "Math", "count": 0, "assigned": False}]}
     lesson_counts = {1: 0}
     c.execute(
-        'INSERT INTO timetable_snapshot (date, missing, lesson_counts) VALUES (?, ?, ?)',
-        ('2024-01-01', json.dumps(old_missing), json.dumps(lesson_counts)),
+        'INSERT INTO timetable_snapshot (date, missing, lesson_counts, location_data) VALUES (?, ?, ?, ?)',
+        ('2024-01-01', json.dumps(old_missing), json.dumps(lesson_counts), json.dumps({})),
     )
     conn.commit()
     conn.close()
