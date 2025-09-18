@@ -31,8 +31,9 @@ input[type="time"]:focus,
 select:focus,
 textarea:focus,
 .emerald-focus:focus {
-    border-color: #10b981; /* emerald-500 */
-    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25);
+    border-color: #10b981 !important; /* emerald-500 */
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25) !important;
+    --tw-ring-color: rgba(16, 185, 129, 0.45) !important;
     outline: none;
 }
 
