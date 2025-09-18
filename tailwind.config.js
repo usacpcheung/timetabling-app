@@ -1,3 +1,5 @@
+const colors = require('tailwindcss/colors');
+
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: [
@@ -11,7 +13,8 @@ module.exports = {
       colors: {
         emerald: {
           25: '#f6fefb'
-        }
+        },
+        primary: colors.emerald
       }
     }
   },
