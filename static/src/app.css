@@ -11,4 +11,22 @@
   .worksheet-assigned {
     @apply bg-emerald-200 text-emerald-800 rounded px-1;
   }
+
+  .datatable-wrapper .datatable-search .datatable-input,
+  .datatable-wrapper .datatable-top .datatable-dropdown .datatable-selector,
+  .datatable-wrapper .datatable-container .datatable-input {
+    @apply !border-emerald-300 !bg-emerald-50 !text-emerald-900 !placeholder-emerald-400;
+  }
+
+  .datatable-wrapper .datatable-search .datatable-input:hover,
+  .datatable-wrapper .datatable-top .datatable-dropdown .datatable-selector:hover,
+  .datatable-wrapper .datatable-container .datatable-input:hover {
+    @apply !border-emerald-400 !ring-emerald-200 !ring-1;
+  }
+
+  .datatable-wrapper .datatable-search .datatable-input:focus,
+  .datatable-wrapper .datatable-top .datatable-dropdown .datatable-selector:focus,
+  .datatable-wrapper .datatable-container .datatable-input:focus {
+    @apply !border-emerald-500 !ring-emerald-300 !ring-2 !outline-none;
+  }
 }
