@@ -64,4 +64,31 @@
   .datepicker .in-edit:focus-visible {
     @apply !border-emerald-500 !ring-2 !ring-emerald-500 !outline-none;
   }
+
+  input[type="text"]:focus,
+  input[type="text"]:focus-visible,
+  input[type="number"]:focus,
+  input[type="number"]:focus-visible,
+  input[type="email"]:focus,
+  input[type="email"]:focus-visible,
+  input[type="password"]:focus,
+  input[type="password"]:focus-visible,
+  input[type="search"]:focus,
+  input[type="search"]:focus-visible,
+  select:focus,
+  select:focus-visible,
+  textarea:focus,
+  textarea:focus-visible {
+    @apply border-emerald-500 ring-2 ring-emerald-500 outline-none;
+  }
+
+  select option:checked,
+  select option:focus,
+  select option:active {
+    @apply bg-emerald-500 text-white;
+  }
+
+  select option:hover {
+    @apply bg-emerald-100 text-emerald-900;
+  }
 }
