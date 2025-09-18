@@ -41,16 +41,20 @@ select:hover,
     border-color: #34d399; /* emerald-400 */
 }
 
-select option:checked,
-select option:focus,
 select option:hover {
-    background-color: #6ee7b7; /* emerald-300 */
-    color: #065f46; /* emerald-900 */
+    background-color: #6ee7b7 !important; /* emerald-300 */
+    color: #065f46 !important; /* emerald-900 */
+}
+
+select option:checked,
+select option:focus {
+    background-color: #a7f3d0 !important; /* emerald-200 */
+    color: #064e3b !important; /* emerald-800 */
 }
 
 select[multiple] option:checked {
-    background-color: #a7f3d0; /* emerald-200 */
-    color: #064e3b; /* emerald-800 */
+    background-color: #d1fae5 !important; /* emerald-100 */
+    color: #065f46 !important; /* emerald-900 */
 }
 
 /* Tables use a collapsed border so the grid looks tidy */
