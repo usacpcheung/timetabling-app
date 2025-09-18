@@ -14,19 +14,19 @@
 
   .datepicker .today-btn,
   .datepicker .clear-btn {
-    @apply bg-emerald-500 text-white border border-emerald-500 outline-none;
+    @apply !bg-emerald-500 !text-white !border !border-emerald-500 !outline-none;
   }
 
   .datepicker .today-btn:hover,
   .datepicker .clear-btn:hover {
-    @apply bg-emerald-600;
+    @apply !bg-emerald-600;
   }
 
   .datepicker .today-btn:focus,
   .datepicker .clear-btn:focus,
   .datepicker .today-btn:focus-visible,
   .datepicker .clear-btn:focus-visible {
-    @apply border-emerald-500 ring-2 ring-emerald-500 outline-none;
+    @apply !border-emerald-500 !ring-2 !ring-emerald-500 !outline-none;
   }
 
   .datepicker .prev-btn,
@@ -48,15 +48,20 @@
 
   .datepicker .datepicker-cell.selected,
   .datepicker .datepicker-cell.focused {
-    @apply bg-emerald-500 text-white;
+    @apply !bg-emerald-500 !text-white !border !border-emerald-500;
+  }
+
+  .datepicker .datepicker-cell.selected:hover,
+  .datepicker .datepicker-cell.focused:hover {
+    @apply !bg-emerald-600;
   }
 
   .datepicker .in-edit {
-    @apply border border-emerald-500 outline-none;
+    @apply !border !border-emerald-500 !outline-none;
   }
 
   .datepicker .in-edit:focus,
   .datepicker .in-edit:focus-visible {
-    @apply border-emerald-500 ring-2 ring-emerald-500 outline-none;
+    @apply !border-emerald-500 !ring-2 !ring-emerald-500 !outline-none;
   }
 }
