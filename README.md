@@ -28,6 +28,10 @@ static/                         # Front-end scripts and styles
     config.js                   # Dynamic form behaviour for configuration
     main.js                     # Confirmation prompts and timetable checks
     ui.js                       # Initialises Flowbite UI components
+    dist/app.css                # Compiled Tailwind + Flowbite stylesheet
+    src/app.css                 # Tailwind source file for rebuilding styles
+    vendor/flowbite.min.js      # Flowbite components bundle
+    vendor/flowbite-datepicker.min.js  # Flowbite datepicker bundle
     style.css                   # Basic styling shared by all pages
     flowbite-accordion-selectinput-fix.css  # Workaround for a Flowbite bug
 templates/                      # HTML templates rendered by Flask
@@ -61,6 +65,22 @@ The app will be available at `http://localhost:5000`.
 The SQLite database is stored in `data/timetable.db` relative to the project
 root. When deploying on Windows for all users, ensure the `data` directory is
 writable so the application can create and update the database.
+
+### Front-end tooling
+
+The UI now uses locally compiled Tailwind CSS **4.1.11** with Flowbite **3.1.2**. Install the Node dependencies once:
+
+```bash
+npm install
+```
+
+Rebuild the stylesheet after changing any template or Tailwind source file:
+
+```bash
+npm run build:css
+```
+
+The generated CSS is written to `static/dist/app.css` and served by Flask.
 
 ### Configuration
 

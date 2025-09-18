@@ -1,0 +1,14 @@
+@import "tailwindcss";
+@import "flowbite";
+
+@layer base {
+  body {
+    font-family: Arial, sans-serif;
+  }
+}
+
+@layer components {
+  .worksheet-assigned {
+    @apply bg-emerald-200 text-emerald-800 rounded px-1;
+  }
+}
