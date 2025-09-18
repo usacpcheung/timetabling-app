@@ -5,8 +5,7 @@
     <meta charset="UTF-8">
     <title>Manage Timetables</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.3.0/flowbite.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='dist/app.css') }}">
 </head>
 <body class="bg-emerald-50 min-h-screen">
     <div class="max-w-4xl mx-auto mt-10 p-6">
@@ -133,7 +132,7 @@
             </table>
         </div>
     </div>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.3.0/flowbite.min.js"></script>
+    <script src="{{ url_for('static', filename='vendor/flowbite.min.js') }}" defer></script>
     <script src="{{ url_for('static', filename='ui.js') }}"></script>
     <script src="{{ url_for('static', filename='main.js') }}"></script>
 </body>

@@ -1,0 +1,14 @@
+{
+  "name": "timetabling-app",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build:css": "tailwindcss -i ./static/src/app.css -o ./static/dist/app.css --minify",
+    "watch:css": "tailwindcss -i ./static/src/app.css -o ./static/dist/app.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.1.11",
+    "flowbite": "3.1.2",
+    "tailwindcss": "4.1.11"
+  }
+}

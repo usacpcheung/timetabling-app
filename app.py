@@ -2341,9 +2341,9 @@ def get_timetable_data(target_date, view='teacher'):
             if lid is None:
                 continue
             if r['group_id']:
-                members = group_students.get(r['group_id'])
-                if not members:
-                    members = snapshot_members.get(r['group_id'], [])
+                members = snapshot_members.get(r['group_id'])
+                if members is None:
+                    members = group_students.get(r['group_id'], [])
                 names = ', '.join(student_names.get(m, f'Student {m}') for m in members)
                 if view == 'patient_only':
                     desc = f"{r['group_name']} [{names}]"
@@ -2364,9 +2364,9 @@ def get_timetable_data(target_date, view='teacher'):
                     loc_name = info.get('name')
             loc = f" @ {loc_name}" if loc_name else ''
             if r['group_id']:
-                members = group_students.get(r['group_id'])
-                if not members:
-                    members = snapshot_members.get(r['group_id'], [])
+                members = snapshot_members.get(r['group_id'])
+                if members is None:
+                    members = group_students.get(r['group_id'], [])
                 names = ', '.join(student_names.get(m, f'Student {m}') for m in members)
                 desc = f"{r['group_name']} [{names}] ({r['subject']}){loc}"
             else:
