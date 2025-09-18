@@ -5,3 +5,4 @@ timetable.db
 .pytest_tmp/
 data/backup/*.zip
 time_table_pre_restore*.db
+node_modules/
