@@ -106,10 +106,14 @@ def test_refreshes_old_snapshot_without_subject_id(tmp_path):
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     row = c.execute(
-        'SELECT missing, group_data FROM timetable_snapshot WHERE date=?', ('2024-01-01',)
+        'SELECT missing, group_data, teacher_data FROM timetable_snapshot WHERE date=?',
+        ('2024-01-01',),
     ).fetchone()
     data = json.loads(row['missing'])
     assert row['group_data'] is not None
     assert 'subject_id' in data['1'][0]
     assert data['1'][0]['subject_id'] == math_id
+    assert row['teacher_data'] is not None
+    teachers = json.loads(row['teacher_data'])
+    assert any(t['name'] == 'Teacher A' for t in teachers)
     conn.close()

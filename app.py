@@ -302,16 +302,21 @@ def init_db():
             missing TEXT,
             lesson_counts TEXT,
             group_data TEXT,
-            location_data TEXT
+            location_data TEXT,
+            teacher_data TEXT
         )''')
     else:
         if not column_exists('timetable_snapshot', 'group_data'):
             c.execute('ALTER TABLE timetable_snapshot ADD COLUMN group_data TEXT')
         if not column_exists('timetable_snapshot', 'location_data'):
             c.execute('ALTER TABLE timetable_snapshot ADD COLUMN location_data TEXT')
+        if not column_exists('timetable_snapshot', 'teacher_data'):
+            c.execute('ALTER TABLE timetable_snapshot ADD COLUMN teacher_data TEXT')
         rows = c.execute(
-            "SELECT date FROM timetable_snapshot WHERE group_data IS NULL OR TRIM(group_data) = '' "
-            "OR location_data IS NULL OR TRIM(location_data) = ''"
+            "SELECT date FROM timetable_snapshot "
+            "WHERE group_data IS NULL OR TRIM(group_data) = '' "
+            "OR location_data IS NULL OR TRIM(location_data) = '' "
+            "OR teacher_data IS NULL OR TRIM(teacher_data) = ''"
         ).fetchall()
         for row in rows:
             try:
@@ -818,13 +823,23 @@ def calculate_missing_and_counts(c, date):
     c.execute('SELECT id, name FROM subjects')
     subject_names = {r['id']: r['name'] for r in c.fetchall()}
 
-    c.execute('SELECT student_id, group_id, subject_id FROM timetable WHERE date=?', (date,))
+    c.execute(
+        'SELECT student_id, group_id, subject_id, teacher_id FROM timetable WHERE date=?',
+        (date,),
+    )
     lessons = c.fetchall()
     used_groups = set()
+    teacher_subjects = {}
+    timetable_teachers = set()
     for les in lessons:
         subj = les['subject_id']
         if subj is None:
             continue
+        tid = les['teacher_id']
+        if tid is not None:
+            timetable_teachers.add(tid)
+            if subj is not None:
+                teacher_subjects.setdefault(tid, set()).add(subj)
         if les['group_id']:
             gid = les['group_id']
             used_groups.add(gid)
@@ -887,7 +902,33 @@ def calculate_missing_and_counts(c, date):
     for row in c.fetchall():
         location_data[row['location_id']] = {'name': row['location_name']}
 
-    return missing, lesson_counts, group_data, location_data
+    c.execute('SELECT id, name, subjects FROM teachers ORDER BY id')
+    teacher_rows = c.fetchall()
+    teacher_data = []
+    teacher_ids = set()
+    for row in teacher_rows:
+        try:
+            subjects = json.loads(row['subjects']) if row['subjects'] else []
+        except (TypeError, ValueError, json.JSONDecodeError):
+            subjects = []
+        teacher_data.append({'id': row['id'], 'name': row['name'], 'subjects': subjects})
+        teacher_ids.add(row['id'])
+
+    missing_teacher_ids = sorted(timetable_teachers - teacher_ids)
+    archive_names = {}
+    if missing_teacher_ids:
+        placeholders = ','.join(['?'] * len(missing_teacher_ids))
+        c.execute(
+            f'SELECT id, name FROM teachers_archive WHERE id IN ({placeholders})',
+            missing_teacher_ids,
+        )
+        archive_names = {row['id']: row['name'] for row in c.fetchall()}
+    for tid in missing_teacher_ids:
+        name = archive_names.get(tid) or f'Teacher {tid}'
+        subjects = sorted(teacher_subjects.get(tid, set()))
+        teacher_data.append({'id': tid, 'name': name, 'subjects': subjects})
+
+    return missing, lesson_counts, group_data, location_data, teacher_data
 
 
 def get_missing_and_counts(c, date, refresh=False):
@@ -972,9 +1013,57 @@ def get_missing_and_counts(c, date, refresh=False):
             cleaned[lid] = {'name': name}
         return cleaned, needs_refresh
 
+    def _parse_teacher_data(raw_value):
+        if not raw_value:
+            return [], True
+        try:
+            data = json.loads(raw_value)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return [], True
+        if not isinstance(data, list):
+            return [], True
+        cleaned = []
+        needs_refresh = False
+        for entry in data:
+            if not isinstance(entry, dict):
+                needs_refresh = True
+                continue
+            tid = entry.get('id')
+            try:
+                tid = int(tid)
+            except (TypeError, ValueError):
+                needs_refresh = True
+                continue
+            name = entry.get('name')
+            if name is not None and not isinstance(name, str):
+                name = str(name)
+                needs_refresh = True
+            subjects_raw = entry.get('subjects')
+            subjects = []
+            if subjects_raw is None:
+                subjects = []
+            elif isinstance(subjects_raw, list):
+                for subj in subjects_raw:
+                    try:
+                        subjects.append(int(subj))
+                    except (TypeError, ValueError):
+                        needs_refresh = True
+            else:
+                needs_refresh = True
+                if isinstance(subjects_raw, (tuple, set)):
+                    for subj in subjects_raw:
+                        try:
+                            subjects.append(int(subj))
+                        except (TypeError, ValueError):
+                            needs_refresh = True
+                else:
+                    subjects = []
+            cleaned.append({'id': tid, 'name': name, 'subjects': subjects})
+        return cleaned, needs_refresh
+
     if not refresh:
         row = c.execute(
-            'SELECT missing, lesson_counts, group_data, location_data FROM timetable_snapshot WHERE date=?',
+            'SELECT missing, lesson_counts, group_data, location_data, teacher_data FROM timetable_snapshot WHERE date=?',
             (date,),
         ).fetchone()
         if row:
@@ -1016,35 +1105,48 @@ def get_missing_and_counts(c, date, refresh=False):
             location_data, needs_refresh_locations = _parse_location_data(
                 row['location_data'] if 'location_data' in row.keys() else None
             )
+            teacher_data, needs_refresh_teachers = _parse_teacher_data(
+                row['teacher_data'] if 'teacher_data' in row.keys() else None
+            )
 
-            if needs_refresh_missing or needs_refresh_counts or needs_refresh_groups or needs_refresh_locations:
-                missing, lesson_counts, group_data, location_data = calculate_missing_and_counts(c, date)
+            if (
+                needs_refresh_missing
+                or needs_refresh_counts
+                or needs_refresh_groups
+                or needs_refresh_locations
+                or needs_refresh_teachers
+            ):
+                missing, lesson_counts, group_data, location_data, teacher_data = calculate_missing_and_counts(c, date)
                 c.execute(
-                    'INSERT OR REPLACE INTO timetable_snapshot (date, missing, lesson_counts, group_data, location_data) '
-                    'VALUES (?, ?, ?, ?, ?)',
+                    'INSERT OR REPLACE INTO timetable_snapshot '
+                    '(date, missing, lesson_counts, group_data, location_data, teacher_data) '
+                    'VALUES (?, ?, ?, ?, ?, ?)',
                     (
                         date,
                         json.dumps(missing),
                         json.dumps(lesson_counts),
                         json.dumps(group_data),
                         json.dumps(location_data),
+                        json.dumps(teacher_data),
                     ),
                 )
-            return missing, lesson_counts, group_data, location_data
+            return missing, lesson_counts, group_data, location_data, teacher_data
 
-    missing, lesson_counts, group_data, location_data = calculate_missing_and_counts(c, date)
+    missing, lesson_counts, group_data, location_data, teacher_data = calculate_missing_and_counts(c, date)
     c.execute(
-        'INSERT OR REPLACE INTO timetable_snapshot (date, missing, lesson_counts, group_data, location_data) '
-        'VALUES (?, ?, ?, ?, ?)',
+        'INSERT OR REPLACE INTO timetable_snapshot '
+        '(date, missing, lesson_counts, group_data, location_data, teacher_data) '
+        'VALUES (?, ?, ?, ?, ?, ?)',
         (
             date,
             json.dumps(missing),
             json.dumps(lesson_counts),
             json.dumps(group_data),
             json.dumps(location_data),
+            json.dumps(teacher_data),
         ),
     )
-    return missing, lesson_counts, group_data, location_data
+    return missing, lesson_counts, group_data, location_data, teacher_data
 
 
 @app.route('/check_timetable')
@@ -2257,7 +2359,7 @@ def get_timetable_data(target_date, view='teacher'):
         row = c.fetchone()
         target_date = row['date'] if row else date.today().isoformat()
 
-    missing, lesson_counts, group_data, location_data = get_missing_and_counts(c, target_date)
+    missing, lesson_counts, group_data, location_data, teacher_data = get_missing_and_counts(c, target_date)
 
     location_views = {'location', 'patient_only'}
     if view in location_views:
@@ -2278,15 +2380,24 @@ def get_timetable_data(target_date, view='teacher'):
             name = info.get('name') or archive_names.get(lid) or f'Location {lid}'
             columns.append({'id': lid, 'name': name})
     else:
-        c.execute(
-            'SELECT id, name, subjects FROM teachers '
-            "UNION ALL SELECT id, name, '[]' as subjects FROM teachers_archive"
-        )
-        columns = [dict(r) for r in c.fetchall()]
         subj_map = {r['id']: r['name'] for r in c.execute('SELECT id, name FROM subjects')}
-        for col in columns:
-            subs = json.loads(col['subjects'])
-            col['subjects'] = json.dumps([subj_map.get(s, str(s)) for s in subs])
+        if teacher_data:
+            columns = []
+            for entry in teacher_data:
+                tid = entry.get('id')
+                name = entry.get('name') or (f'Teacher {tid}' if tid is not None else 'Unknown Teacher')
+                subjects = entry.get('subjects') or []
+                subject_names = [subj_map.get(s, str(s)) for s in subjects]
+                columns.append({'id': tid, 'name': name, 'subjects': json.dumps(subject_names)})
+        else:
+            c.execute(
+                'SELECT id, name, subjects FROM teachers '
+                "UNION ALL SELECT id, name, '[]' as subjects FROM teachers_archive"
+            )
+            columns = [dict(r) for r in c.fetchall()]
+            for col in columns:
+                subs = json.loads(col['subjects'])
+                col['subjects'] = json.dumps([subj_map.get(s, str(s)) for s in subs])
 
     c.execute('''SELECT t.slot,
                         COALESCE(te.name, ta.name) as teacher,
@@ -2873,7 +2984,7 @@ def edit_timetable(date):
     for row in c.fetchall():
         student_names.setdefault(row['id'], row['name'])
 
-    missing, lesson_counts, group_data, _ = get_missing_and_counts(c, date)
+    missing, lesson_counts, group_data, _, _ = get_missing_and_counts(c, date)
     conn.commit()
     conn.close()
     return render_template(

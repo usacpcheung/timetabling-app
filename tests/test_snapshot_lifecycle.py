@@ -98,3 +98,51 @@ def test_snapshot_records_group_members(tmp_path):
     member_names = {m['name'] for m in info['members']}
     assert 'Student 1' in member_names
     assert 'Student 2' in member_names
+
+
+def test_teacher_snapshot_preserves_deleted_teacher(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    cur = conn.cursor()
+
+    math_id = cur.execute("SELECT id FROM subjects WHERE name='Math'").fetchone()[0]
+    teacher_a = cur.execute("SELECT id FROM teachers WHERE name='Teacher A'").fetchone()[0]
+    teacher_b = cur.execute("SELECT id FROM teachers WHERE name='Teacher B'").fetchone()[0]
+
+    cur.execute(
+        "INSERT INTO timetable (student_id, teacher_id, subject_id, slot, date) VALUES (?, ?, ?, ?, ?)",
+        (1, teacher_a, math_id, 0, '2024-01-01'),
+    )
+    app.get_missing_and_counts(cur, '2024-01-01', refresh=True)
+    conn.commit()
+
+    cur.execute(
+        'INSERT OR IGNORE INTO teachers_archive (id, name) VALUES (?, ?)',
+        (teacher_a, 'Teacher A'),
+    )
+    cur.execute('DELETE FROM teachers WHERE id=?', (teacher_a,))
+
+    cur.execute(
+        "INSERT INTO timetable (student_id, teacher_id, subject_id, slot, date) VALUES (?, ?, ?, ?, ?)",
+        (1, teacher_b, math_id, 0, '2024-01-02'),
+    )
+    app.get_missing_and_counts(cur, '2024-01-02', refresh=True)
+    conn.commit()
+    conn.close()
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(
+        "SELECT teacher_data FROM timetable_snapshot WHERE date='2024-01-01'"
+    ).fetchone()
+    conn.close()
+    assert row is not None
+    teacher_snapshot = json.loads(row['teacher_data'])
+    assert any(t['name'] == 'Teacher A' for t in teacher_snapshot)
+
+    columns_old = app.get_timetable_data('2024-01-01')[2]
+    assert any(col['name'] == 'Teacher A' for col in columns_old)
+
+    columns_new = app.get_timetable_data('2024-01-02')[2]
+    assert all(col['name'] != 'Teacher A' for col in columns_new)
