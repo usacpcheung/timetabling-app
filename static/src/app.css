@@ -65,6 +65,26 @@
     @apply !border-emerald-500 !ring-2 !ring-emerald-500 !outline-none;
   }
 
+  input[type="text"],
+  input[type="number"],
+  input[type="email"],
+  input[type="password"],
+  input[type="search"],
+  select,
+  textarea {
+    @apply border border-emerald-300 outline-none;
+  }
+
+  input[type="text"]:hover,
+  input[type="number"]:hover,
+  input[type="email"]:hover,
+  input[type="password"]:hover,
+  input[type="search"]:hover,
+  select:hover,
+  textarea:hover {
+    @apply border-emerald-400;
+  }
+
   input[type="text"]:focus,
   input[type="text"]:focus-visible,
   input[type="number"]:focus,
@@ -82,13 +102,23 @@
     @apply border-emerald-500 ring-2 ring-emerald-500 outline-none;
   }
 
+  .dataTable-input,
+  .dataTable-selector {
+    @apply rounded-lg;
+  }
+
   select option:checked,
   select option:focus,
   select option:active {
-    @apply bg-emerald-500 text-white;
+    @apply !bg-emerald-500 !text-white;
   }
 
   select option:hover {
-    @apply bg-emerald-100 text-emerald-900;
+    @apply !bg-emerald-100 !text-emerald-900;
+  }
+
+  select option:checked:hover,
+  select option:focus:hover {
+    @apply !bg-emerald-600 !text-white;
   }
 }
