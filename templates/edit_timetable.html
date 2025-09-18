@@ -98,7 +98,7 @@
               <input type="hidden" name="teacher" id="teacher-input">
               <div class="mb-4">
                 <label class="block text-sm font-medium mb-1">Student/Group</label>
-                <select name="student_group" class="border rounded w-full p-1">
+                <select name="student_group" class="border border-emerald-300 rounded w-full p-1 focus:border-emerald-500 focus:ring-emerald-500">
                     {% for s in students %}
                     <option value="s{{ s['id'] }}">Student: {{ s['name'] }}</option>
                     {% endfor %}
@@ -109,7 +109,7 @@
               </div>
               <div class="mb-4">
                 <label class="block text-sm font-medium mb-1">Subject</label>
-                <select name="subject" class="border rounded w-full p-1">
+                <select name="subject" class="border border-emerald-300 rounded w-full p-1 focus:border-emerald-500 focus:ring-emerald-500">
                     {% for sub in subjects %}
                     <option value="{{ sub['id'] }}">{{ sub['name'] }}</option>
                     {% endfor %}
@@ -117,7 +117,7 @@
               </div>
               <div class="mb-4">
                 <label class="block text-sm font-medium mb-1">Location</label>
-                <select name="location" class="border rounded w-full p-1">
+                <select name="location" class="border border-emerald-300 rounded w-full p-1 focus:border-emerald-500 focus:ring-emerald-500">
                     <option value="">-- None --</option>
                     {% for loc in locations %}
                     <option value="{{ loc['id'] }}">{{ loc['name'] }}</option>
@@ -144,7 +144,7 @@
               <input type="hidden" name="entry_id" id="entry-id-input">
               <div class="mb-4">
                 <label class="block text-sm font-medium mb-1">Student/Group</label>
-                <select name="student_group" id="edit-student-group" class="border rounded w-full p-1">
+                <select name="student_group" id="edit-student-group" class="border border-emerald-300 rounded w-full p-1 focus:border-emerald-500 focus:ring-emerald-500">
                     {% for s in students %}
                     <option value="s{{ s['id'] }}">Student: {{ s['name'] }}</option>
                     {% endfor %}
@@ -155,7 +155,7 @@
               </div>
               <div class="mb-4">
                 <label class="block text-sm font-medium mb-1">Subject</label>
-                <select name="subject" id="edit-subject" class="border rounded w-full p-1">
+                <select name="subject" id="edit-subject" class="border border-emerald-300 rounded w-full p-1 focus:border-emerald-500 focus:ring-emerald-500">
                     {% for sub in subjects %}
                     <option value="{{ sub['id'] }}">{{ sub['name'] }}</option>
                     {% endfor %}
@@ -163,7 +163,7 @@
               </div>
               <div class="mb-4">
                 <label class="block text-sm font-medium mb-1">Location</label>
-                <select name="location" id="edit-location" class="border rounded w-full p-1">
+                <select name="location" id="edit-location" class="border border-emerald-300 rounded w-full p-1 focus:border-emerald-500 focus:ring-emerald-500">
                     <option value="">-- None --</option>
                     {% for loc in locations %}
                     <option value="{{ loc['id'] }}">{{ loc['name'] }}</option>

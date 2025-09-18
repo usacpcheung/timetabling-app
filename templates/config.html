@@ -58,7 +58,7 @@
             <button type="submit" class="bg-emerald-500 text-white px-4 py-2 rounded">Save</button>
         </form>
         <form id="load-form" method="post" action="{{ url_for('load_preset') }}" class="flex gap-2">
-            <select name="preset_id" class="border border-emerald-300 rounded-lg p-2.5 flex-1">
+            <select name="preset_id" class="border border-emerald-300 rounded-lg p-2.5 flex-1 focus:border-emerald-500 focus:ring-emerald-500">
                 {% for p in presets %}
                 <option value="{{ p['id'] }}">{{ p['name'] }}</option>
                 {% endfor %}
@@ -271,7 +271,7 @@
                 <input type="text" name="teacher_name_{{ t['id'] }}" value="{{ t['name'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
             <label class="block">Subjects:
-                  <select multiple name="teacher_subjects_{{ t['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                  <select multiple name="teacher_subjects_{{ t['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full focus:border-emerald-500 focus:ring-emerald-500">
                       {% for sub in subjects %}
                       <option value="{{ sub['id'] }}" {% if sub['id'] in teacher_map[t['id']] %}selected{% endif %}>{{ sub['name'] }}</option>
                       {% endfor %}
@@ -291,7 +291,7 @@
                 <input type="text" name="new_teacher_name" class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
             <label class="block">Subjects:
-                  <select multiple name="new_teacher_subjects" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                  <select multiple name="new_teacher_subjects" class="border border-emerald-300 rounded-lg p-2.5 w-full focus:border-emerald-500 focus:ring-emerald-500">
                       {% for sub in subjects %}
                       <option value="{{ sub['id'] }}">{{ sub['name'] }}</option>
                       {% endfor %}
@@ -323,7 +323,7 @@
                 <input type="text" name="student_name_{{ s['id'] }}" value="{{ s['name'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
             <label class="block">Subjects:
-                  <select multiple name="student_subjects_{{ s['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                  <select multiple name="student_subjects_{{ s['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full focus:border-emerald-500 focus:ring-emerald-500">
                       {% for sub in subjects %}
                       <option value="{{ sub['id'] }}" {% if sub['id'] in student_map[s['id']] %}selected{% endif %}>{{ sub['name'] }}</option>
                       {% endfor %}
@@ -333,14 +333,14 @@
                 <input type="checkbox" name="student_active_{{ s['id'] }}" value="1" {% if s['active'] %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
             </label>
             <label class="block">Forbidden Teachers:
-                <select multiple name="student_block_{{ s['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                <select multiple name="student_block_{{ s['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full focus:border-emerald-500 focus:ring-emerald-500">
                     {% for t in teachers %}
                     <option value="{{ t['id'] }}" {% if t['id'] in block_map.get(s['id'], []) %}selected{% endif %}>{{ t['name'] }}</option>
                     {% endfor %}
                 </select>
             </label>
             <label class="block">Locations:
-                <select multiple name="student_locs_{{ s['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                <select multiple name="student_locs_{{ s['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full focus:border-emerald-500 focus:ring-emerald-500">
                     {% for loc in locations %}
                     <option value="{{ loc['id'] }}" {% if loc['id'] in student_loc_map.get(s['id'], []) %}selected{% endif %}>{{ loc['name'] }}</option>
                     {% endfor %}
@@ -353,7 +353,7 @@
                         <div class="p-4">
                             <h3 class="text-lg mb-2">Advanced settings for {{ s['name'] }}</h3>
                             <label class="block">Blocked Slots:
-                                <select multiple name="student_unavail_{{ s['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                                <select multiple name="student_unavail_{{ s['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full focus:border-emerald-500 focus:ring-emerald-500">
                                     {% for i in range(config['slots_per_day']) %}
                                     <option value="{{ i }}" {% if i in student_unavail_map.get(s['id'], []) %}selected{% endif %}>Slot {{ i + 1 }}</option>
                                     {% endfor %}
@@ -369,7 +369,7 @@
                                 <input type="checkbox" name="student_allow_repeats_{{ s['id'] }}" data-repeat-target="student_repeat_subjects_{{ s['id'] }}" {% if (s['allow_repeats'] if s['allow_repeats'] is not none else config['allow_repeats']) %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
                             </label>
                             <label class="block">Repeatable subjects:
-                                <select id="student_repeat_subjects_{{ s['id'] }}" multiple name="student_repeat_subjects_{{ s['id'] }}" {% if not (s['allow_repeats'] if s['allow_repeats'] is not none else config['allow_repeats']) %}disabled{% endif %} class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                                <select id="student_repeat_subjects_{{ s['id'] }}" multiple name="student_repeat_subjects_{{ s['id'] }}" {% if not (s['allow_repeats'] if s['allow_repeats'] is not none else config['allow_repeats']) %}disabled{% endif %} class="border border-emerald-300 rounded-lg p-2.5 w-full focus:border-emerald-500 focus:ring-emerald-500">
                                     {% for sub in subjects %}
                                         {% if sub['id'] in student_map[s['id']] %}
                                             <option value="{{ sub['id'] }}" {% if sub['id'] in s['repeat_subjects'] %}selected{% endif %}>{{ sub['name'] }}</option>
@@ -404,21 +404,21 @@
                 <input type="text" name="new_student_name" class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
             <label class="block">Subjects:
-                  <select multiple name="new_student_subjects" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                  <select multiple name="new_student_subjects" class="border border-emerald-300 rounded-lg p-2.5 w-full focus:border-emerald-500 focus:ring-emerald-500">
                       {% for sub in subjects %}
                       <option value="{{ sub['id'] }}">{{ sub['name'] }}</option>
                       {% endfor %}
                   </select>
             </label>
             <label class="block">Forbidden Teachers:
-                <select multiple name="new_student_block" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                <select multiple name="new_student_block" class="border border-emerald-300 rounded-lg p-2.5 w-full focus:border-emerald-500 focus:ring-emerald-500">
                     {% for t in teachers %}
                     <option value="{{ t['id'] }}">{{ t['name'] }}</option>
                     {% endfor %}
                 </select>
             </label>
             <label class="block">Locations:
-                <select multiple name="new_student_locs" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                <select multiple name="new_student_locs" class="border border-emerald-300 rounded-lg p-2.5 w-full focus:border-emerald-500 focus:ring-emerald-500">
                     {% for loc in locations %}
                     <option value="{{ loc['id'] }}">{{ loc['name'] }}</option>
                     {% endfor %}
@@ -431,7 +431,7 @@
                         <div class="p-4">
                             <h3 class="text-lg mb-2">Advanced settings for new student</h3>
                             <label class="block">Blocked Slots:
-                                <select multiple name="new_student_unavail" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                                <select multiple name="new_student_unavail" class="border border-emerald-300 rounded-lg p-2.5 w-full focus:border-emerald-500 focus:ring-emerald-500">
                                     {% for i in range(config['slots_per_day']) %}
                                     <option value="{{ i }}">Slot {{ i + 1 }}</option>
                                     {% endfor %}
@@ -447,7 +447,7 @@
                                 <input type="checkbox" name="new_student_allow_repeats" data-repeat-target="new_student_repeat_subjects" {% if config['allow_repeats'] %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
                             </label>
                             <label class="block">Repeatable subjects:
-                                <select id="new_student_repeat_subjects" multiple name="new_student_repeat_subjects" {% if not config['allow_repeats'] %}disabled{% endif %} class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                                <select id="new_student_repeat_subjects" multiple name="new_student_repeat_subjects" {% if not config['allow_repeats'] %}disabled{% endif %} class="border border-emerald-300 rounded-lg p-2.5 w-full focus:border-emerald-500 focus:ring-emerald-500">
                                     {% for sub in subjects %}
                                         <option value="{{ sub['id'] }}">{{ sub['name'] }}</option>
                                     {% endfor %}
@@ -492,21 +492,21 @@
                 <input type="text" name="group_name_{{ g['id'] }}" value="{{ g['name'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
             <label class="block">Subjects:
-                  <select multiple name="group_subjects_{{ g['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                  <select multiple name="group_subjects_{{ g['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full focus:border-emerald-500 focus:ring-emerald-500">
                       {% for sub in subjects %}
                       <option value="{{ sub['id'] }}" {% if sub['id'] in group_subj_map[g['id']] %}selected{% endif %}>{{ sub['name'] }}</option>
                       {% endfor %}
                   </select>
             </label>
             <label class="block">Members:
-                <select multiple name="group_members_{{ g['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                <select multiple name="group_members_{{ g['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full focus:border-emerald-500 focus:ring-emerald-500">
                     {% for s in students %}
                     <option value="{{ s['id'] }}" {% if s['id'] in group_map.get(g['id'], []) %}selected{% endif %}>{{ s['name'] }}</option>
                     {% endfor %}
                 </select>
             </label>
             <label class="block">Locations:
-                <select multiple name="group_locs_{{ g['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                <select multiple name="group_locs_{{ g['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full focus:border-emerald-500 focus:ring-emerald-500">
                     {% for loc in locations %}
                     <option value="{{ loc['id'] }}" {% if loc['id'] in group_loc_map.get(g['id'], []) %}selected{% endif %}>{{ loc['name'] }}</option>
                     {% endfor %}
@@ -520,21 +520,21 @@
                 <input type="text" name="new_group_name" class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
             <label class="block">Subjects:
-                  <select multiple name="new_group_subjects" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                  <select multiple name="new_group_subjects" class="border border-emerald-300 rounded-lg p-2.5 w-full focus:border-emerald-500 focus:ring-emerald-500">
                       {% for sub in subjects %}
                       <option value="{{ sub['id'] }}">{{ sub['name'] }}</option>
                       {% endfor %}
                   </select>
             </label>
             <label class="block">Members:
-                <select multiple name="new_group_members" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                <select multiple name="new_group_members" class="border border-emerald-300 rounded-lg p-2.5 w-full focus:border-emerald-500 focus:ring-emerald-500">
                     {% for s in students %}
                     <option value="{{ s['id'] }}">{{ s['name'] }}</option>
                     {% endfor %}
                 </select>
             </label>
             <label class="block">Locations:
-                <select multiple name="new_group_locs" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                <select multiple name="new_group_locs" class="border border-emerald-300 rounded-lg p-2.5 w-full focus:border-emerald-500 focus:ring-emerald-500">
                     {% for loc in locations %}
                     <option value="{{ loc['id'] }}">{{ loc['name'] }}</option>
                     {% endfor %}
@@ -588,14 +588,14 @@
             </label>
             {% endfor %}
             <label class="block">Teachers:
-                <select multiple name="new_unavail_teacher" id="new_unavail_teacher" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                <select multiple name="new_unavail_teacher" id="new_unavail_teacher" class="border border-emerald-300 rounded-lg p-2.5 w-full focus:border-emerald-500 focus:ring-emerald-500">
                     {% for t in teachers %}
                     <option value="{{ t['id'] }}">{{ t['name'] }}</option>
                     {% endfor %}
                 </select>
             </label>
             <label class="block">Slots:
-                <select multiple name="new_unavail_slot" id="new_unavail_slot" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                <select multiple name="new_unavail_slot" id="new_unavail_slot" class="border border-emerald-300 rounded-lg p-2.5 w-full focus:border-emerald-500 focus:ring-emerald-500">
                     {% for i in range(1, config['slots_per_day'] + 1) %}
                     <option value="{{ i }}">{{ i }}</option>
                     {% endfor %}
@@ -623,7 +623,7 @@
             </label>
             {% endfor %}
             <label class="block">Student:
-                <select name="new_assign_student" id="new_assign_student" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                <select name="new_assign_student" id="new_assign_student" class="border border-emerald-300 rounded-lg p-2.5 w-full focus:border-emerald-500 focus:ring-emerald-500">
                     <option value="">-- None --</option>
                     {% for s in students %}
                     <option value="{{ s['id'] }}">{{ s['name'] }}</option>
@@ -631,7 +631,7 @@
                 </select>
             </label>
             <label class="block">Group:
-                <select name="new_assign_group" id="new_assign_group" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                <select name="new_assign_group" id="new_assign_group" class="border border-emerald-300 rounded-lg p-2.5 w-full focus:border-emerald-500 focus:ring-emerald-500">
                     <option value="">-- None --</option>
                     {% for g in groups %}
                     <option value="{{ g['id'] }}">{{ g['name'] }}</option>
@@ -639,19 +639,19 @@
                 </select>
             </label>
             <label class="block">Teacher:
-                <select name="new_assign_teacher" id="new_assign_teacher" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                <select name="new_assign_teacher" id="new_assign_teacher" class="border border-emerald-300 rounded-lg p-2.5 w-full focus:border-emerald-500 focus:ring-emerald-500">
                     {% for t in teachers %}
                     <option value="{{ t['id'] }}">{{ t['name'] }}</option>
                     {% endfor %}
                 </select>
             </label>
             <label class="block">Subject:
-                <select name="new_assign_subject" id="new_assign_subject" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                <select name="new_assign_subject" id="new_assign_subject" class="border border-emerald-300 rounded-lg p-2.5 w-full focus:border-emerald-500 focus:ring-emerald-500">
                     <option value="">-- Select --</option>
                 </select>
             </label>
             <label class="block">Slot:
-                <select name="new_assign_slot" id="new_assign_slot" data-total-slots="{{ config['slots_per_day'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                <select name="new_assign_slot" id="new_assign_slot" data-total-slots="{{ config['slots_per_day'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full focus:border-emerald-500 focus:ring-emerald-500">
                     <option value="">-- Select --</option>
                 </select>
             </label>

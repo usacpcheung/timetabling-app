@@ -11,4 +11,23 @@
   .worksheet-assigned {
     @apply bg-emerald-200 text-emerald-800 rounded px-1;
   }
+
+  .datepicker .today-btn,
+  .datepicker .clear-btn {
+    @apply bg-emerald-500 hover:bg-emerald-600 text-white border border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500;
+  }
+
+  .datepicker .prev-btn,
+  .datepicker .next-btn {
+    @apply text-emerald-600 hover:bg-emerald-100 border border-transparent focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 rounded-lg;
+  }
+
+  .datepicker .datepicker-cell.selected,
+  .datepicker .datepicker-cell.focused {
+    @apply bg-emerald-500 text-white;
+  }
+
+  .datepicker .in-edit {
+    @apply border border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500;
+  }
 }
