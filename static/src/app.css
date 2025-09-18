@@ -109,16 +109,18 @@
 
   select option:checked,
   select option:focus,
+  select option:focus-visible,
   select option:active {
     @apply !bg-emerald-500 !text-white;
   }
 
   select option:hover {
-    @apply !bg-emerald-100 !text-emerald-900;
+    @apply !bg-emerald-500 !text-white;
   }
 
   select option:checked:hover,
-  select option:focus:hover {
+  select option:focus:hover,
+  select option:focus-visible:hover {
     @apply !bg-emerald-600 !text-white;
   }
 }
