@@ -3,6 +3,56 @@ body {
     font-family: Arial, sans-serif;
 }
 
+/* Emerald themed focus and selection states for form controls */
+input[type="text"],
+input[type="number"],
+input[type="email"],
+input[type="password"],
+input[type="search"],
+input[type="url"],
+input[type="tel"],
+input[type="date"],
+input[type="time"],
+select,
+textarea,
+.emerald-focus {
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+input[type="search"]:focus,
+input[type="url"]:focus,
+input[type="tel"]:focus,
+input[type="date"]:focus,
+input[type="time"]:focus,
+select:focus,
+textarea:focus,
+.emerald-focus:focus {
+    border-color: #10b981; /* emerald-500 */
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25);
+    outline: none;
+}
+
+select:hover,
+.emerald-focus:hover {
+    border-color: #34d399; /* emerald-400 */
+}
+
+select option:checked,
+select option:focus,
+select option:hover {
+    background-color: #6ee7b7; /* emerald-300 */
+    color: #065f46; /* emerald-900 */
+}
+
+select[multiple] option:checked {
+    background-color: #a7f3d0; /* emerald-200 */
+    color: #064e3b; /* emerald-800 */
+}
+
 /* Tables use a collapsed border so the grid looks tidy */
 table {
     border-collapse: collapse;
