@@ -1,5 +1,6 @@
 from ortools.sat.python import cp_model
 from cp_sat_timetable import build_model, solve_and_print
+from app import summarise_core_conflicts
 import json
 
 
@@ -74,18 +75,25 @@ def test_unsat_core_present_on_conflict():
     status, assignments, core, progress = solve_and_print(model, vars_, loc_vars, assumptions)
     assert status == cp_model.INFEASIBLE, "Expected infeasible due to teacher unavailability and student min"
     assert core, "Expected an unsat core to be reported"
-    teacher_messages = [label for label in core if "Teacher" in label]
-    assert teacher_messages, f"Teacher constraint missing from core: {core}"
-    assert any("unavailable" in label.lower() for label in teacher_messages), f"Expected teacher unavailable message: {core}"
-    assert any("Teacher #1" in label or "ID 1" in label for label in teacher_messages), f"Teacher identifier missing: {core}"
-    assert any("Slot" in label for label in teacher_messages), f"Slot detail missing in teacher message: {core}"
+    assert all(isinstance(detail, dict) for detail in core), f"Expected structured metadata, got: {core}"
+    teacher_details = [detail for detail in core if detail.get('category') == 'teacher_availability']
+    assert teacher_details, f"Teacher constraint missing from core: {core}"
+    assert any(detail.get('teacher_id') == 1 for detail in teacher_details), f"Teacher identifier missing: {teacher_details}"
+    assert any(detail.get('slot') == 0 for detail in teacher_details), f"Slot detail missing: {teacher_details}"
 
-    student_messages = [label for label in core if "Student" in label or "Group" in label]
-    assert student_messages, f"Student constraint missing from core: {core}"
-    assert any(("must take" in label.lower()) or ("must receive" in label.lower()) for label in student_messages), (
-        f"Expected student requirement in core: {core}"
+    student_details = [detail for detail in core if detail.get('category') == 'student_limits']
+    assert student_details, f"Student constraint missing from core: {core}"
+    assert any(detail.get('type') == 'total' for detail in student_details), f"Student requirement missing: {student_details}"
+    assert any(detail.get('student_id') == 1 for detail in student_details), f"Student identifier missing: {student_details}"
+
+    summaries = summarise_core_conflicts(core)
+    assert summaries, "Aggregated conflict summaries should not be empty"
+    assert any('Teacher' in msg and 'unavailable' in msg.lower() for msg in summaries), (
+        f"Expected teacher availability summary, got: {summaries}"
     )
-    assert any("Student #1" in label or "ID 1" in label for label in student_messages), f"Student identifier missing: {core}"
+    assert any('Student' in msg and ('must' in msg.lower() or 'unavailable' in msg.lower()) for msg in summaries), (
+        f"Expected student-related summary, got: {summaries}"
+    )
     assert progress == [], "No progress messages expected when infeasible"
 
 

@@ -64,6 +64,112 @@ CONFIG_TABLES = [
 ]
 
 
+def summarise_core_conflicts(core_details):
+    """Group unsat-core details into concise, user friendly messages."""
+
+    if not core_details:
+        return []
+
+    def slot_display(detail):
+        label = detail.get('slot_label') if isinstance(detail, dict) else None
+        if label:
+            return label
+        slot = detail.get('slot') if isinstance(detail, dict) else None
+        if slot is None:
+            return 'an unspecified slot'
+        return f"Slot {slot + 1}"
+
+    def render_slots(slot_entries):
+        seen = set()
+        ordered = []
+        for slot, label in slot_entries:
+            key = (slot, label)
+            if key in seen:
+                continue
+            seen.add(key)
+            ordered.append((slot, label))
+        ordered.sort(key=lambda item: (item[0] is None, item[0]))
+        labels = [label for _, label in ordered if label]
+        if not labels:
+            return ''
+        simple_tokens = []
+        for lbl in labels:
+            if isinstance(lbl, str) and lbl.lower().startswith('slot '):
+                simple_tokens.append(lbl[5:].strip())
+            else:
+                simple_tokens = None
+                break
+        if simple_tokens:
+            joined = ', '.join(simple_tokens)
+            return f"Slots {joined}"
+        return ', '.join(labels)
+
+    results = []
+    teacher_groups = {}
+    student_groups = {}
+
+    for detail in core_details:
+        if not isinstance(detail, dict):
+            results.append(f"Conflict: {detail}")
+            continue
+        category = detail.get('category')
+        kind = detail.get('type')
+        if category == 'teacher_availability' and kind == 'unavailable':
+            tid = detail.get('teacher_id')
+            group = teacher_groups.get(tid)
+            if group is None:
+                label = detail.get('teacher_label') or detail.get('teacher_name')
+                if not label:
+                    label = f"Teacher ID {tid}" if tid is not None else 'Teacher'
+                group = {
+                    'label': label,
+                    'slots': [],
+                    'index': len(results),
+                }
+                teacher_groups[tid] = group
+                results.append(None)
+            group['slots'].append((detail.get('slot'), slot_display(detail)))
+            continue
+        if category == 'student_limits' and kind == 'unavailable_slot':
+            sid = detail.get('student_id')
+            group = student_groups.get(sid)
+            if group is None:
+                label = detail.get('student_label') or detail.get('student_name')
+                if not label:
+                    label = f"Student ID {sid}" if sid is not None else 'Student'
+                group = {
+                    'label': label,
+                    'slots': [],
+                    'index': len(results),
+                }
+                student_groups[sid] = group
+                results.append(None)
+            group['slots'].append((detail.get('slot'), slot_display(detail)))
+            continue
+        message = detail.get('message') or detail.get('label') or str(detail)
+        results.append(f"Conflict: {message}")
+
+    for tid, group in sorted(teacher_groups.items(), key=lambda item: item[1]['index']):
+        slot_text = render_slots(group['slots'])
+        label = group['label'] or 'Teacher'
+        if slot_text:
+            message = f"{label} is unavailable at {slot_text}."
+        else:
+            message = f"{label} has an availability conflict."
+        results[group['index']] = f"Conflict: {message}"
+
+    for sid, group in sorted(student_groups.items(), key=lambda item: item[1]['index']):
+        slot_text = render_slots(group['slots'])
+        label = group['label'] or 'Student'
+        if slot_text:
+            message = f"{label} is unavailable at {slot_text}."
+        else:
+            message = f"{label} has an availability conflict."
+        results[group['index']] = f"Conflict: {message}"
+
+    return [msg for msg in results if msg is not None]
+
+
 def get_db():
     """Return a connection to the SQLite database.
 
@@ -2288,7 +2394,7 @@ def generate_schedule(target_date=None):
         progress_messages.append(msg)
         app.logger.info(msg)
 
-    status, assignments, core, progress = solve_and_print(
+    status, assignments, core_details, progress = solve_and_print(
         model,
         vars_,
         loc_vars,
@@ -2347,10 +2453,11 @@ def generate_schedule(target_date=None):
             # Map assumption literals from the unsat core to human readable
             # messages explaining why the model is infeasible.
             flash('No feasible timetable could be generated.', 'error')
-            if core:
-                for label in core:
-                    app.logger.error('Unsatisfied assumption: %s', label)
-                    flash(f'Conflict: {label}', 'error')
+            if core_details:
+                for detail in core_details:
+                    app.logger.error('Unsatisfied assumption: %s', detail)
+                for message in summarise_core_conflicts(core_details):
+                    flash(message, 'error')
             else:
                 app.logger.error('Solver reported infeasible without an unsat core.')
     conn.commit()

@@ -278,6 +278,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                                     'type': 'unavailable',
                                     'teacher_id': teacher['id'],
                                     'teacher_name': teacher_names.get(teacher['id']),
+                                    'teacher_label': _teacher_label(teacher['id']),
                                     'slot': slot,
                                     'slot_label': _slot_label(slot),
                                 },
@@ -297,8 +298,10 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                                     'type': 'blocked',
                                     'teacher_id': teacher['id'],
                                     'teacher_name': teacher_names.get(teacher['id']),
+                                    'teacher_label': _teacher_label(teacher['id']),
                                     'student_id': student['id'],
                                     'student_name': student_names.get(student['id']),
+                                    'student_label': _student_label(student['id']),
                                     'slot': slot,
                                     'slot_label': _slot_label(slot),
                                 },
@@ -384,6 +387,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                                 'type': 'unavailable_slot',
                                 'student_id': sid,
                                 'student_name': student_names.get(sid),
+                                'student_label': _student_label(sid),
                                 'slot': slot,
                                 'slot_label': _slot_label(slot),
                             },
@@ -435,10 +439,13 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                     'type': 'repeat_limit',
                     'student_id': sid,
                     'student_name': student_names.get(sid),
+                    'student_label': _student_label(sid),
                     'teacher_id': tid,
                     'teacher_name': teacher_names.get(tid),
+                    'teacher_label': _teacher_label(tid),
                     'subject': subj,
                     'subject_name': subject_names.get(subj),
+                    'subject_label': _subject_label(subj),
                     'max_lessons': repeat_limit,
                     'allow_consecutive': allow_consec_s,
                     'prefer_consecutive': prefer_consec_s,
@@ -502,8 +509,10 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                         'type': 'multi_teacher',
                         'student_id': sid,
                         'student_name': student_names.get(sid),
+                        'student_label': _student_label(sid),
                         'subject': subj,
                         'subject_name': subject_names.get(subj),
+                        'subject_label': _subject_label(subj),
                     },
                 )
                 ct.OnlyEnforceIf(literal)
@@ -546,8 +555,10 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 label,
                 meta={
                     'category': 'teacher_limits',
+                    'type': 'lesson_bounds',
                     'teacher_id': teacher['id'],
                     'teacher_name': teacher_names.get(teacher['id']),
+                    'teacher_label': _teacher_label(teacher['id']),
                     'min_lessons': tmin,
                     'max_lessons': tmax,
                 },
@@ -599,8 +610,10 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                                 'type': 'subject_requirement',
                                 'student_id': sid,
                                 'student_name': student_names.get(sid),
+                                'student_label': _student_label(sid),
                                 'subject': subject,
                                 'subject_name': subject_names.get(subject),
+                                'subject_label': _subject_label(subject),
                             },
                         )
                     ct = model.Add(sum(subject_vars) >= 1)
@@ -640,6 +653,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                         'type': 'total',
                         'student_id': sid,
                         'student_name': student_names.get(sid),
+                        'student_label': _student_label(sid),
                         'min_lessons': min_l,
                         'max_lessons': max_l,
                     },
@@ -695,9 +709,11 @@ def solve_and_print(model, vars_, loc_vars, assumptions=None, time_limit=None, p
         ``assignments``: List of tuples ``(student_id, teacher_id, subject,
         slot, location_id)`` representing the selected lessons and their
         locations.
-        ``core``: If infeasible and assumptions were used, descriptive messages
-        referencing the specific teachers, students, subjects and slots that
-        caused the conflict.
+        ``core_details``: If infeasible and assumptions were used, a list of
+        dictionaries describing the specific teachers, students, subjects and
+        slots that caused the conflict. Each dictionary contains a human
+        readable ``message`` plus metadata such as ``category``, ``teacher_id``
+        and ``slot``.
         ``progress``: List of textual progress messages describing each
         improved solution encountered during search.
     """
@@ -743,32 +759,44 @@ def solve_and_print(model, vars_, loc_vars, assumptions=None, time_limit=None, p
                         break
                 assignments.append((sid, tid, subj, slot, loc))
 
-    core = []
+    core_details = []
     if status == cp_model.INFEASIBLE and assumptions:
         indices = solver.SufficientAssumptionsForInfeasibility()
         label_lookup = {}
         details_lookup = {}
+        ordered_labels = []
         if isinstance(assumptions, dict):
             label_lookup = assumptions.get('label_lookup', {})
             details_lookup = assumptions.get('details', {})
             ordered_labels = assumptions.get('labels', [])
-        else:
-            ordered_labels = []
         for idx in indices:
-            label = None
-            if label_lookup:
-                label = label_lookup.get(idx)
-            if label is None and 0 <= idx < len(ordered_labels):
-                label = ordered_labels[idx]
-            if label is not None:
-                core.append(label)
+            detail = details_lookup.get(idx) if details_lookup else None
+            if detail is not None:
+                entry = dict(detail)
+                entry.setdefault('literal_index', idx)
+                entry.setdefault('index', idx)
+                message = entry.get('message') or entry.get('label')
+                if not message:
+                    fallback = label_lookup.get(idx) if label_lookup else None
+                    if fallback is None and 0 <= idx < len(ordered_labels):
+                        fallback = ordered_labels[idx]
+                    message = fallback or f"assumption_literal_index={idx}"
+                entry.setdefault('message', message)
+                entry.setdefault('label', message)
+                core_details.append(entry)
             else:
-                detail = details_lookup.get(idx)
-                if detail:
-                    core.append(detail.get('message', f"assumption_literal_index={idx}"))
-                else:
-                    core.append(f"assumption_literal_index={idx}")
+                label = label_lookup.get(idx) if label_lookup else None
+                if label is None and 0 <= idx < len(ordered_labels):
+                    label = ordered_labels[idx]
+                fallback = label or f"assumption_literal_index={idx}"
+                core_details.append({
+                    'literal_index': idx,
+                    'index': idx,
+                    'message': fallback,
+                    'label': fallback,
+                    'category': 'unknown',
+                })
 
-    # ``core`` gives a minimal set of unsatisfied assumption groups when no
-    # feasible schedule exists.  ``assignments`` is empty in that case.
-    return status, assignments, core, progress
+    # ``core_details`` gives a minimal set of unsatisfied assumption groups when
+    # no feasible schedule exists.  ``assignments`` is empty in that case.
+    return status, assignments, core_details, progress
