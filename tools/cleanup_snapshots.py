@@ -33,7 +33,9 @@ def cleanup():
     )
     removed_orphaned = c.rowcount
 
-    rows = c.execute("SELECT date, missing, group_data, location_data FROM timetable_snapshot").fetchall()
+    rows = c.execute(
+        "SELECT date, missing, group_data, location_data, teacher_data FROM timetable_snapshot"
+    ).fetchall()
     dates_to_delete = []
     for row in rows:
         missing = row["missing"]
@@ -108,6 +110,23 @@ def cleanup():
                                 break
                         if outdated:
                             pass
+        teacher_raw = row["teacher_data"]
+        if not outdated:
+            if not teacher_raw:
+                outdated = True
+            else:
+                try:
+                    teacher_info = json.loads(teacher_raw)
+                except json.JSONDecodeError:
+                    outdated = True
+                else:
+                    if not isinstance(teacher_info, list):
+                        outdated = True
+                    else:
+                        for entry in teacher_info:
+                            if not isinstance(entry, dict) or "id" not in entry:
+                                outdated = True
+                                break
         if outdated:
             dates_to_delete.append(row["date"])
 
