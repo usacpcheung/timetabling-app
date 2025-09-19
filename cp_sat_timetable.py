@@ -19,7 +19,9 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 blocked=None, student_limits=None,
                 student_repeat=None, student_unavailable=None,
                 student_multi_teacher=None,
-                locations=None, location_restrict=None):
+                locations=None, location_restrict=None,
+                teacher_names=None, student_names=None,
+                subject_names=None, slot_labels=None):
     """Build CP-SAT model for the scheduling problem.
 
     When ``add_assumptions`` is ``True``, Boolean indicators are created for the
@@ -76,6 +78,14 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         locations: optional list of location identifiers.
         location_restrict: mapping ``student_id -> set(location_id)`` limiting
             the locations that may be used for that student or group.
+        teacher_names: optional mapping ``teacher_id -> str`` supplying
+            human readable names for assumption explanations.
+        student_names: optional mapping ``student_id -> str`` supplying
+            display names (including pseudo group ids).
+        subject_names: optional mapping ``subject_id -> str`` used when
+            constructing descriptive assumption messages.
+        slot_labels: optional mapping or sequence giving human friendly labels
+            for each slot index (for example ``"Slot 1 (09:00-09:45)"``).
 
     Returns:
         model (cp_model.CpModel): The constructed model.
@@ -84,8 +94,10 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             location_id) -> BoolVar for location assignments.
         assumptions (dict or None): When ``add_assumptions`` is True, this
             contains per-entity assumption literals under keys such as
-            ``'teacher_availability'`` and an ordered ``'labels'`` list used to
-            decode unsat cores.
+            ``'teacher_availability'`` together with descriptive labels, a
+            ``label_lookup`` dictionary keyed by OR-Tools literal indices, and
+            a ``details`` mapping providing structured metadata for each
+            assumption literal.
     """
     # Create the CP-SAT model object that will hold all variables and constraints
     # for OR-Tools to solve.
@@ -122,6 +134,42 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 member_group_subjects.setdefault(member, set()).update(gsubs)
     unavailable = unavailable or []
     fixed = fixed or []
+
+    teacher_names = teacher_names or {}
+    student_names = student_names or {}
+    subject_names = subject_names or {}
+    slot_labels = slot_labels or {}
+
+    def _teacher_label(tid):
+        name = teacher_names.get(tid)
+        if name:
+            return f"Teacher {name} (ID {tid})"
+        return f"Teacher #{tid}"
+
+    def _student_label(sid):
+        prefix = "Group" if sid in group_ids else "Student"
+        name = student_names.get(sid)
+        if name:
+            return f"{prefix} {name} (ID {sid})"
+        return f"{prefix} #{sid}"
+
+    def _subject_label(subj):
+        name = subject_names.get(subj)
+        if name:
+            return f"{name} (subject {subj})"
+        return f"Subject {subj}"
+
+    def _slot_label(slot):
+        if isinstance(slot_labels, dict):
+            label = slot_labels.get(slot)
+        elif isinstance(slot_labels, (list, tuple)):
+            label = slot_labels[slot] if 0 <= slot < len(slot_labels) else None
+        else:
+            label = None
+        if label:
+            return label
+        return f"Slot {slot + 1}"
+
     unavailable_set = {(u['teacher_id'], u['slot']) for u in unavailable}
     fixed_set = {
         (
@@ -143,8 +191,10 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             'repeat_restrictions': {},
         }
         assumption_labels = []
+        assumption_label_lookup = {}
+        assumption_details = {}
 
-        def register_literal(category, key, label):
+        def register_literal(category, key, label, meta=None):
             """Return (and create if needed) the assumption literal for ``key``."""
 
             cat = assumption_store[category]
@@ -155,6 +205,17 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 cat[key] = literal
                 model.AddAssumption(literal)
                 assumption_labels.append(label)
+                literal_index = literal.Index()
+                assumption_label_lookup[literal_index] = label
+                if meta is None:
+                    meta = {}
+                else:
+                    meta = dict(meta)
+                meta.setdefault('category', category)
+                meta.setdefault('key', key)
+                meta.setdefault('label', label)
+                meta.setdefault('message', label)
+                assumption_details[literal_index] = meta
             return cat[key]
 
         assumptions = {
@@ -163,6 +224,8 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             'student_limits': assumption_store['student_limits'],
             'repeat_restrictions': assumption_store['repeat_restrictions'],
             'labels': assumption_labels,
+            'label_lookup': assumption_label_lookup,
+            'details': assumption_details,
         }
 
     # Create variables for allowed (student, teacher, subject) triples. When a
@@ -202,19 +265,43 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                     elif add_assumptions and ((teacher['id'], slot) in unavailable_set or
                                              teacher['id'] in forbidden):
                         if (teacher['id'], slot) in unavailable_set:
+                            label = (
+                                f"{_teacher_label(teacher['id'])} is unavailable at "
+                                f"{_slot_label(slot)}."
+                            )
                             literal = register_literal(
                                 'teacher_availability',
                                 ('unavailable', teacher['id'], slot),
-                                f"teacher_availability:teacher_id={teacher['id']},slot={slot}",
+                                label,
+                                meta={
+                                    'category': 'teacher_availability',
+                                    'type': 'unavailable',
+                                    'teacher_id': teacher['id'],
+                                    'teacher_name': teacher_names.get(teacher['id']),
+                                    'slot': slot,
+                                    'slot_label': _slot_label(slot),
+                                },
                             )
                         else:
+                            label = (
+                                f"{_teacher_label(teacher['id'])} cannot teach "
+                                f"{_student_label(student['id'])} at {_slot_label(slot)} "
+                                "because of a block."
+                            )
                             literal = register_literal(
                                 'teacher_availability',
                                 ('blocked', student['id'], teacher['id'], slot),
-                                (
-                                    f"teacher_availability:teacher_id={teacher['id']},"
-                                    f"slot={slot},blocked_for_student={student['id']}"
-                                ),
+                                label,
+                                meta={
+                                    'category': 'teacher_availability',
+                                    'type': 'blocked',
+                                    'teacher_id': teacher['id'],
+                                    'teacher_name': teacher_names.get(teacher['id']),
+                                    'student_id': student['id'],
+                                    'student_name': student_names.get(student['id']),
+                                    'slot': slot,
+                                    'slot_label': _slot_label(slot),
+                                },
                             )
                         model.Add(vars_[key] == 0).OnlyEnforceIf(literal)
 
@@ -284,13 +371,22 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 if slot in blocked_slots:
                     ct = model.Add(sum(possible) == 0)
                     if add_assumptions:
+                        label = (
+                            f"{_student_label(sid)} is unavailable at "
+                            f"{_slot_label(slot)}."
+                        )
                         literal = register_literal(
                             'student_limits',
                             ('unavailable_slot', sid, slot),
-                            (
-                                f"student_limits:student_id={sid},slot={slot},"
-                                "reason=student_unavailable"
-                            ),
+                            label,
+                            meta={
+                                'category': 'student_limits',
+                                'type': 'unavailable_slot',
+                                'student_id': sid,
+                                'student_name': student_names.get(sid),
+                                'slot': slot,
+                                'slot_label': _slot_label(slot),
+                            },
                         )
                         ct.OnlyEnforceIf(literal)
                 else:
@@ -320,13 +416,33 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         vars_list = list(slot_map.values())
         repeat_literal = None
         if add_assumptions:
+            if repeat_limit <= 1:
+                repeat_msg = (
+                    f"{_student_label(sid)} may take at most one lesson "
+                    f"with {_teacher_label(tid)} in {_subject_label(subj)}."
+                )
+            else:
+                repeat_msg = (
+                    f"{_student_label(sid)} may take at most {repeat_limit} "
+                    f"lessons with {_teacher_label(tid)} in {_subject_label(subj)}."
+                )
             repeat_literal = register_literal(
                 'repeat_restrictions',
                 ('repeat_limit', sid, tid, subj),
-                (
-                    "repeat_restrictions:"
-                    f"student_id={sid},teacher_id={tid},subject={subj}"
-                ),
+                repeat_msg,
+                meta={
+                    'category': 'repeat_restrictions',
+                    'type': 'repeat_limit',
+                    'student_id': sid,
+                    'student_name': student_names.get(sid),
+                    'teacher_id': tid,
+                    'teacher_name': teacher_names.get(tid),
+                    'subject': subj,
+                    'subject_name': subject_names.get(subj),
+                    'max_lessons': repeat_limit,
+                    'allow_consecutive': allow_consec_s,
+                    'prefer_consecutive': prefer_consec_s,
+                },
             )
         ct = model.Add(sum(vars_list) <= repeat_limit)
         if repeat_literal is not None:
@@ -373,13 +489,22 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 y_vars.append(y)
             ct = model.Add(sum(y_vars) <= 1)
             if add_assumptions:
+                label = (
+                    f"{_student_label(sid)} must use a single teacher for "
+                    f"{_subject_label(subj)}."
+                )
                 literal = register_literal(
                     'repeat_restrictions',
                     ('multi_teacher', sid, subj),
-                    (
-                        "repeat_restrictions:"
-                        f"student_id={sid},subject={subj},type=multi_teacher"
-                    ),
+                    label,
+                    meta={
+                        'category': 'repeat_restrictions',
+                        'type': 'multi_teacher',
+                        'student_id': sid,
+                        'student_name': student_names.get(sid),
+                        'subject': subj,
+                        'subject_name': subject_names.get(subj),
+                    },
                 )
                 ct.OnlyEnforceIf(literal)
 
@@ -400,10 +525,32 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         tmax = teacher_max_lessons if tmax is None else tmax
         literal = None
         if add_assumptions:
+            if tmax is None:
+                label = (
+                    f"{_teacher_label(teacher['id'])} must teach at least "
+                    f"{tmin} lesson(s)."
+                )
+            elif tmin <= 0:
+                label = (
+                    f"{_teacher_label(teacher['id'])} may teach at most "
+                    f"{tmax} lesson(s)."
+                )
+            else:
+                label = (
+                    f"{_teacher_label(teacher['id'])} must teach between "
+                    f"{tmin} and {tmax} lessons."
+                )
             literal = register_literal(
                 'teacher_limits',
                 teacher['id'],
-                f"teacher_limits:teacher_id={teacher['id']}",
+                label,
+                meta={
+                    'category': 'teacher_limits',
+                    'teacher_id': teacher['id'],
+                    'teacher_name': teacher_names.get(teacher['id']),
+                    'min_lessons': tmin,
+                    'max_lessons': tmax,
+                },
             )
         ct = model.Add(load_var >= tmin)
         if literal is not None:
@@ -439,13 +586,22 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 if require_all_subjects:
                     literal = None
                     if add_assumptions:
+                        label = (
+                            f"{_student_label(sid)} must receive at least one "
+                            f"lesson in {_subject_label(subject)}."
+                        )
                         literal = register_literal(
                             'student_limits',
                             ('subject_requirement', sid, subject),
-                            (
-                                "student_limits:"
-                                f"student_id={sid},subject={subject}"
-                            ),
+                            label,
+                            meta={
+                                'category': 'student_limits',
+                                'type': 'subject_requirement',
+                                'student_id': sid,
+                                'student_name': student_names.get(sid),
+                                'subject': subject,
+                                'subject_name': subject_names.get(subject),
+                            },
                         )
                     ct = model.Add(sum(subject_vars) >= 1)
                     if literal is not None:
@@ -460,10 +616,33 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             min_l, max_l = student_limits.get(sid, (min_lessons, max_lessons))
             literal_total = None
             if add_assumptions:
+                if max_l is None:
+                    total_label = (
+                        f"{_student_label(sid)} must take at least {min_l} "
+                        "lesson(s)."
+                    )
+                elif min_l <= 0:
+                    total_label = (
+                        f"{_student_label(sid)} may take at most {max_l} "
+                        "lesson(s)."
+                    )
+                else:
+                    total_label = (
+                        f"{_student_label(sid)} must take between {min_l} and "
+                        f"{max_l} lessons."
+                    )
                 literal_total = register_literal(
                     'student_limits',
                     ('total', sid),
-                    f"student_limits:student_id={sid},type=total",
+                    total_label,
+                    meta={
+                        'category': 'student_limits',
+                        'type': 'total',
+                        'student_id': sid,
+                        'student_name': student_names.get(sid),
+                        'min_lessons': min_l,
+                        'max_lessons': max_l,
+                    },
                 )
             ct_min = model.Add(sum(total) >= min_l)
             ct_max = model.Add(sum(total) <= max_l)
@@ -516,9 +695,9 @@ def solve_and_print(model, vars_, loc_vars, assumptions=None, time_limit=None, p
         ``assignments``: List of tuples ``(student_id, teacher_id, subject,
         slot, location_id)`` representing the selected lessons and their
         locations.
-        ``core``: If infeasible and assumptions were used, descriptive labels
-        identifying the specific teacher/student constraints that caused the
-        conflict.
+        ``core``: If infeasible and assumptions were used, descriptive messages
+        referencing the specific teachers, students, subjects and slots that
+        caused the conflict.
         ``progress``: List of textual progress messages describing each
         improved solution encountered during search.
     """
@@ -567,12 +746,28 @@ def solve_and_print(model, vars_, loc_vars, assumptions=None, time_limit=None, p
     core = []
     if status == cp_model.INFEASIBLE and assumptions:
         indices = solver.SufficientAssumptionsForInfeasibility()
-        labels = assumptions.get('labels', []) if isinstance(assumptions, dict) else []
+        label_lookup = {}
+        details_lookup = {}
+        if isinstance(assumptions, dict):
+            label_lookup = assumptions.get('label_lookup', {})
+            details_lookup = assumptions.get('details', {})
+            ordered_labels = assumptions.get('labels', [])
+        else:
+            ordered_labels = []
         for idx in indices:
-            if 0 <= idx < len(labels):
-                core.append(labels[idx])
+            label = None
+            if label_lookup:
+                label = label_lookup.get(idx)
+            if label is None and 0 <= idx < len(ordered_labels):
+                label = ordered_labels[idx]
+            if label is not None:
+                core.append(label)
             else:
-                core.append(f"assumption_index={idx}")
+                detail = details_lookup.get(idx)
+                if detail:
+                    core.append(detail.get('message', f"assumption_literal_index={idx}"))
+                else:
+                    core.append(f"assumption_literal_index={idx}")
 
     # ``core`` gives a minimal set of unsatisfied assumption groups when no
     # feasible schedule exists.  ``assignments`` is empty in that case.

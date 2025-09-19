@@ -2033,13 +2033,50 @@ def generate_schedule(target_date=None):
     teacher_max = cfg['teacher_max_lessons']
     solver_time_limit = cfg['solver_time_limit']
 
+    try:
+        raw_slot_times = json.loads(cfg['slot_start_times']) if cfg['slot_start_times'] else []
+    except Exception:
+        raw_slot_times = []
+    slot_label_map = {}
+    last_start = None
+    duration = cfg['slot_duration'] or 0
+    default_start = 8 * 60 + 30
+    for idx in range(slots):
+        start_minutes = None
+        if idx < len(raw_slot_times):
+            try:
+                h, m = map(int, raw_slot_times[idx].split(':'))
+                start_minutes = h * 60 + m
+            except Exception:
+                start_minutes = None
+        if start_minutes is None:
+            if last_start is None:
+                start_minutes = default_start
+            else:
+                start_minutes = last_start + duration
+        end_minutes = start_minutes + duration if duration else None
+        if end_minutes is not None:
+            label = (
+                f"Slot {idx + 1} ({start_minutes // 60:02d}:{start_minutes % 60:02d}-"
+                f"{end_minutes // 60:02d}:{end_minutes % 60:02d})"
+            )
+        else:
+            label = f"Slot {idx + 1}"
+        slot_label_map[idx] = label
+        last_start = start_minutes
+
     c.execute('SELECT * FROM teachers')
     teachers = c.fetchall()
+    teacher_name_map = {t['id']: t['name'] for t in teachers}
 
     c.execute('SELECT * FROM students WHERE active=1')
     students = c.fetchall()
     c.execute('SELECT * FROM groups')
     groups = c.fetchall()
+    group_name_map = {g['id']: g['name'] for g in groups}
+    c.execute('SELECT id, name FROM subjects')
+    subject_name_rows = c.fetchall()
+    subject_name_map = {row['id']: row['name'] for row in subject_name_rows}
     c.execute('SELECT id, name FROM students')
     name_rows = c.fetchall()
     student_name_map = {r['id']: r['name'] for r in name_rows}
@@ -2051,6 +2088,9 @@ def generate_schedule(target_date=None):
         group_members.setdefault(gm['group_id'], []).append(gm['student_id'])
     group_map_offset = {offset + gid: members for gid, members in group_members.items()}
 
+
+    for gid, name in group_name_map.items():
+        student_name_map[offset + gid] = name
 
     group_subjects = {g['id']: json.loads(g['subjects']) for g in groups}
     student_groups = {}
@@ -2236,7 +2276,11 @@ def generate_schedule(target_date=None):
         student_unavailable=student_unavailable,
         student_multi_teacher=student_multi,
         locations=locations,
-        location_restrict=loc_restrict)
+        location_restrict=loc_restrict,
+        teacher_names=teacher_name_map,
+        student_names=student_name_map,
+        subject_names=subject_name_map,
+        slot_labels=slot_label_map)
 
     progress_messages = []
 

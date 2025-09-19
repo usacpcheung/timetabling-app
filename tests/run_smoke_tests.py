@@ -74,11 +74,18 @@ def test_unsat_core_present_on_conflict():
     status, assignments, core, progress = solve_and_print(model, vars_, loc_vars, assumptions)
     assert status == cp_model.INFEASIBLE, "Expected infeasible due to teacher unavailability and student min"
     assert core, "Expected an unsat core to be reported"
-    # Core should include detailed identifiers for both the teacher and student
-    assert any("teacher_availability:" in label for label in core), f"Unexpected core: {core}"
-    assert any("teacher_id=1" in label for label in core), f"Teacher id missing in core: {core}"
-    assert any("student_limits:" in label for label in core), f"Unexpected core: {core}"
-    assert any("student_id=1" in label for label in core), f"Student id missing in core: {core}"
+    teacher_messages = [label for label in core if "Teacher" in label]
+    assert teacher_messages, f"Teacher constraint missing from core: {core}"
+    assert any("unavailable" in label.lower() for label in teacher_messages), f"Expected teacher unavailable message: {core}"
+    assert any("Teacher #1" in label or "ID 1" in label for label in teacher_messages), f"Teacher identifier missing: {core}"
+    assert any("Slot" in label for label in teacher_messages), f"Slot detail missing in teacher message: {core}"
+
+    student_messages = [label for label in core if "Student" in label or "Group" in label]
+    assert student_messages, f"Student constraint missing from core: {core}"
+    assert any(("must take" in label.lower()) or ("must receive" in label.lower()) for label in student_messages), (
+        f"Expected student requirement in core: {core}"
+    )
+    assert any("Student #1" in label or "ID 1" in label for label in student_messages), f"Student identifier missing: {core}"
     assert progress == [], "No progress messages expected when infeasible"
 
 
