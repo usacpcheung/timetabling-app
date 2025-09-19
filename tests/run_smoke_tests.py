@@ -96,6 +96,37 @@ def test_unsat_core_present_on_conflict():
     )
     assert progress == [], "No progress messages expected when infeasible"
 
+    # Repeat-limit plus multi-teacher conflict should aggregate per subject.
+    students = [make_row(1, ["Math"])]
+    teachers = [
+        {"id": 1, "subjects": json.dumps(["Math"]), "min_lessons": 0, "max_lessons": None},
+        {"id": 2, "subjects": json.dumps(["Math"]), "min_lessons": 0, "max_lessons": None},
+    ]
+    slots = 2
+    model, vars_, loc_vars, assumptions = build_model(
+        students, teachers, slots,
+        min_lessons=2, max_lessons=2,
+        allow_repeats=False,
+        allow_multi_teacher=False,
+        unavailable=[], fixed=[],
+        add_assumptions=True,
+        student_limits={1: (2, 2)},
+        locations=[],
+    )
+    status, assignments, core, progress = solve_and_print(model, vars_, loc_vars, assumptions)
+    assert status == cp_model.INFEASIBLE, "Expected infeasible due to repeat and single-teacher limits"
+    repeat_details = [detail for detail in core if detail.get('type') == 'repeat_limit']
+    assert len(repeat_details) >= 2, f"Expected repeat limits for both teachers, got: {repeat_details}"
+    multi_details = [detail for detail in core if detail.get('type') == 'multi_teacher']
+    assert multi_details, f"Expected multi-teacher constraint in core, got: {core}"
+    summaries = summarise_core_conflicts(core)
+    assert any('may take at most one lesson' in msg.lower() and 'Teacher #1' in msg and 'Teacher #2' in msg for msg in summaries), (
+        f"Expected aggregated repeat limit mentioning both teachers, got: {summaries}"
+    )
+    assert any('must use a single teacher' in msg and 'Teacher #1' in msg and 'Teacher #2' in msg for msg in summaries), (
+        f"Expected aggregated multi-teacher summary with teacher names, got: {summaries}"
+    )
+
 
 def main():
     tests = [

@@ -107,6 +107,45 @@ def summarise_core_conflicts(core_details):
     results = []
     teacher_groups = {}
     student_groups = {}
+    repeat_limit_groups = {}
+    multi_teacher_groups = {}
+    teachers_by_student_subject = {}
+
+    def ensure_teacher_label(detail):
+        label = detail.get('teacher_label') or detail.get('teacher_name')
+        if label:
+            return label
+        tid = detail.get('teacher_id')
+        if tid is not None:
+            return f"Teacher ID {tid}"
+        return 'Teacher'
+
+    def ensure_student_label(detail):
+        label = detail.get('student_label') or detail.get('student_name')
+        if label:
+            return label
+        sid = detail.get('student_id')
+        if sid is not None:
+            prefix = 'Group' if detail.get('is_group') else 'Student'
+            return f"{prefix} ID {sid}"
+        return 'Student'
+
+    def ensure_subject_label(detail):
+        label = detail.get('subject_label') or detail.get('subject_name')
+        if label:
+            return label
+        subj = detail.get('subject')
+        if subj is not None:
+            return f"Subject {subj}"
+        return 'the subject'
+
+    def render_teachers(teacher_labels):
+        labels = [lbl for lbl in teacher_labels if lbl]
+        if not labels:
+            return ''
+        if len(labels) == 1:
+            return labels[0]
+        return ', '.join(labels[:-1]) + f" and {labels[-1]}"
 
     for detail in core_details:
         if not isinstance(detail, dict):
@@ -146,6 +185,49 @@ def summarise_core_conflicts(core_details):
                 results.append(None)
             group['slots'].append((detail.get('slot'), slot_display(detail)))
             continue
+        if category == 'repeat_restrictions':
+            sid = detail.get('student_id')
+            subj = detail.get('subject')
+            subject_label = ensure_subject_label(detail)
+            student_label = ensure_student_label(detail)
+            if kind == 'repeat_limit':
+                max_lessons = detail.get('max_lessons')
+                key = (sid, subj, max_lessons)
+                group = repeat_limit_groups.get(key)
+                if group is None:
+                    group = {
+                        'student_label': student_label,
+                        'subject_label': subject_label,
+                        'max_lessons': max_lessons,
+                        'teachers': [],
+                        'seen_teachers': set(),
+                        'index': len(results),
+                    }
+                    repeat_limit_groups[key] = group
+                    results.append(None)
+                tid = detail.get('teacher_id')
+                teacher_label = ensure_teacher_label(detail)
+                teacher_list = teachers_by_student_subject.setdefault((sid, subj), [])
+                if teacher_label not in teacher_list:
+                    teacher_list.append(teacher_label)
+                teacher_key = tid if tid is not None else teacher_label
+                if teacher_key not in group['seen_teachers']:
+                    group['teachers'].append(teacher_label)
+                    group['seen_teachers'].add(teacher_key)
+                continue
+            if kind == 'multi_teacher':
+                key = (sid, subj)
+                group = multi_teacher_groups.get(key)
+                if group is None:
+                    group = {
+                        'student_label': student_label,
+                        'subject_label': subject_label,
+                        'index': len(results),
+                    }
+                    multi_teacher_groups[key] = group
+                    results.append(None)
+                continue
+
         message = detail.get('message') or detail.get('label') or str(detail)
         results.append(f"Conflict: {message}")
 
@@ -165,6 +247,42 @@ def summarise_core_conflicts(core_details):
             message = f"{label} is unavailable at {slot_text}."
         else:
             message = f"{label} has an availability conflict."
+        results[group['index']] = f"Conflict: {message}"
+
+    for key, group in sorted(repeat_limit_groups.items(), key=lambda item: item[1]['index']):
+        teacher_text = render_teachers(group['teachers'])
+        lessons = group['max_lessons']
+        student_label = group['student_label'] or 'Student'
+        subject_label = group['subject_label'] or 'the subject'
+        if lessons is None:
+            limit_text = 'a limited number of lessons'
+        elif lessons <= 1:
+            limit_text = 'one lesson'
+        else:
+            limit_text = f"{lessons} lessons"
+        if teacher_text:
+            message = (
+                f"{student_label} may take at most {limit_text} with {teacher_text} "
+                f"in {subject_label}."
+            )
+        else:
+            message = (
+                f"{student_label} may take at most {limit_text} in {subject_label}."
+            )
+        results[group['index']] = f"Conflict: {message}"
+
+    for key, group in sorted(multi_teacher_groups.items(), key=lambda item: item[1]['index']):
+        student_label = group['student_label'] or 'Student'
+        subject_label = group['subject_label'] or 'the subject'
+        teacher_labels = teachers_by_student_subject.get(key, [])
+        teacher_text = render_teachers([lbl for lbl in teacher_labels if lbl])
+        if teacher_text:
+            message = (
+                f"{student_label} must use a single teacher for {subject_label}, "
+                f"but conflicts involve {teacher_text}."
+            )
+        else:
+            message = f"{student_label} must use a single teacher for {subject_label}."
         results[group['index']] = f"Conflict: {message}"
 
     return [msg for msg in results if msg is not None]
