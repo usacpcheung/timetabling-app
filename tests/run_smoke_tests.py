@@ -74,8 +74,11 @@ def test_unsat_core_present_on_conflict():
     status, assignments, core, progress = solve_and_print(model, vars_, loc_vars, assumptions)
     assert status == cp_model.INFEASIBLE, "Expected infeasible due to teacher unavailability and student min"
     assert core, "Expected an unsat core to be reported"
-    # Core likely includes teacher_availability and student_limits
-    assert any(k in core for k in ("teacher_availability", "student_limits")), f"Unexpected core: {core}"
+    # Core should include detailed identifiers for both the teacher and student
+    assert any("teacher_availability:" in label for label in core), f"Unexpected core: {core}"
+    assert any("teacher_id=1" in label for label in core), f"Teacher id missing in core: {core}"
+    assert any("student_limits:" in label for label in core), f"Unexpected core: {core}"
+    assert any("student_id=1" in label for label in core), f"Student id missing in core: {core}"
     assert progress == [], "No progress messages expected when infeasible"
 
 

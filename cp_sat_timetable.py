@@ -82,8 +82,10 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         vars_ (dict): Mapping (student_id, teacher_id, subject, slot) -> BoolVar.
         loc_vars (dict): Mapping (student_id, teacher_id, subject, slot,
             location_id) -> BoolVar for location assignments.
-        assumptions (dict or None): Mapping of constraint group name to the
-            assumption indicator variable when ``add_assumptions`` is True.
+        assumptions (dict or None): When ``add_assumptions`` is True, this
+            contains per-entity assumption literals under keys such as
+            ``'teacher_availability'`` and an ordered ``'labels'`` list used to
+            decode unsat cores.
     """
     # Create the CP-SAT model object that will hold all variables and constraints
     # for OR-Tools to solve.
@@ -131,16 +133,37 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         for f in fixed
     }
 
+    register_literal = None
     assumptions = None
     if add_assumptions:
-        assumptions = {
-            'teacher_availability': model.NewBoolVar('assume_teacher_availability'),
-            'teacher_limits': model.NewBoolVar('assume_teacher_limits'),
-            'student_limits': model.NewBoolVar('assume_student_limits'),
-            'repeat_restrictions': model.NewBoolVar('assume_repeat_restrictions'),
+        assumption_store = {
+            'teacher_availability': {},
+            'teacher_limits': {},
+            'student_limits': {},
+            'repeat_restrictions': {},
         }
-        for var in assumptions.values():
-            model.AddAssumption(var)
+        assumption_labels = []
+
+        def register_literal(category, key, label):
+            """Return (and create if needed) the assumption literal for ``key``."""
+
+            cat = assumption_store[category]
+            if key not in cat:
+                literal = model.NewBoolVar(
+                    f"assume_{category}_{len(assumption_labels)}"
+                )
+                cat[key] = literal
+                model.AddAssumption(literal)
+                assumption_labels.append(label)
+            return cat[key]
+
+        assumptions = {
+            'teacher_availability': assumption_store['teacher_availability'],
+            'teacher_limits': assumption_store['teacher_limits'],
+            'student_limits': assumption_store['student_limits'],
+            'repeat_restrictions': assumption_store['repeat_restrictions'],
+            'labels': assumption_labels,
+        }
 
     # Create variables for allowed (student, teacher, subject) triples. When a
     # real student is a member of a group for a particular subject, that subject
@@ -178,7 +201,22 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                         model.Add(vars_[key] == 1)
                     elif add_assumptions and ((teacher['id'], slot) in unavailable_set or
                                              teacher['id'] in forbidden):
-                        model.Add(vars_[key] == 0).OnlyEnforceIf(assumptions['teacher_availability'])
+                        if (teacher['id'], slot) in unavailable_set:
+                            literal = register_literal(
+                                'teacher_availability',
+                                ('unavailable', teacher['id'], slot),
+                                f"teacher_availability:teacher_id={teacher['id']},slot={slot}",
+                            )
+                        else:
+                            literal = register_literal(
+                                'teacher_availability',
+                                ('blocked', student['id'], teacher['id'], slot),
+                                (
+                                    f"teacher_availability:teacher_id={teacher['id']},"
+                                    f"slot={slot},blocked_for_student={student['id']}"
+                                ),
+                            )
+                        model.Add(vars_[key] == 0).OnlyEnforceIf(literal)
 
     all_locs = locations or []
     loc_restrict = location_restrict or {}
@@ -246,7 +284,15 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 if slot in blocked_slots:
                     ct = model.Add(sum(possible) == 0)
                     if add_assumptions:
-                        ct.OnlyEnforceIf(assumptions['student_limits'])
+                        literal = register_literal(
+                            'student_limits',
+                            ('unavailable_slot', sid, slot),
+                            (
+                                f"student_limits:student_id={sid},slot={slot},"
+                                "reason=student_unavailable"
+                            ),
+                        )
+                        ct.OnlyEnforceIf(literal)
                 else:
                     model.Add(sum(possible) <= 1)
 
@@ -272,15 +318,25 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         if repeat_subs is not None and subj not in repeat_subs:
             repeat_limit = 1
         vars_list = list(slot_map.values())
-        ct = model.Add(sum(vars_list) <= repeat_limit)
+        repeat_literal = None
         if add_assumptions:
-            ct.OnlyEnforceIf(assumptions['repeat_restrictions'])
+            repeat_literal = register_literal(
+                'repeat_restrictions',
+                ('repeat_limit', sid, tid, subj),
+                (
+                    "repeat_restrictions:"
+                    f"student_id={sid},teacher_id={tid},subject={subj}"
+                ),
+            )
+        ct = model.Add(sum(vars_list) <= repeat_limit)
+        if repeat_literal is not None:
+            ct.OnlyEnforceIf(repeat_literal)
         if not allow_consec_s and repeat_limit > 1:
             for s in range(slots - 1):
                 if s in slot_map and s + 1 in slot_map:
                     ct2 = model.Add(slot_map[s] + slot_map[s + 1] <= 1)
-                    if add_assumptions:
-                        ct2.OnlyEnforceIf(assumptions['repeat_restrictions'])
+                    if repeat_literal is not None:
+                        ct2.OnlyEnforceIf(repeat_literal)
         if prefer_consec_s and allow_consec_s and repeat_limit > 1:
             for s in range(slots - 1):
                 if s in slot_map and s + 1 in slot_map:
@@ -317,7 +373,15 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 y_vars.append(y)
             ct = model.Add(sum(y_vars) <= 1)
             if add_assumptions:
-                ct.OnlyEnforceIf(assumptions['repeat_restrictions'])
+                literal = register_literal(
+                    'repeat_restrictions',
+                    ('multi_teacher', sid, subj),
+                    (
+                        "repeat_restrictions:"
+                        f"student_id={sid},subject={subj},type=multi_teacher"
+                    ),
+                )
+                ct.OnlyEnforceIf(literal)
 
     # Limit total lessons per teacher and track each teacher's load
     teacher_load_vars = []
@@ -334,13 +398,20 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         tmax = teacher['max_lessons']
         tmin = teacher_min_lessons if tmin is None else tmin
         tmax = teacher_max_lessons if tmax is None else tmax
-        ct = model.Add(load_var >= tmin)
+        literal = None
         if add_assumptions:
-            ct.OnlyEnforceIf(assumptions['teacher_limits'])
+            literal = register_literal(
+                'teacher_limits',
+                teacher['id'],
+                f"teacher_limits:teacher_id={teacher['id']}",
+            )
+        ct = model.Add(load_var >= tmin)
+        if literal is not None:
+            ct.OnlyEnforceIf(literal)
         if tmax is not None:
             ct2 = model.Add(load_var <= tmax)
-            if add_assumptions:
-                ct2.OnlyEnforceIf(assumptions['teacher_limits'])
+            if literal is not None:
+                ct2.OnlyEnforceIf(literal)
 
     # Optional objective terms to balance teacher workloads
     if balance_teacher_load and teacher_load_vars:
@@ -366,9 +437,19 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                     subject_vars.append(g_var)
             if subject_vars:
                 if require_all_subjects:
-                    ct = model.Add(sum(subject_vars) >= 1)
+                    literal = None
                     if add_assumptions:
-                        ct.OnlyEnforceIf(assumptions['student_limits'])
+                        literal = register_literal(
+                            'student_limits',
+                            ('subject_requirement', sid, subject),
+                            (
+                                "student_limits:"
+                                f"student_id={sid},subject={subject}"
+                            ),
+                        )
+                    ct = model.Add(sum(subject_vars) >= 1)
+                    if literal is not None:
+                        ct.OnlyEnforceIf(literal)
                 total_set.update(subject_vars)
         # Group lessons should only count once toward the student's total lesson
         # limits even when they satisfy multiple subject requirements.
@@ -377,11 +458,18 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         total = list(total_set)
         if total:
             min_l, max_l = student_limits.get(sid, (min_lessons, max_lessons))
+            literal_total = None
+            if add_assumptions:
+                literal_total = register_literal(
+                    'student_limits',
+                    ('total', sid),
+                    f"student_limits:student_id={sid},type=total",
+                )
             ct_min = model.Add(sum(total) >= min_l)
             ct_max = model.Add(sum(total) <= max_l)
-            if add_assumptions:
-                ct_min.OnlyEnforceIf(assumptions['student_limits'])
-                ct_max.OnlyEnforceIf(assumptions['student_limits'])
+            if literal_total is not None:
+                ct_min.OnlyEnforceIf(literal_total)
+                ct_max.OnlyEnforceIf(literal_total)
 
     # Objective function: prioritize scheduling as many lessons as possible.  Additional
     # terms can encourage consecutive repeats or penalize uneven teacher loads
@@ -428,8 +516,9 @@ def solve_and_print(model, vars_, loc_vars, assumptions=None, time_limit=None, p
         ``assignments``: List of tuples ``(student_id, teacher_id, subject,
         slot, location_id)`` representing the selected lessons and their
         locations.
-        ``core``: If infeasible and assumptions were used, names of the
-        constraint groups that could not be satisfied.
+        ``core``: If infeasible and assumptions were used, descriptive labels
+        identifying the specific teacher/student constraints that caused the
+        conflict.
         ``progress``: List of textual progress messages describing each
         improved solution encountered during search.
     """
@@ -478,17 +567,12 @@ def solve_and_print(model, vars_, loc_vars, assumptions=None, time_limit=None, p
     core = []
     if status == cp_model.INFEASIBLE and assumptions:
         indices = solver.SufficientAssumptionsForInfeasibility()
-        # Map back using the same key order used to build assumption_list
-        mapping_keys = [
-            'teacher_availability',
-            'teacher_limits',
-            'student_limits',
-            'repeat_restrictions',
-        ]
-        present_keys = [k for k in mapping_keys if k in assumptions]
+        labels = assumptions.get('labels', []) if isinstance(assumptions, dict) else []
         for idx in indices:
-            if 0 <= idx < len(present_keys):
-                core.append(present_keys[idx])
+            if 0 <= idx < len(labels):
+                core.append(labels[idx])
+            else:
+                core.append(f"assumption_index={idx}")
 
     # ``core`` gives a minimal set of unsatisfied assumption groups when no
     # feasible schedule exists.  ``assignments`` is empty in that case.

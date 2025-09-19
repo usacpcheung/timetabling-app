@@ -2302,15 +2302,13 @@ def generate_schedule(target_date=None):
         if status == cp_model.INFEASIBLE:
             # Map assumption literals from the unsat core to human readable
             # messages explaining why the model is infeasible.
-            reason_map = {
-                'teacher_availability': 'A teacher is unavailable or blocked for a required lesson.',
-                'teacher_limits': 'Teacher lesson limits are too strict.',
-                'student_limits': 'Student lesson or subject requirements conflict.',
-                'repeat_restrictions': 'Repeat or consecutive lesson restrictions prevent a schedule.',
-            }
             flash('No feasible timetable could be generated.', 'error')
-            for name in core:
-                flash(reason_map.get(name, name), 'error')
+            if core:
+                for label in core:
+                    app.logger.error('Unsatisfied assumption: %s', label)
+                    flash(f'Conflict: {label}', 'error')
+            else:
+                app.logger.error('Solver reported infeasible without an unsat core.')
     conn.commit()
     conn.close()
 
