@@ -23,9 +23,9 @@
             <table class="w-full text-sm text-left text-emerald-700 dark:text-emerald-300 rounded-lg border border-emerald-200 overflow-hidden dark:border-emerald-700">
                 <thead class="text-xs text-emerald-800 uppercase bg-emerald-100 dark:bg-emerald-800 dark:text-emerald-200">
                     <tr>
-                        <th class="px-4 py-2 border">Slot</th>
+                        <th class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">Slot</th>
                         {% for t in teachers %}
-                        <th class="px-4 py-2 border">{{ t['name'] }}<br>{{ ', '.join(json.loads(t['subjects'])) }}</th>
+                        <th class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">{{ t['name'] }}<br>{{ ', '.join(json.loads(t['subjects'])) }}</th>
                         {% endfor %}
                     </tr>
                 </thead>
@@ -33,10 +33,10 @@
                 {% for slot in slots %}
                     {% set label = slot_labels[slot] %}
                     <tr class="bg-white border-b border-emerald-100 dark:bg-emerald-900 dark:border-emerald-700">
-                        <td class="px-4 py-2 border">Slot {{ slot + 1 }}<br>{{ label.start }}-{{ label.end }}</td>
+                        <td class="px-4 py-2 border border-emerald-200 dark:border-emerald-700">Slot {{ slot + 1 }}<br>{{ label.start }}-{{ label.end }}</td>
                         {% for t in teachers %}
                             {% set entry = grid[slot][t['id']] %}
-                            <td class="px-4 py-2 border align-top">
+                            <td class="px-4 py-2 border border-emerald-200 dark:border-emerald-700 align-top">
                                 {% if entry %}
                                     <div>{{ entry.desc }}</div>
                                     <button type="button" class="text-blue-600 hover:underline text-xs edit-lesson-btn" data-entry="{{ entry.id }}" data-student="{{ entry.student_id or '' }}" data-group="{{ entry.group_id or '' }}" data-subject="{{ entry.subject_id }}" data-location="{{ entry.location_id or '' }}">Edit</button>
