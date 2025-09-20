@@ -22,7 +22,7 @@ import zipfile
 from datetime import datetime
 from werkzeug.utils import secure_filename
 
-from cp_sat_timetable import build_model, solve_and_print
+from cp_sat_timetable import AssumptionInfo, build_model, solve_and_print
 
 app = Flask(__name__)
 app.secret_key = 'dev'
@@ -62,6 +62,473 @@ CONFIG_TABLES = [
     'student_locations',
     'group_locations',
 ]
+
+
+UNSAT_REASON_MAP = {
+    'teacher_availability': 'A teacher is unavailable or blocked for a required lesson.',
+    'teacher_limits': 'Teacher lesson limits are too strict.',
+    'student_limits': 'Student lesson or subject requirements conflict.',
+    'repeat_restrictions': 'Repeat or consecutive lesson restrictions prevent a schedule.',
+    'fixed_assignment': 'A fixed assignment could not be satisfied.',
+    'location_restriction': 'Location restrictions prevent required lessons.',
+}
+
+
+def _name_or_placeholder(name, prefix, identifier):
+    """Return ``name`` when provided, otherwise a generated placeholder."""
+
+    if name:
+        return name
+    if identifier is not None:
+        return f"{prefix} {identifier}"
+    return prefix
+
+
+def _format_slot_list(slots):
+    """Return a comma separated representation of slot numbers."""
+
+    ordered = sorted({slot for slot in slots if slot is not None})
+    return ', '.join(str(slot) for slot in ordered)
+
+
+def _format_student_subject(student_name, student_id, subject):
+    """Return ``"Name (Subject)"`` formatting for students."""
+
+    base = _name_or_placeholder(student_name, 'Student', student_id)
+    if subject is not None:
+        return f"{base} ({subject})"
+    return base
+
+
+def summarize_unsat_core(core):
+    """Group :class:`AssumptionInfo` entries into concise summary messages."""
+
+    if not core:
+        return []
+
+    messages = []
+    processed = set()
+
+    def _format_candidate_map(candidate_map):
+        if not candidate_map:
+            return ''
+        ordered = [
+            f"{slot}: {count}"
+            for slot, count in sorted(
+                candidate_map.items(),
+                key=lambda kv: (
+                    kv[0] is None,
+                    kv[0] if isinstance(kv[0], (int, float)) else str(kv[0]),
+                ),
+            )
+        ]
+        return ', '.join(ordered)
+
+    def _append_teacher_availability(entries):
+        grouped_slots = {}
+        grouped_blocks = {}
+        for idx, info in entries:
+            label = getattr(info, 'label', '') or ''
+            context = getattr(info, 'context', {}) or {}
+            teacher_id = context.get('teacher_id')
+            teacher_name = context.get('teacher_name')
+            if label.startswith('teacher_slot_'):
+                data = grouped_slots.setdefault(teacher_id, {
+                    'teacher_name': teacher_name,
+                    'slots': set(),
+                    'candidates': {},
+                    'students': {},
+                })
+                data['teacher_name'] = data['teacher_name'] or teacher_name
+                slot = context.get('slot')
+                data['slots'].add(slot)
+                if context.get('candidate_lessons') is not None:
+                    data['candidates'][slot] = context['candidate_lessons']
+                processed.add(idx)
+            elif label.startswith('block_'):
+                data = grouped_blocks.setdefault(teacher_id, {
+                    'teacher_name': teacher_name,
+                    'students': {},
+                    'reasons': set(),
+                })
+                data['teacher_name'] = data['teacher_name'] or teacher_name
+                slot = context.get('slot')
+                key = (
+                    context.get('student_name'),
+                    context.get('student_id'),
+                    context.get('subject'),
+                )
+                data['students'].setdefault(key, set()).add(slot)
+                for reason in context.get('reasons', []) or []:
+                    data['reasons'].add(reason)
+                processed.add(idx)
+        for teacher_id, data in sorted(grouped_slots.items(), key=lambda kv: (_name_or_placeholder(kv[1]['teacher_name'], 'Teacher', kv[0]))):
+            teacher_label = _name_or_placeholder(data['teacher_name'], 'Teacher', teacher_id)
+            slot_text = _format_slot_list(data['slots'])
+            candidate_text = _format_candidate_map(data['candidates'])
+            students = []
+            block_data = grouped_blocks.get(teacher_id)
+            if block_data:
+                for (student_name, student_id, subject), slots in sorted(
+                    block_data['students'].items(),
+                    key=lambda kv: (
+                        _name_or_placeholder(kv[0][0], 'Student', kv[0][1]),
+                        str(kv[0][2]),
+                    ),
+                ):
+                    students.append(_format_student_subject(student_name, student_id, subject))
+            base = UNSAT_REASON_MAP.get('teacher_availability', 'Teacher availability issue')
+            message = f"{base} {teacher_label} has conflicts in slots {slot_text}."
+            if candidate_text:
+                message += f" Candidate lessons per slot: {candidate_text}."
+            if students:
+                message += f" Students needing this teacher: {', '.join(students)}."
+            messages.append(message)
+        reason_map = {
+            'teacher_unavailable': 'teacher unavailable',
+            'teacher_blocked': 'teacher blocked',
+        }
+        for teacher_id, data in sorted(grouped_blocks.items(), key=lambda kv: (_name_or_placeholder(kv[1]['teacher_name'], 'Teacher', kv[0]))):
+            teacher_label = _name_or_placeholder(data['teacher_name'], 'Teacher', teacher_id)
+            student_parts = []
+            all_slots = set()
+            for (student_name, student_id, subject), slots in sorted(
+                data['students'].items(),
+                key=lambda kv: (
+                    _name_or_placeholder(kv[0][0], 'Student', kv[0][1]),
+                    str(kv[0][2]),
+                ),
+            ):
+                all_slots.update(slots)
+                slot_text = _format_slot_list(slots)
+                student_label = _format_student_subject(student_name, student_id, subject)
+                student_parts.append(f"{student_label} in slots {slot_text}")
+            if not student_parts:
+                continue
+            reasons = sorted(reason_map.get(reason, reason) for reason in data['reasons'])
+            base = UNSAT_REASON_MAP.get('teacher_availability', 'Teacher availability issue')
+            slot_text = _format_slot_list(all_slots)
+            message = f"{base} {teacher_label} cannot teach {', '.join(student_parts)}."
+            if slot_text:
+                message += f" Affected slots: {slot_text}."
+            if reasons:
+                message += f" Reasons: {', '.join(reasons)}."
+            messages.append(message)
+
+    def _append_student_limits(entries):
+        slot_groups = {}
+        block_groups = {}
+        subject_groups = {}
+        min_groups = {}
+        max_groups = {}
+        for idx, info in entries:
+            label = getattr(info, 'label', '') or ''
+            context = getattr(info, 'context', {}) or {}
+            sid = context.get('student_id')
+            sname = context.get('student_name')
+            if label.startswith('student_slot_'):
+                data = slot_groups.setdefault(sid, {'student_name': sname, 'slots': {}, 'reason': 'conflict'})
+                data['student_name'] = data['student_name'] or sname
+                data['slots'][context.get('slot')] = context.get('candidate_lessons')
+                processed.add(idx)
+            elif label.startswith('student_block_'):
+                data = block_groups.setdefault(sid, {
+                    'student_name': sname,
+                    'slots': {},
+                    'reason': context.get('reason'),
+                })
+                data['student_name'] = data['student_name'] or sname
+                data['slots'][context.get('slot')] = context.get('candidate_lessons')
+                data['reason'] = data['reason'] or context.get('reason')
+                processed.add(idx)
+            elif label.startswith('student_subject_'):
+                key = (sid, context.get('subject'))
+                data = subject_groups.setdefault(key, {
+                    'student_name': sname,
+                    'required': context.get('required'),
+                    'candidates': context.get('candidate_lessons'),
+                })
+                data['student_name'] = data['student_name'] or sname
+                data['required'] = data['required'] or context.get('required')
+                data['candidates'] = context.get('candidate_lessons')
+                processed.add(idx)
+            elif label.startswith('student_min_'):
+                data = min_groups.setdefault(sid, {
+                    'student_name': sname,
+                    'min_lessons': context.get('min_lessons'),
+                    'max_lessons': context.get('max_lessons'),
+                    'options': context.get('lesson_options'),
+                })
+                data['student_name'] = data['student_name'] or sname
+                processed.add(idx)
+            elif label.startswith('student_max_'):
+                data = max_groups.setdefault(sid, {
+                    'student_name': sname,
+                    'min_lessons': context.get('min_lessons'),
+                    'max_lessons': context.get('max_lessons'),
+                    'options': context.get('lesson_options'),
+                })
+                data['student_name'] = data['student_name'] or sname
+                processed.add(idx)
+        base = UNSAT_REASON_MAP.get('student_limits', 'Student requirement issue')
+        for sid, data in sorted(slot_groups.items(), key=lambda kv: _name_or_placeholder(kv[1]['student_name'], 'Student', kv[0])):
+            student_label = _name_or_placeholder(data['student_name'], 'Student', sid)
+            slot_text = _format_slot_list(data['slots'].keys())
+            candidate_text = _format_candidate_map(data['slots'])
+            message = f"{base} {student_label} has overlapping lessons in slots {slot_text}."
+            if candidate_text:
+                message += f" Candidate lessons per slot: {candidate_text}."
+            messages.append(message)
+        for sid, data in sorted(block_groups.items(), key=lambda kv: _name_or_placeholder(kv[1]['student_name'], 'Student', kv[0])):
+            student_label = _name_or_placeholder(data['student_name'], 'Student', sid)
+            slot_text = _format_slot_list(data['slots'].keys())
+            candidate_text = _format_candidate_map(data['slots'])
+            reason = data.get('reason')
+            message = f"{base} {student_label} is unavailable in slots {slot_text} but requires lessons."
+            if reason:
+                message += f" Reason: {reason}."
+            if candidate_text:
+                message += f" Candidate lessons per slot: {candidate_text}."
+            messages.append(message)
+        for (sid, subject), data in sorted(subject_groups.items(), key=lambda kv: (_name_or_placeholder(kv[1]['student_name'], 'Student', kv[0][0]), str(kv[0][1]))):
+            student_label = _name_or_placeholder(data['student_name'], 'Student', sid)
+            subject_label = subject if subject is not None else 'subject'
+            message = f"{base} {student_label} still needs subject {subject_label}."
+            if data.get('required'):
+                message += " This subject is required."
+            if data.get('candidates') is not None:
+                message += f" Candidate lessons: {data['candidates']}."
+            messages.append(message)
+        for sid, data in sorted(min_groups.items(), key=lambda kv: _name_or_placeholder(kv[1]['student_name'], 'Student', kv[0])):
+            student_label = _name_or_placeholder(data['student_name'], 'Student', sid)
+            message = (f"{base} {student_label} must receive at least {data.get('min_lessons')} lessons"
+                       f" (up to {data.get('max_lessons')}).")
+            if data.get('options') is not None:
+                message += f" Available lesson options: {data['options']}."
+            messages.append(message)
+        for sid, data in sorted(max_groups.items(), key=lambda kv: _name_or_placeholder(kv[1]['student_name'], 'Student', kv[0])):
+            student_label = _name_or_placeholder(data['student_name'], 'Student', sid)
+            message = (f"{base} {student_label} exceeds the maximum of {data.get('max_lessons')} lessons"
+                       f" (minimum {data.get('min_lessons')}).")
+            if data.get('options') is not None:
+                message += f" Available lesson options: {data['options']}."
+            messages.append(message)
+
+    def _append_repeat_restrictions(entries):
+        total_groups = {}
+        gap_groups = {}
+        multi_groups = {}
+        for idx, info in entries:
+            label = getattr(info, 'label', '') or ''
+            context = getattr(info, 'context', {}) or {}
+            sid = context.get('student_id')
+            tid = context.get('teacher_id')
+            subject = context.get('subject')
+            if label.startswith('repeat_total_'):
+                key = (sid, tid, subject)
+                data = total_groups.setdefault(key, {
+                    'student_name': context.get('student_name'),
+                    'teacher_name': context.get('teacher_name'),
+                    'repeat_limit': context.get('repeat_limit'),
+                })
+                data['student_name'] = data['student_name'] or context.get('student_name')
+                data['teacher_name'] = data['teacher_name'] or context.get('teacher_name')
+                data['repeat_limit'] = context.get('repeat_limit')
+                processed.add(idx)
+            elif label.startswith('repeat_gap_'):
+                key = (sid, tid, subject)
+                data = gap_groups.setdefault(key, {
+                    'student_name': context.get('student_name'),
+                    'teacher_name': context.get('teacher_name'),
+                    'slots': set(),
+                })
+                data['student_name'] = data['student_name'] or context.get('student_name')
+                data['teacher_name'] = data['teacher_name'] or context.get('teacher_name')
+                data['slots'].add(context.get('slot'))
+                processed.add(idx)
+            elif label.startswith('multi_teacher_'):
+                key = (sid, subject)
+                data = multi_groups.setdefault(key, {
+                    'student_name': context.get('student_name'),
+                    'teacher_ids': set(),
+                })
+                data['student_name'] = data['student_name'] or context.get('student_name')
+                for tid_ in context.get('teacher_ids', []) or []:
+                    data['teacher_ids'].add(tid_)
+                processed.add(idx)
+        base = UNSAT_REASON_MAP.get('repeat_restrictions', 'Repeat restriction issue')
+        for (sid, tid, subject), data in sorted(total_groups.items(), key=lambda kv: (
+            _name_or_placeholder(kv[1]['student_name'], 'Student', kv[0][0]),
+            _name_or_placeholder(kv[1]['teacher_name'], 'Teacher', kv[0][1]),
+            str(kv[0][2]),
+        )):
+            student_label = _name_or_placeholder(data['student_name'], 'Student', sid)
+            teacher_label = _name_or_placeholder(data['teacher_name'], 'Teacher', tid)
+            subject_label = subject if subject is not None else 'subject'
+            message = (f"{base} {student_label} cannot take {subject_label} with {teacher_label}"
+                       f" more than {data.get('repeat_limit')} times.")
+            messages.append(message)
+        for (sid, tid, subject), data in sorted(gap_groups.items(), key=lambda kv: (
+            _name_or_placeholder(kv[1]['student_name'], 'Student', kv[0][0]),
+            _name_or_placeholder(kv[1]['teacher_name'], 'Teacher', kv[0][1]),
+            str(kv[0][2]),
+        )):
+            student_label = _name_or_placeholder(data['student_name'], 'Student', sid)
+            teacher_label = _name_or_placeholder(data['teacher_name'], 'Teacher', tid)
+            subject_label = subject if subject is not None else 'subject'
+            slot_text = _format_slot_list(data['slots'])
+            message = (f"{base} {student_label} cannot have consecutive {subject_label} lessons"
+                       f" with {teacher_label} near slots {slot_text}.")
+            messages.append(message)
+        for (sid, subject), data in sorted(multi_groups.items(), key=lambda kv: (
+            _name_or_placeholder(kv[1]['student_name'], 'Student', kv[0][0]), str(kv[0][1]))):
+            student_label = _name_or_placeholder(data['student_name'], 'Student', sid)
+            subject_label = subject if subject is not None else 'subject'
+            teacher_list = ', '.join(_name_or_placeholder(None, 'Teacher', tid_) for tid_ in sorted(data['teacher_ids']))
+            message = (f"{base} {student_label} is restricted to one teacher for {subject_label}"
+                       f" but needs {teacher_list}.")
+            messages.append(message)
+
+    def _append_teacher_limits(entries):
+        min_groups = {}
+        max_groups = {}
+        for idx, info in entries:
+            label = getattr(info, 'label', '') or ''
+            context = getattr(info, 'context', {}) or {}
+            tid = context.get('teacher_id')
+            tname = context.get('teacher_name')
+            if label.startswith('teacher_min_'):
+                data = min_groups.setdefault(tid, {
+                    'teacher_name': tname,
+                    'min_lessons': context.get('min_lessons'),
+                })
+                data['teacher_name'] = data['teacher_name'] or tname
+                data['min_lessons'] = context.get('min_lessons')
+                processed.add(idx)
+            elif label.startswith('teacher_max_'):
+                data = max_groups.setdefault(tid, {
+                    'teacher_name': tname,
+                    'max_lessons': context.get('max_lessons'),
+                })
+                data['teacher_name'] = data['teacher_name'] or tname
+                data['max_lessons'] = context.get('max_lessons')
+                processed.add(idx)
+        base = UNSAT_REASON_MAP.get('teacher_limits', 'Teacher limit issue')
+        for tid, data in sorted(min_groups.items(), key=lambda kv: _name_or_placeholder(kv[1]['teacher_name'], 'Teacher', kv[0])):
+            teacher_label = _name_or_placeholder(data['teacher_name'], 'Teacher', tid)
+            message = f"{base} {teacher_label} must teach at least {data.get('min_lessons')} lessons."
+            messages.append(message)
+        for tid, data in sorted(max_groups.items(), key=lambda kv: _name_or_placeholder(kv[1]['teacher_name'], 'Teacher', kv[0])):
+            teacher_label = _name_or_placeholder(data['teacher_name'], 'Teacher', tid)
+            message = f"{base} {teacher_label} must teach at most {data.get('max_lessons')} lessons."
+            messages.append(message)
+
+    def _append_location_restrictions(entries):
+        groups = {}
+        for idx, info in entries:
+            context = getattr(info, 'context', {}) or {}
+            key = (context.get('student_id'), context.get('teacher_id'), context.get('subject'))
+            data = groups.setdefault(key, {
+                'student_name': context.get('student_name'),
+                'teacher_name': context.get('teacher_name'),
+                'slots': set(),
+                'allowed_locations': context.get('allowed_locations') or [],
+            })
+            data['student_name'] = data['student_name'] or context.get('student_name')
+            data['teacher_name'] = data['teacher_name'] or context.get('teacher_name')
+            data['slots'].add(context.get('slot'))
+            if context.get('allowed_locations'):
+                data['allowed_locations'] = context['allowed_locations']
+            processed.add(idx)
+        base = UNSAT_REASON_MAP.get('location_restriction', 'Location restriction issue')
+        for (sid, tid, subject), data in sorted(groups.items(), key=lambda kv: (
+            _name_or_placeholder(kv[1]['student_name'], 'Student', kv[0][0]),
+            _name_or_placeholder(kv[1]['teacher_name'], 'Teacher', kv[0][1]),
+            str(kv[0][2]),
+        )):
+            student_label = _name_or_placeholder(data['student_name'], 'Student', sid)
+            teacher_label = _name_or_placeholder(data['teacher_name'], 'Teacher', tid)
+            subject_label = subject if subject is not None else 'subject'
+            slot_text = _format_slot_list(data['slots'])
+            allowed = data.get('allowed_locations') or []
+            allowed_text = ', '.join(str(val) for val in allowed) if allowed else 'none'
+            message = (f"{base} {student_label} with {teacher_label} for {subject_label}"
+                       f" has no valid location in slots {slot_text} (allowed: {allowed_text}).")
+            messages.append(message)
+
+    def _append_fixed_assignments(entries):
+        groups = {}
+        for idx, info in entries:
+            context = getattr(info, 'context', {}) or {}
+            key = (context.get('student_id'), context.get('teacher_id'), context.get('subject'))
+            data = groups.setdefault(key, {
+                'student_name': context.get('student_name'),
+                'teacher_name': context.get('teacher_name'),
+                'slots': set(),
+            })
+            data['student_name'] = data['student_name'] or context.get('student_name')
+            data['teacher_name'] = data['teacher_name'] or context.get('teacher_name')
+            data['slots'].add(context.get('slot'))
+            processed.add(idx)
+        base = UNSAT_REASON_MAP.get('fixed_assignment', 'Fixed assignment issue')
+        for (sid, tid, subject), data in sorted(groups.items(), key=lambda kv: (
+            _name_or_placeholder(kv[1]['student_name'], 'Student', kv[0][0]),
+            _name_or_placeholder(kv[1]['teacher_name'], 'Teacher', kv[0][1]),
+            str(kv[0][2]),
+        )):
+            student_label = _name_or_placeholder(data['student_name'], 'Student', sid)
+            teacher_label = _name_or_placeholder(data['teacher_name'], 'Teacher', tid)
+            subject_label = subject if subject is not None else 'subject'
+            slot_text = _format_slot_list(data['slots'])
+            message = (f"{base} Fixed lesson for {student_label} with {teacher_label}"
+                       f" in subject {subject_label} at slots {slot_text} cannot be satisfied.")
+            messages.append(message)
+
+    entries = list(enumerate(core))
+    teacher_entries = [entry for entry in entries if getattr(entry[1], 'kind', '') == 'teacher_availability']
+    if teacher_entries:
+        _append_teacher_availability(teacher_entries)
+
+    student_entries = [entry for entry in entries if getattr(entry[1], 'kind', '') == 'student_limits']
+    if student_entries:
+        _append_student_limits(student_entries)
+
+    repeat_entries = [entry for entry in entries if getattr(entry[1], 'kind', '') == 'repeat_restrictions']
+    if repeat_entries:
+        _append_repeat_restrictions(repeat_entries)
+
+    teacher_limit_entries = [entry for entry in entries if getattr(entry[1], 'kind', '') == 'teacher_limits']
+    if teacher_limit_entries:
+        _append_teacher_limits(teacher_limit_entries)
+
+    location_entries = [entry for entry in entries if getattr(entry[1], 'kind', '') == 'location_restriction']
+    if location_entries:
+        _append_location_restrictions(location_entries)
+
+    fixed_entries = [entry for entry in entries if getattr(entry[1], 'kind', '') == 'fixed_assignment']
+    if fixed_entries:
+        _append_fixed_assignments(fixed_entries)
+
+    for idx, info in entries:
+        if idx in processed:
+            continue
+        base = UNSAT_REASON_MAP.get(getattr(info, 'kind', ''), getattr(info, 'label', '') or 'Constraint conflict')
+        details = []
+        label = getattr(info, 'label', None)
+        if label and label != base:
+            details.append(f'label={label}')
+        context = getattr(info, 'context', {}) or {}
+        for key in sorted(context.keys()):
+            value = context[key]
+            if isinstance(value, (list, tuple, set)):
+                value = ','.join(str(v) for v in value)
+            details.append(f"{key}={value}")
+        message = base
+        if details:
+            message = f"{base} ({'; '.join(details)})"
+        messages.append(message)
+
+    return messages
 
 
 def get_db():
@@ -2302,30 +2769,8 @@ def generate_schedule(target_date=None):
         if status == cp_model.INFEASIBLE:
             # Map assumption literals from the unsat core to human readable
             # messages explaining why the model is infeasible.
-            reason_map = {
-                'teacher_availability': 'A teacher is unavailable or blocked for a required lesson.',
-                'teacher_limits': 'Teacher lesson limits are too strict.',
-                'student_limits': 'Student lesson or subject requirements conflict.',
-                'repeat_restrictions': 'Repeat or consecutive lesson restrictions prevent a schedule.',
-                'fixed_assignment': 'A fixed assignment could not be satisfied.',
-                'location_restriction': 'Location restrictions prevent required lessons.',
-            }
             flash('No feasible timetable could be generated.', 'error')
-            for info in core:
-                base = reason_map.get(getattr(info, 'kind', ''), getattr(info, 'label', ''))
-                details = []
-                label = getattr(info, 'label', None)
-                if label and label != base:
-                    details.append(f'label={label}')
-                context = getattr(info, 'context', {}) or {}
-                for key in sorted(context.keys()):
-                    value = context[key]
-                    if isinstance(value, (list, tuple, set)):
-                        value = ','.join(str(v) for v in value)
-                    details.append(f"{key}={value}")
-                message = base
-                if details:
-                    message = f"{base} ({'; '.join(details)})"
+            for message in summarize_unsat_core(core):
                 flash(message, 'error')
     conn.commit()
     conn.close()

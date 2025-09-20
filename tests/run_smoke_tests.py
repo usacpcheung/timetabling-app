@@ -1,5 +1,6 @@
 from ortools.sat.python import cp_model
-from cp_sat_timetable import build_model, solve_and_print
+from app import summarize_unsat_core
+from cp_sat_timetable import AssumptionInfo, build_model, solve_and_print
 import json
 
 
@@ -79,11 +80,88 @@ def test_unsat_core_present_on_conflict():
     assert progress == [], "No progress messages expected when infeasible"
 
 
+def make_info(kind, label, context):
+    return AssumptionInfo(literal=None, kind=kind, label=label, context=context)
+
+
+def test_summarize_unsat_core_groups_teacher_conflicts():
+    core = [
+        make_info(
+            "teacher_availability",
+            "teacher_slot_t1_sl0",
+            {"teacher_id": 1, "teacher_name": "Alice", "slot": 0, "candidate_lessons": 2},
+        ),
+        make_info(
+            "teacher_availability",
+            "teacher_slot_t1_sl1",
+            {"teacher_id": 1, "teacher_name": "Alice", "slot": 1, "candidate_lessons": 3},
+        ),
+        make_info(
+            "teacher_availability",
+            "block_s1_t1_sl0",
+            {
+                "teacher_id": 1,
+                "teacher_name": "Alice",
+                "student_id": 1,
+                "student_name": "Bob",
+                "subject": "Math",
+                "slot": 0,
+                "reasons": ["teacher_unavailable"],
+            },
+        ),
+        make_info(
+            "teacher_availability",
+            "block_s2_t1_sl1",
+            {
+                "teacher_id": 1,
+                "teacher_name": "Alice",
+                "student_id": 2,
+                "student_name": "Carol",
+                "subject": "English",
+                "slot": 1,
+                "reasons": ["teacher_blocked"],
+            },
+        ),
+    ]
+    messages = summarize_unsat_core(core)
+    assert len(messages) == 2
+    slot_msg = next(msg for msg in messages if "has conflicts" in msg)
+    assert "Teacher Alice" in slot_msg
+    assert "slots 0, 1" in slot_msg
+    assert "Bob (Math)" in slot_msg and "Carol (English)" in slot_msg
+    block_msg = next(msg for msg in messages if "cannot teach" in msg)
+    assert "teacher unavailable" in block_msg.lower()
+    assert "teacher blocked" in block_msg.lower()
+
+
+def test_summarize_unsat_core_groups_student_slots():
+    core = [
+        make_info(
+            "student_limits",
+            "student_slot_s1_sl0",
+            {"student_id": 1, "student_name": "Bob", "slot": 0, "candidate_lessons": 2},
+        ),
+        make_info(
+            "student_limits",
+            "student_slot_s1_sl1",
+            {"student_id": 1, "student_name": "Bob", "slot": 1, "candidate_lessons": 3},
+        ),
+    ]
+    messages = summarize_unsat_core(core)
+    assert len(messages) == 1
+    msg = messages[0]
+    assert "Student Bob" in msg
+    assert "slots 0, 1" in msg
+    assert "0: 2" in msg and "1: 3" in msg
+
+
 def main():
     tests = [
         ("no_locations", test_no_locations_allows_schedule),
         ("multi_teacher_disallowed_repeats_same_teacher", test_multi_teacher_disallowed_allows_repeats_same_teacher),
         ("unsat_core", test_unsat_core_present_on_conflict),
+        ("summarize_teacher_conflicts", test_summarize_unsat_core_groups_teacher_conflicts),
+        ("summarize_student_slots", test_summarize_unsat_core_groups_student_slots),
     ]
     failures = []
     for name, fn in tests:
