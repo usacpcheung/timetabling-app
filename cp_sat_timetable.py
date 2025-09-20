@@ -124,6 +124,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
     teacher_candidate_lessons = {teacher['id']: 0 for teacher in teachers}
     teacher_feasible_slots = {teacher['id']: set() for teacher in teachers}
     teacher_fixed_lessons = {teacher['id']: 0 for teacher in teachers}
+    forbidden_lesson_keys = set()
 
     # Map each group id to the subjects it requires and map each member student
     # to the subjects that must be taken through their group.  This helps filter
@@ -278,6 +279,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                     if key in fixed_set:
                         model.Add(vars_[key] == 1)
                         teacher_fixed_lessons[tid] += 1
+                        # Fixed lessons remain feasible options for the student.
                     elif add_assumptions and blocked_reason:
                         feasible_for_teacher = False
                         if (teacher['id'], slot) in unavailable_set:
@@ -323,6 +325,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                                 },
                             )
                         model.Add(vars_[key] == 0).OnlyEnforceIf(literal)
+                        forbidden_lesson_keys.add(key)
                     if feasible_for_teacher:
                         teacher_candidate_lessons[tid] += 1
                         teacher_feasible_slots[tid].add(slot)
@@ -613,14 +616,21 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         if sid in group_ids:
             continue
         total_set = set()
+        feasible_total_vars = set()
+        feasible_slot_entries = set()
+        fixed_total_vars = set()
         subs = json.loads(student['subjects'])
         for subject in subs:
-            subject_vars = [var for (s, t, subj, sl), var in vars_.items()
-                            if s == sid and subj == subject]
+            subject_entries = []
+            for (s, t, subj, sl), var in vars_.items():
+                if s == sid and subj == subject:
+                    key = (s, t, subj, sl)
+                    subject_entries.append((var, sl, key))
             for (g_key, g_var) in member_to_group_vars.get(sid, []):
                 if g_key[2] == subject:
-                    subject_vars.append(g_var)
-            if subject_vars:
+                    subject_entries.append((g_var, g_key[3], g_key))
+            if subject_entries:
+                subject_vars = [var for var, _, _ in subject_entries]
                 if require_all_subjects:
                     literal = None
                     if add_assumptions:
@@ -646,12 +656,35 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                     ct = model.Add(sum(subject_vars) >= 1)
                     if literal is not None:
                         ct.OnlyEnforceIf(literal)
-                total_set.update(subject_vars)
+                for var, slot, key in subject_entries:
+                    total_set.add(var)
+                    if key not in forbidden_lesson_keys:
+                        feasible_total_vars.add(var)
+                        if slot is not None:
+                            feasible_slot_entries.add((slot, _slot_label(slot)))
+                    if key in fixed_set:
+                        fixed_total_vars.add(var)
         # Group lessons should only count once toward the student's total lesson
         # limits even when they satisfy multiple subject requirements.
-        for (_, g_var) in member_to_group_vars.get(sid, []):
+        for (g_key, g_var) in member_to_group_vars.get(sid, []):
             total_set.add(g_var)
+            if g_key not in forbidden_lesson_keys:
+                feasible_total_vars.add(g_var)
+                slot = g_key[3]
+                if slot is not None:
+                    feasible_slot_entries.add((slot, _slot_label(slot)))
+            if g_key in fixed_set:
+                fixed_total_vars.add(g_var)
         total = list(total_set)
+        feasible_lessons = len(feasible_total_vars)
+        slot_pairs = sorted(
+            [(slot, label) for slot, label in feasible_slot_entries if slot is not None],
+            key=lambda item: (item[0] is None, item[0], item[1] or ''),
+        )
+        feasible_slot_indices = [slot for slot, _ in slot_pairs]
+        feasible_slot_labels = [label for _, label in slot_pairs]
+        feasible_slot_count = len({slot for slot, _ in slot_pairs})
+        fixed_lessons = len(fixed_total_vars)
         if total:
             min_l, max_l = student_limits.get(sid, (min_lessons, max_lessons))
             literal_total = None
@@ -683,6 +716,11 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                         'student_label': _student_label(sid),
                         'min_lessons': min_l,
                         'max_lessons': max_l,
+                        'feasible_lessons': feasible_lessons,
+                        'feasible_slot_count': feasible_slot_count,
+                        'feasible_slots': feasible_slot_indices,
+                        'feasible_slot_labels': feasible_slot_labels,
+                        'fixed_lessons': fixed_lessons,
                     },
                 )
             ct_min = model.Add(sum(total) >= min_l)

@@ -29,7 +29,7 @@ def test_no_locations_allows_schedule():
 
 
 def test_multi_teacher_disallowed_allows_repeats_same_teacher():
-    students = [make_row(1, ["Math"]) ]
+    students = [make_row(1, ["Math"])]
     teachers = [
         {"id": 1, "subjects": json.dumps(["Math"]), "min_lessons": 0, "max_lessons": None},
         {"id": 2, "subjects": json.dumps(["Math"]), "min_lessons": 0, "max_lessons": None},
@@ -57,7 +57,7 @@ def test_multi_teacher_disallowed_allows_repeats_same_teacher():
 
 def test_unsat_core_present_on_conflict():
     # One student needs 1 lesson, one teacher is unavailable at the only slot.
-    students = [make_row(1, ["Math"]) ]
+    students = [make_row(1, ["Math"])]
     teachers = [
         {"id": 1, "subjects": json.dumps(["Math"]), "min_lessons": 0, "max_lessons": None},
     ]
@@ -155,6 +155,32 @@ def test_unsat_core_present_on_conflict():
     )
     assert any('only 1' in msg and 'slot' in msg.lower() for msg in summaries), (
         f"Expected summary to mention limited feasible slots, got: {summaries}"
+    )
+
+    # Student lesson minimum should describe the feasible shortfall.
+    students = [make_row(1, ["Math"])]
+    teachers = [
+        {"id": 1, "subjects": json.dumps(["Math"]), "min_lessons": 0, "max_lessons": None},
+    ]
+    slots = 2
+    unavailable = [{"teacher_id": 1, "slot": 1}]
+    model, vars_, loc_vars, assumptions = build_model(
+        students, teachers, slots,
+        min_lessons=2, max_lessons=2,
+        allow_repeats=True, max_repeats=2,
+        unavailable=unavailable, fixed=[],
+        add_assumptions=True,
+        student_limits={1: (2, 2)},
+        locations=[],
+    )
+    status, assignments, core, progress = solve_and_print(model, vars_, loc_vars, assumptions)
+    assert status == cp_model.INFEASIBLE, "Expected infeasible due to student minimum"
+    summaries = summarise_core_conflicts(core)
+    assert any('Student #1' in msg and 'needs at least 2 lessons' in msg and 'only 1 lesson' in msg for msg in summaries), (
+        f"Expected student minimum shortfall summary, got: {summaries}"
+    )
+    assert any('Feasible slots' in msg and 'Slots 1' in msg for msg in summaries), (
+        f"Expected summary to list remaining feasible slots, got: {summaries}"
     )
 
     # Subject requirement conflicts should group students by subject.
