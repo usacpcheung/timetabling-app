@@ -662,7 +662,10 @@
 </div>
         <div class="sticky-action-bar flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
             <a href="{{ url_for('index') }}" class="inline-flex w-full sm:w-auto justify-center bg-white text-emerald-700 border border-emerald-300 rounded-md px-3 py-2 hover:bg-emerald-100 transition">Cancel</a>
-            <button type="submit" class="w-full sm:w-auto bg-emerald-500 text-white border border-emerald-500 rounded-md px-3 py-2 hover:bg-emerald-600 transition">Save</button>
+            <div class="flex flex-col w-full sm:w-auto items-stretch sm:items-end gap-1">
+                <button type="submit" data-config-save title="Click Save or press Ctrl+Enter" class="w-full sm:w-auto bg-emerald-500 text-white border border-emerald-500 rounded-md px-3 py-2 hover:bg-emerald-600 transition">Save</button>
+                <p class="text-xs text-emerald-700 text-center sm:text-right">Shortcut: <kbd>Ctrl</kbd> + <kbd>Enter</kbd></p>
+            </div>
         </div>
     </form>
 
