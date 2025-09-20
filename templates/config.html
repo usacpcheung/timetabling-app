@@ -69,7 +69,7 @@
         </form>
     </div>
 
-<form method="post" class="space-y-6">
+<form id="config-form" method="post" class="space-y-6">
 <div id="config-accordion" data-accordion="open" data-active-classes="bg-emerald-300" data-inactive-classes="text-grey-900" class="mb-4">
     <!-- Help & Guidance -->
     <h2 id="heading-help">
@@ -347,7 +347,7 @@
                 </select>
             </label>
             <button type="button" data-modal-target="adv-{{ s['id'] }}" data-modal-toggle="adv-{{ s['id'] }}" class="bg-emerald-200 text-emerald-800 px-2 py-1 rounded">Advanced</button>
-            <div id="adv-{{ s['id'] }}" tabindex="-1" aria-hidden="true" class="hidden fixed top-0 right-0 left-0 z-50 justify-center items-center w-full p-4 overflow-x-hidden overflow-y-auto md:inset-0 h-[calc(100%-1rem)] max-h-full">
+            <div id="adv-{{ s['id'] }}" tabindex="-1" aria-hidden="true" data-config-modal class="hidden fixed top-0 right-0 left-0 z-50 justify-center items-center w-full p-4 overflow-x-hidden overflow-y-auto md:inset-0 h-[calc(100%-1rem)] max-h-full">
                 <div class="relative p-4 w-full max-w-md max-h-full">
                     <div class="relative bg-white rounded-lg shadow dark:bg-gray-700">
                         <div class="p-4">
@@ -389,8 +389,9 @@
                             <label class="flex items-center gap-2">Prefer consecutive repeats?
                                 <input type="checkbox" name="student_prefer_consecutive_{{ s['id'] }}" {% if (s['prefer_consecutive'] if s['prefer_consecutive'] is not none else config['prefer_consecutive']) %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
                             </label>
-                            <div class="mt-2 text-right">
-                                <button type="button" data-modal-hide="adv-{{ s['id'] }}" class="bg-emerald-500 text-white px-3 py-1 rounded">Close</button>
+                            <div class="mt-4 flex justify-end gap-2">
+                                <button type="button" data-modal-hide="adv-{{ s['id'] }}" data-modal-cancel class="border border-emerald-300 text-emerald-700 px-3 py-1 rounded hover:bg-emerald-50">Cancel</button>
+                                <button type="button" data-modal-save class="bg-emerald-500 text-white px-3 py-1 rounded">Save changes</button>
                             </div>
                         </div>
                     </div>
@@ -425,7 +426,7 @@
                 </select>
             </label>
             <button type="button" data-modal-target="adv-new" data-modal-toggle="adv-new" class="bg-emerald-200 text-emerald-800 px-2 py-1 rounded">Advanced</button>
-            <div id="adv-new" tabindex="-1" aria-hidden="true" class="hidden fixed top-0 right-0 left-0 z-50 justify-center items-center w-full p-4 overflow-x-hidden overflow-y-auto md:inset-0 h-[calc(100%-1rem)] max-h-full">
+            <div id="adv-new" tabindex="-1" aria-hidden="true" data-config-modal class="hidden fixed top-0 right-0 left-0 z-50 justify-center items-center w-full p-4 overflow-x-hidden overflow-y-auto md:inset-0 h-[calc(100%-1rem)] max-h-full">
                 <div class="relative p-4 w-full max-w-md max-h-full">
                     <div class="relative bg-white rounded-lg shadow dark:bg-gray-700">
                         <div class="p-4">
@@ -465,8 +466,9 @@
                             <label class="flex items-center gap-2">Prefer consecutive repeats?
                                 <input type="checkbox" name="new_student_prefer_consecutive" {% if config['prefer_consecutive'] %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
                             </label>
-                            <div class="mt-2 text-right">
-                                <button type="button" data-modal-hide="adv-new" class="bg-emerald-500 text-white px-3 py-1 rounded">Close</button>
+                            <div class="mt-4 flex justify-end gap-2">
+                                <button type="button" data-modal-hide="adv-new" data-modal-cancel class="border border-emerald-300 text-emerald-700 px-3 py-1 rounded hover:bg-emerald-50">Cancel</button>
+                                <button type="button" data-modal-save class="bg-emerald-500 text-white px-3 py-1 rounded">Save changes</button>
                             </div>
                         </div>
                     </div>
