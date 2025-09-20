@@ -3,8 +3,50 @@
 This module contains a thin wrapper around OR-Tools' CP-SAT solver. The ``build_model`` function creates all variables and constraints for the scheduling problem, and ``solve_and_print`` executes the solver and extracts the results. Each decision variable is a boolean indicating whether a particular lesson occurs. Keeping this optimization code separate from the Flask application makes the model easier to understand in isolation.
 """
 
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
+
 from ortools.sat.python import cp_model
 import json
+
+
+@dataclass
+class AssumptionInfo:
+    """Description of an assumption literal registered on the model."""
+
+    literal: cp_model.IntVar
+    kind: str
+    label: str
+    context: Dict[str, Any]
+
+
+class AssumptionRegistry:
+    """Lightweight helper to track assumption literals and their metadata."""
+
+    def __init__(self, model: cp_model.CpModel):
+        self._model = model
+        self._records: List[AssumptionInfo] = []
+        self._counter = 0
+
+    def add_literal(self, kind: str, label: str, context: Optional[Dict[str, Any]] = None) -> cp_model.IntVar:
+        """Create and register a new assumption literal with descriptive metadata."""
+
+        name = f"assume_{kind}_{self._counter}"
+        self._counter += 1
+        literal = self._model.NewBoolVar(name)
+        info = AssumptionInfo(literal=literal, kind=kind, label=label, context=context or {})
+        self._records.append(info)
+        self._model.AddAssumption(literal)
+        return literal
+
+    def info_for_index(self, index: int) -> Optional[AssumptionInfo]:
+        if 0 <= index < len(self._records):
+            return self._records[index]
+        return None
+
+    @property
+    def records(self) -> List[AssumptionInfo]:
+        return list(self._records)
 
 
 def build_model(students, teachers, slots, min_lessons, max_lessons,
@@ -22,12 +64,10 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 locations=None, location_restrict=None):
     """Build CP-SAT model for the scheduling problem.
 
-    When ``add_assumptions`` is ``True``, Boolean indicators are created for the
-    main constraint groups (teacher availability and blocking rules, teacher
-    lesson limits, student lesson limits and repeat restrictions). These
-    indicators are added as
-    assumptions on the model so that unsatisfied cores can be extracted to
-    diagnose infeasibility.
+    When ``add_assumptions`` is ``True``, each constraint is paired with a
+    dedicated assumption literal tracked by :class:`AssumptionRegistry`.  These
+    literals are added as assumptions on the model so that unsatisfied cores can
+    be mapped back to specific constraint failures when diagnosing infeasibility.
 
     Args:
         students: iterable of sqlite rows or mappings with ``id`` and ``subjects`` fields.
@@ -82,8 +122,8 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         vars_ (dict): Mapping (student_id, teacher_id, subject, slot) -> BoolVar.
         loc_vars (dict): Mapping (student_id, teacher_id, subject, slot,
             location_id) -> BoolVar for location assignments.
-        assumptions (dict or None): Mapping of constraint group name to the
-            assumption indicator variable when ``add_assumptions`` is True.
+        assumption_registry (AssumptionRegistry or None): Tracks assumption
+            literals when ``add_assumptions`` is True.
     """
     # Create the CP-SAT model object that will hold all variables and constraints
     # for OR-Tools to solve.
@@ -98,10 +138,20 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
     # ``(student_id, teacher_id, subject, slot)``.  ``subject_weights`` can bias
     # certain lessons in the objective and ``var_weights`` records the weight per
     # variable for easy access later.
+    def _get_field(entry, key):
+        if isinstance(entry, dict):
+            return entry.get(key)
+        try:
+            return entry[key]
+        except Exception:
+            return None
+
     vars_ = {}
     loc_vars = {}
     subject_weights = subject_weights or {}
     var_weights = {}
+    student_name_map = {s['id']: _get_field(s, 'name') for s in students}
+    teacher_name_map = {t['id']: _get_field(t, 'name') for t in teachers}
 
     # Map each group id to the subjects it requires and map each member student
     # to the subjects that must be taken through their group.  This helps filter
@@ -131,16 +181,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         for f in fixed
     }
 
-    assumptions = None
-    if add_assumptions:
-        assumptions = {
-            'teacher_availability': model.NewBoolVar('assume_teacher_availability'),
-            'teacher_limits': model.NewBoolVar('assume_teacher_limits'),
-            'student_limits': model.NewBoolVar('assume_student_limits'),
-            'repeat_restrictions': model.NewBoolVar('assume_repeat_restrictions'),
-        }
-        for var in assumptions.values():
-            model.AddAssumption(var)
+    registry = AssumptionRegistry(model) if add_assumptions else None
 
     # Create variables for allowed (student, teacher, subject) triples. When a
     # real student is a member of a group for a particular subject, that subject
@@ -164,7 +205,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                     if slot in student_unavailable.get(student['id'], set()):
                         continue
                     key = (student['id'], teacher['id'], subject, slot)
-                    if (not add_assumptions and key not in fixed_set and
+                    if (registry is None and key not in fixed_set and
                             ((teacher['id'], slot) in unavailable_set or
                              teacher['id'] in forbidden)):
                         continue
@@ -175,10 +216,39 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                         weight *= group_weight
                     var_weights[vars_[key]] = weight
                     if key in fixed_set:
-                        model.Add(vars_[key] == 1)
-                    elif add_assumptions and ((teacher['id'], slot) in unavailable_set or
-                                             teacher['id'] in forbidden):
-                        model.Add(vars_[key] == 0).OnlyEnforceIf(assumptions['teacher_availability'])
+                        ct = model.Add(vars_[key] == 1)
+                        if registry:
+                            lit = registry.add_literal(
+                                'fixed_assignment',
+                                'Fixed lesson assignment',
+                                {
+                                    'student_id': student['id'],
+                                    'student_name': student_name_map.get(student['id']),
+                                    'teacher_id': teacher['id'],
+                                    'teacher_name': teacher_name_map.get(teacher['id']),
+                                    'subject': subject,
+                                    'slot': slot,
+                                },
+                            )
+                            ct.OnlyEnforceIf(lit)
+                    elif registry and ((teacher['id'], slot) in unavailable_set or
+                                       teacher['id'] in forbidden):
+                        reason = 'teacher_unavailable' if (teacher['id'], slot) in unavailable_set else 'teacher_blocked'
+                        label = 'Teacher unavailable' if reason == 'teacher_unavailable' else 'Teacher blocked for student'
+                        lit = registry.add_literal(
+                            'teacher_availability',
+                            label,
+                            {
+                                'student_id': student['id'],
+                                'student_name': student_name_map.get(student['id']),
+                                'teacher_id': teacher['id'],
+                                'teacher_name': teacher_name_map.get(teacher['id']),
+                                'subject': subject,
+                                'slot': slot,
+                                'reason': reason,
+                            },
+                        )
+                        model.Add(vars_[key] == 0).OnlyEnforceIf(lit)
 
     all_locs = locations or []
     loc_restrict = location_restrict or {}
@@ -197,7 +267,21 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             else:
                 # If locations are in use but none are allowed for this (student/group),
                 # prevent this lesson from being scheduled.
-                model.Add(var == 0)
+                ct = model.Add(var == 0)
+                if registry:
+                    lit = registry.add_literal(
+                        'location_restriction',
+                        'No allowed locations',
+                        {
+                            'student_id': sid,
+                            'student_name': student_name_map.get(sid),
+                            'teacher_id': tid,
+                            'teacher_name': teacher_name_map.get(tid),
+                            'subject': subj,
+                            'slot': sl,
+                        },
+                    )
+                    ct.OnlyEnforceIf(lit)
 
         for loc in all_locs:
             for slot in range(slots):
@@ -213,7 +297,19 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             possible = [var for (sid, tid, subj, sl), var in vars_.items()
                         if tid == teacher['id'] and sl == slot]
             if possible:
-                model.Add(sum(possible) <= 1)
+                ct = model.Add(sum(possible) <= 1)
+                if registry:
+                    lit = registry.add_literal(
+                        'teacher_availability',
+                        'Teacher slot capacity',
+                        {
+                            'teacher_id': teacher['id'],
+                            'teacher_name': teacher_name_map.get(teacher['id']),
+                            'slot': slot,
+                            'option_count': len(possible),
+                        },
+                    )
+                    ct.OnlyEnforceIf(lit)
 
     # Build maps relating group variables to member students
     member_to_group_vars = {}
@@ -245,10 +341,32 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             if possible:
                 if slot in blocked_slots:
                     ct = model.Add(sum(possible) == 0)
-                    if add_assumptions:
-                        ct.OnlyEnforceIf(assumptions['student_limits'])
+                    if registry:
+                        lit = registry.add_literal(
+                            'student_conflict',
+                            'Student unavailable for slot',
+                            {
+                                'student_id': sid,
+                                'student_name': student_name_map.get(sid),
+                                'slot': slot,
+                                'reason': 'student_unavailable',
+                            },
+                        )
+                        ct.OnlyEnforceIf(lit)
                 else:
-                    model.Add(sum(possible) <= 1)
+                    ct = model.Add(sum(possible) <= 1)
+                    if registry:
+                        lit = registry.add_literal(
+                            'student_conflict',
+                            'Student slot capacity',
+                            {
+                                'student_id': sid,
+                                'student_name': student_name_map.get(sid),
+                                'slot': slot,
+                                'option_count': len(possible),
+                            },
+                        )
+                        ct.OnlyEnforceIf(lit)
 
     # Constraint 3: limit repeats of the same student/teacher/subject combination.  Group
     # lessons are treated the same way as individual lessons and therefore their
@@ -273,14 +391,38 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             repeat_limit = 1
         vars_list = list(slot_map.values())
         ct = model.Add(sum(vars_list) <= repeat_limit)
-        if add_assumptions:
-            ct.OnlyEnforceIf(assumptions['repeat_restrictions'])
+        if registry:
+            lit = registry.add_literal(
+                'repeat_restrictions',
+                'Repeat limit',
+                {
+                    'student_id': sid,
+                    'student_name': student_name_map.get(sid),
+                    'teacher_id': tid,
+                    'teacher_name': teacher_name_map.get(tid),
+                    'subject': subj,
+                    'limit': repeat_limit,
+                },
+            )
+            ct.OnlyEnforceIf(lit)
         if not allow_consec_s and repeat_limit > 1:
             for s in range(slots - 1):
                 if s in slot_map and s + 1 in slot_map:
                     ct2 = model.Add(slot_map[s] + slot_map[s + 1] <= 1)
-                    if add_assumptions:
-                        ct2.OnlyEnforceIf(assumptions['repeat_restrictions'])
+                    if registry:
+                        lit = registry.add_literal(
+                            'repeat_restrictions',
+                            'Disallow consecutive repeats',
+                            {
+                                'student_id': sid,
+                                'student_name': student_name_map.get(sid),
+                                'teacher_id': tid,
+                                'teacher_name': teacher_name_map.get(tid),
+                                'subject': subj,
+                                'slot': s,
+                            },
+                        )
+                        ct2.OnlyEnforceIf(lit)
         if prefer_consec_s and allow_consec_s and repeat_limit > 1:
             for s in range(slots - 1):
                 if s in slot_map and s + 1 in slot_map:
@@ -316,8 +458,19 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 model.Add(y <= sum(vlist))
                 y_vars.append(y)
             ct = model.Add(sum(y_vars) <= 1)
-            if add_assumptions:
-                ct.OnlyEnforceIf(assumptions['repeat_restrictions'])
+            if registry:
+                lit = registry.add_literal(
+                    'repeat_restrictions',
+                    'Single teacher per subject',
+                    {
+                        'student_id': sid,
+                        'student_name': student_name_map.get(sid),
+                        'subject': subj,
+                        'teacher_options': sorted(tmap.keys()),
+                        'teacher_count': len(tmap),
+                    },
+                )
+                ct.OnlyEnforceIf(lit)
 
     # Limit total lessons per teacher and track each teacher's load
     teacher_load_vars = []
@@ -335,12 +488,30 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         tmin = teacher_min_lessons if tmin is None else tmin
         tmax = teacher_max_lessons if tmax is None else tmax
         ct = model.Add(load_var >= tmin)
-        if add_assumptions:
-            ct.OnlyEnforceIf(assumptions['teacher_limits'])
+        if registry:
+            lit = registry.add_literal(
+                'teacher_limits',
+                'Teacher minimum load',
+                {
+                    'teacher_id': teacher['id'],
+                    'teacher_name': teacher_name_map.get(teacher['id']),
+                    'min_lessons': tmin,
+                },
+            )
+            ct.OnlyEnforceIf(lit)
         if tmax is not None:
             ct2 = model.Add(load_var <= tmax)
-            if add_assumptions:
-                ct2.OnlyEnforceIf(assumptions['teacher_limits'])
+            if registry:
+                lit = registry.add_literal(
+                    'teacher_limits',
+                    'Teacher maximum load',
+                    {
+                        'teacher_id': teacher['id'],
+                        'teacher_name': teacher_name_map.get(teacher['id']),
+                        'max_lessons': tmax,
+                    },
+                )
+                ct2.OnlyEnforceIf(lit)
 
     # Optional objective terms to balance teacher workloads
     if balance_teacher_load and teacher_load_vars:
@@ -367,8 +538,17 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             if subject_vars:
                 if require_all_subjects:
                     ct = model.Add(sum(subject_vars) >= 1)
-                    if add_assumptions:
-                        ct.OnlyEnforceIf(assumptions['student_limits'])
+                    if registry:
+                        lit = registry.add_literal(
+                            'student_limits',
+                            'Subject requirement',
+                            {
+                                'student_id': sid,
+                                'student_name': student_name_map.get(sid),
+                                'subject': subject,
+                            },
+                        )
+                        ct.OnlyEnforceIf(lit)
                 total_set.update(subject_vars)
         # Group lessons should only count once toward the student's total lesson
         # limits even when they satisfy multiple subject requirements.
@@ -379,9 +559,27 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
             min_l, max_l = student_limits.get(sid, (min_lessons, max_lessons))
             ct_min = model.Add(sum(total) >= min_l)
             ct_max = model.Add(sum(total) <= max_l)
-            if add_assumptions:
-                ct_min.OnlyEnforceIf(assumptions['student_limits'])
-                ct_max.OnlyEnforceIf(assumptions['student_limits'])
+            if registry:
+                lit_min = registry.add_literal(
+                    'student_limits',
+                    'Student minimum lessons',
+                    {
+                        'student_id': sid,
+                        'student_name': student_name_map.get(sid),
+                        'min_lessons': min_l,
+                    },
+                )
+                ct_min.OnlyEnforceIf(lit_min)
+                lit_max = registry.add_literal(
+                    'student_limits',
+                    'Student maximum lessons',
+                    {
+                        'student_id': sid,
+                        'student_name': student_name_map.get(sid),
+                        'max_lessons': max_l,
+                    },
+                )
+                ct_max.OnlyEnforceIf(lit_max)
 
     # Objective function: prioritize scheduling as many lessons as possible.  Additional
     # terms can encourage consecutive repeats or penalize uneven teacher loads
@@ -405,10 +603,10 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
 
     # Return the constructed model along with the decision variables and any
     # assumption indicators.
-    return model, vars_, loc_vars, assumptions
+    return model, vars_, loc_vars, registry
 
 
-def solve_and_print(model, vars_, loc_vars, assumptions=None, time_limit=None, progress_callback=None):
+def solve_and_print(model, vars_, loc_vars, assumption_registry=None, time_limit=None, progress_callback=None):
     """Run the OR-Tools solver and collect the results.
 
     Args:
@@ -416,9 +614,8 @@ def solve_and_print(model, vars_, loc_vars, assumptions=None, time_limit=None, p
         vars_: Dictionary mapping tuple keys to the ``BoolVar`` decision
             variables.  The solver will decide which of these become ``True``.
         loc_vars: Mapping including location assignment variables.
-        assumptions: Optional dictionary of assumption indicators.  When the
-            model is infeasible these help identify which group of constraints
-            caused the problem.
+        assumption_registry: Optional :class:`AssumptionRegistry` instance used
+            when the model was built with assumptions enabled.
         time_limit: Optional maximum solving time in seconds.
         progress_callback: Optional callable invoked with a progress message
             each time the solver finds a better solution.
@@ -428,8 +625,8 @@ def solve_and_print(model, vars_, loc_vars, assumptions=None, time_limit=None, p
         ``assignments``: List of tuples ``(student_id, teacher_id, subject,
         slot, location_id)`` representing the selected lessons and their
         locations.
-        ``core``: If infeasible and assumptions were used, names of the
-        constraint groups that could not be satisfied.
+        ``core``: If infeasible and assumptions were used, a list of
+        :class:`AssumptionInfo` objects describing the conflicting literals.
         ``progress``: List of textual progress messages describing each
         improved solution encountered during search.
     """
@@ -475,20 +672,13 @@ def solve_and_print(model, vars_, loc_vars, assumptions=None, time_limit=None, p
                         break
                 assignments.append((sid, tid, subj, slot, loc))
 
-    core = []
-    if status == cp_model.INFEASIBLE and assumptions:
+    core: List[AssumptionInfo] = []
+    if status == cp_model.INFEASIBLE and assumption_registry:
         indices = solver.SufficientAssumptionsForInfeasibility()
-        # Map back using the same key order used to build assumption_list
-        mapping_keys = [
-            'teacher_availability',
-            'teacher_limits',
-            'student_limits',
-            'repeat_restrictions',
-        ]
-        present_keys = [k for k in mapping_keys if k in assumptions]
         for idx in indices:
-            if 0 <= idx < len(present_keys):
-                core.append(present_keys[idx])
+            info = assumption_registry.info_for_index(idx)
+            if info is not None:
+                core.append(info)
 
     # ``core`` gives a minimal set of unsatisfied assumption groups when no
     # feasible schedule exists.  ``assignments`` is empty in that case.

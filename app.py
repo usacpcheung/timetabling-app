@@ -2216,7 +2216,7 @@ def generate_schedule(target_date=None):
     for gid, locs in group_loc_map.items():
         loc_restrict[offset + gid] = locs
 
-    model, vars_, loc_vars, assumptions = build_model(
+    model, vars_, loc_vars, assumption_registry = build_model(
         full_students, teachers, slots, min_lessons, max_lessons,
         allow_repeats=allow_repeats, max_repeats=max_repeats,
         prefer_consecutive=prefer_consecutive, allow_consecutive=allow_consecutive,
@@ -2248,7 +2248,7 @@ def generate_schedule(target_date=None):
         model,
         vars_,
         loc_vars,
-        assumptions,
+        assumption_registry,
         time_limit=solver_time_limit,
         progress_callback=progress_cb,
     )
@@ -2303,14 +2303,22 @@ def generate_schedule(target_date=None):
             # Map assumption literals from the unsat core to human readable
             # messages explaining why the model is infeasible.
             reason_map = {
-                'teacher_availability': 'A teacher is unavailable or blocked for a required lesson.',
+                'teacher_availability': 'Teacher availability conflict',
                 'teacher_limits': 'Teacher lesson limits are too strict.',
                 'student_limits': 'Student lesson or subject requirements conflict.',
                 'repeat_restrictions': 'Repeat or consecutive lesson restrictions prevent a schedule.',
+                'student_conflict': 'Student scheduling conflict.',
+                'location_restriction': 'No feasible location for a lesson.',
+                'fixed_assignment': 'Fixed lesson assignment cannot be satisfied.',
             }
             flash('No feasible timetable could be generated.', 'error')
-            for name in core:
-                flash(reason_map.get(name, name), 'error')
+            for info in core:
+                base = reason_map.get(info.kind, info.kind)
+                message = f"{base}: {info.label}" if info.label else base
+                if info.context:
+                    ctx = ', '.join(f"{k}={v}" for k, v in sorted(info.context.items()))
+                    message = f"{message} ({ctx})"
+                flash(message, 'error')
     conn.commit()
     conn.close()
 
