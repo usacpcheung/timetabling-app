@@ -1242,8 +1242,17 @@ def config():
     c = conn.cursor()
     if request.method == 'POST':
         has_error = False
-        slots_per_day = int(request.form['slots_per_day'])
-        slot_duration = int(request.form['slot_duration'])
+        try:
+            slots_per_day = int(request.form['slots_per_day'])
+            slot_duration = int(request.form['slot_duration'])
+        except (KeyError, TypeError, ValueError):
+            flash('Slots per day and slot duration must be positive integers.', 'error')
+            conn.close()
+            return redirect(url_for('config'))
+        if slots_per_day < 1 or slot_duration < 1:
+            flash('Slots per day and slot duration must be positive integers.', 'error')
+            conn.close()
+            return redirect(url_for('config'))
         start_times = []
         for i in range(1, slots_per_day + 1):
             val = request.form.get(f'slot_start_{i}')
