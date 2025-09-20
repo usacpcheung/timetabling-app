@@ -1353,10 +1353,6 @@ def config():
             if max_repeats < 2:
                 flash('Max repeats must be at least 2', 'error')
                 has_error = True
-        if not allow_multi_teacher and allow_repeats:
-            flash('Cannot allow repeats when different teachers per subject are disallowed.', 'error')
-            has_error = True
-
         c.execute("""UPDATE config SET slots_per_day=?, slot_duration=?, slot_start_times=?,
                      min_lessons=?, max_lessons=?, teacher_min_lessons=?, teacher_max_lessons=?,
                      allow_repeats=?, max_repeats=?,

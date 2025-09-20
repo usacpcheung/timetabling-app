@@ -186,6 +186,31 @@ def test_reject_negative_teacher_lessons(tmp_path):
     assert _config_row(app.DB_PATH) == original
 
 
+def test_allow_repeats_without_multi_teacher(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    conn.close()
+    original = _config_row(app.DB_PATH)
+
+    data = _valid_config_form(original)
+    data.add('allow_repeats', '1')
+    data.pop('allow_multi_teacher', None)
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert (
+        'error',
+        'Cannot allow repeats when different teachers per subject are disallowed.',
+    ) not in flashes
+    updated = _config_row(app.DB_PATH)
+    assert updated['allow_repeats'] == 1
+    assert updated['allow_multi_teacher'] == 0
+
+
 def test_reject_min_lessons_greater_than_max(tmp_path):
     import app
 
