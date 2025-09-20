@@ -106,6 +106,7 @@ def summarise_core_conflicts(core_details):
 
     results = []
     teacher_groups = {}
+    teacher_limit_groups = {}
     student_groups = {}
     repeat_limit_groups = {}
     multi_teacher_groups = {}
@@ -147,6 +148,26 @@ def summarise_core_conflicts(core_details):
             return labels[0]
         return ', '.join(labels[:-1]) + f" and {labels[-1]}"
 
+    def lesson_phrase(count):
+        if count is None:
+            return 'some lessons'
+        return f"{count} lesson{'s' if count != 1 else ''}"
+
+    def teacher_requirement_text(label, min_lessons, max_lessons):
+        label = label or 'Teacher'
+        if min_lessons is not None and max_lessons is not None:
+            if min_lessons == max_lessons:
+                return f"{label} must teach exactly {lesson_phrase(min_lessons)}."
+            return (
+                f"{label} must teach between {lesson_phrase(min_lessons)} "
+                f"and {lesson_phrase(max_lessons)}."
+            )
+        if min_lessons is not None and min_lessons > 0:
+            return f"{label} must teach at least {lesson_phrase(min_lessons)}."
+        if max_lessons is not None:
+            return f"{label} may teach at most {lesson_phrase(max_lessons)}."
+        return f"{label} has lesson constraints."
+
     for detail in core_details:
         if not isinstance(detail, dict):
             results.append(f"Conflict: {detail}")
@@ -168,6 +189,29 @@ def summarise_core_conflicts(core_details):
                 teacher_groups[tid] = group
                 results.append(None)
             group['slots'].append((detail.get('slot'), slot_display(detail)))
+            continue
+        if category == 'teacher_limits':
+            tid = detail.get('teacher_id')
+            key = tid if tid is not None else detail.get('key')
+            if key is None:
+                message = detail.get('message') or detail.get('label') or str(detail)
+                results.append(f"Conflict: {message}")
+                continue
+            group = teacher_limit_groups.get(key)
+            if group is None:
+                group = {
+                    'detail': dict(detail),
+                    'index': len(results),
+                }
+                teacher_limit_groups[key] = group
+                results.append(None)
+            else:
+                stored = group['detail']
+                for k, v in detail.items():
+                    if v is None:
+                        continue
+                    if stored.get(k) in (None, [], {}):
+                        stored[k] = v
             continue
         if category == 'student_limits' and kind == 'unavailable_slot':
             sid = detail.get('student_id')
@@ -238,6 +282,53 @@ def summarise_core_conflicts(core_details):
             message = f"{label} is unavailable at {slot_text}."
         else:
             message = f"{label} has an availability conflict."
+        results[group['index']] = f"Conflict: {message}"
+
+    for key, group in sorted(teacher_limit_groups.items(), key=lambda item: item[1]['index']):
+        detail = group['detail']
+        label = ensure_teacher_label(detail)
+        min_lessons = detail.get('min_lessons')
+        max_lessons = detail.get('max_lessons')
+        candidate_lessons = detail.get('candidate_lessons')
+        slot_count = detail.get('feasible_slot_count')
+        slot_indices = detail.get('feasible_slots') or []
+        slot_labels = detail.get('feasible_slot_labels') or []
+        slot_entries = []
+        if slot_labels:
+            if slot_indices:
+                slot_entries = list(zip(slot_indices, slot_labels))
+            else:
+                slot_entries = [(None, lbl) for lbl in slot_labels]
+        slot_text = render_slots(slot_entries)
+        fixed_lessons = detail.get('fixed_lessons')
+
+        message = None
+        if min_lessons is not None and min_lessons > 0:
+            if candidate_lessons is not None and candidate_lessons < min_lessons:
+                option_word = 'lesson option' if candidate_lessons == 1 else 'lesson options'
+                message = (
+                    f"{label} needs at least {lesson_phrase(min_lessons)} but only "
+                    f"{candidate_lessons} {option_word} exist."
+                )
+                if slot_text:
+                    message = message.rstrip('.') + f" Feasible slots: {slot_text}."
+            elif slot_count is not None and slot_count < min_lessons:
+                slot_word = 'slot' if slot_count == 1 else 'slots'
+                message = (
+                    f"{label} needs at least {lesson_phrase(min_lessons)} but only "
+                    f"{slot_count} feasible {slot_word} remain"
+                )
+                if slot_text:
+                    message += f": {slot_text}."
+                else:
+                    message += '.'
+        if message is None and max_lessons is not None and fixed_lessons is not None and fixed_lessons > max_lessons:
+            message = (
+                f"{label} may teach at most {lesson_phrase(max_lessons)}, but "
+                f"{lesson_phrase(fixed_lessons)} are already fixed."
+            )
+        if message is None:
+            message = teacher_requirement_text(label, min_lessons, max_lessons)
         results[group['index']] = f"Conflict: {message}"
 
     for sid, group in sorted(student_groups.items(), key=lambda item: item[1]['index']):

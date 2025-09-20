@@ -127,6 +127,36 @@ def test_unsat_core_present_on_conflict():
         f"Expected aggregated multi-teacher summary with teacher names, got: {summaries}"
     )
 
+    # Teacher lesson minimum should report a shortfall based on feasible slots.
+    students = [
+        make_row(1, ["Math"]),
+        make_row(2, ["Math"]),
+        make_row(3, ["Math"]),
+    ]
+    teachers = [
+        {"id": 1, "subjects": json.dumps(["Math"]), "min_lessons": 3, "max_lessons": None},
+    ]
+    slots = 1
+    model, vars_, loc_vars, assumptions = build_model(
+        students, teachers, slots,
+        min_lessons=0, max_lessons=3,
+        allow_repeats=False,
+        unavailable=[], fixed=[],
+        add_assumptions=True,
+        locations=[],
+    )
+    status, assignments, core, progress = solve_and_print(model, vars_, loc_vars, assumptions)
+    assert status == cp_model.INFEASIBLE, "Expected infeasible due to teacher minimum"
+    limit_details = [detail for detail in core if detail.get('category') == 'teacher_limits']
+    assert limit_details, f"Teacher limit missing from unsat core: {core}"
+    summaries = summarise_core_conflicts(core)
+    assert any('needs at least 3 lessons' in msg or 'must teach at least 3 lessons' in msg for msg in summaries), (
+        f"Expected mention of the teacher minimum shortfall, got: {summaries}"
+    )
+    assert any('only 1' in msg and 'slot' in msg.lower() for msg in summaries), (
+        f"Expected summary to mention limited feasible slots, got: {summaries}"
+    )
+
 
 def main():
     tests = [

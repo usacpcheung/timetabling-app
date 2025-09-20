@@ -117,6 +117,14 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
     subject_weights = subject_weights or {}
     var_weights = {}
 
+    # Track how many feasible lessons and slots each teacher can potentially
+    # cover.  This information enriches the assumption metadata so the Flask
+    # layer can explain shortfalls such as "needs 3 lessons but only one slot"
+    # when the model proves infeasible.
+    teacher_candidate_lessons = {teacher['id']: 0 for teacher in teachers}
+    teacher_feasible_slots = {teacher['id']: set() for teacher in teachers}
+    teacher_fixed_lessons = {teacher['id']: 0 for teacher in teachers}
+
     # Map each group id to the subjects it requires and map each member student
     # to the subjects that must be taken through their group.  This helps filter
     # out individual lesson variables when a subject is provided exclusively via
@@ -260,10 +268,18 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                     if student['id'] in group_ids:
                         weight *= group_weight
                     var_weights[vars_[key]] = weight
+                    tid = teacher['id']
+                    teacher_candidate_lessons.setdefault(tid, 0)
+                    teacher_feasible_slots.setdefault(tid, set())
+                    teacher_fixed_lessons.setdefault(tid, 0)
+                    blocked_reason = ((teacher['id'], slot) in unavailable_set or
+                                      teacher['id'] in forbidden)
+                    feasible_for_teacher = True
                     if key in fixed_set:
                         model.Add(vars_[key] == 1)
-                    elif add_assumptions and ((teacher['id'], slot) in unavailable_set or
-                                             teacher['id'] in forbidden):
+                        teacher_fixed_lessons[tid] += 1
+                    elif add_assumptions and blocked_reason:
+                        feasible_for_teacher = False
                         if (teacher['id'], slot) in unavailable_set:
                             label = (
                                 f"{_teacher_label(teacher['id'])} is unavailable at "
@@ -307,6 +323,9 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                                 },
                             )
                         model.Add(vars_[key] == 0).OnlyEnforceIf(literal)
+                    if feasible_for_teacher:
+                        teacher_candidate_lessons[tid] += 1
+                        teacher_feasible_slots[tid].add(slot)
 
     all_locs = locations or []
     loc_restrict = location_restrict or {}
@@ -533,6 +552,9 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         tmin = teacher_min_lessons if tmin is None else tmin
         tmax = teacher_max_lessons if tmax is None else tmax
         literal = None
+        feasible_slots = sorted(teacher_feasible_slots.get(teacher['id'], set()))
+        candidate_lessons = teacher_candidate_lessons.get(teacher['id'], 0)
+        fixed_lessons = teacher_fixed_lessons.get(teacher['id'], 0)
         if add_assumptions:
             if tmax is None:
                 label = (
@@ -561,6 +583,11 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                     'teacher_label': _teacher_label(teacher['id']),
                     'min_lessons': tmin,
                     'max_lessons': tmax,
+                    'candidate_lessons': candidate_lessons,
+                    'feasible_slot_count': len(feasible_slots),
+                    'feasible_slots': feasible_slots,
+                    'feasible_slot_labels': [_slot_label(slot) for slot in feasible_slots],
+                    'fixed_lessons': fixed_lessons,
                 },
             )
         ct = model.Add(load_var >= tmin)
