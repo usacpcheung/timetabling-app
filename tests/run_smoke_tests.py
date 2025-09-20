@@ -1,10 +1,21 @@
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from ortools.sat.python import cp_model
 from cp_sat_timetable import build_model, solve_and_print
+from app import summarize_unsat_core, _format_summary_details, UNSAT_REASON_MAP
 import json
 
 
-def make_row(id_, subjects):
-    return {"id": id_, "subjects": json.dumps(subjects)}
+def make_row(id_, subjects, name=None):
+    row = {"id": id_, "subjects": json.dumps(subjects)}
+    if name is not None:
+        row["name"] = name
+    return row
 
 
 def test_no_locations_allows_schedule():
@@ -14,14 +25,14 @@ def test_no_locations_allows_schedule():
         {"id": 2, "subjects": json.dumps(["English"]), "min_lessons": 0, "max_lessons": None},
     ]
     slots = 2
-    model, vars_, loc_vars, assumptions = build_model(
+    model, vars_, loc_vars, assumption_registry = build_model(
         students, teachers, slots,
         min_lessons=0, max_lessons=2,
         unavailable=[], fixed=[],
         add_assumptions=True,
         locations=None,  # no locations configured
     )
-    status, assignments, core, progress = solve_and_print(model, vars_, loc_vars, assumptions)
+    status, assignments, core, progress = solve_and_print(model, vars_, loc_vars, assumption_registry)
     assert status in (cp_model.OPTIMAL, cp_model.FEASIBLE)
     assert len(assignments) > 0, "Expected some lessons to be scheduled without locations"
     assert progress, "Expected at least one progress message"
@@ -34,7 +45,7 @@ def test_multi_teacher_disallowed_allows_repeats_same_teacher():
         {"id": 2, "subjects": json.dumps(["Math"]), "min_lessons": 0, "max_lessons": None},
     ]
     slots = 2
-    model, vars_, loc_vars, assumptions = build_model(
+    model, vars_, loc_vars, assumption_registry = build_model(
         students, teachers, slots,
         min_lessons=2, max_lessons=2,
         allow_repeats=True, max_repeats=2,
@@ -44,7 +55,7 @@ def test_multi_teacher_disallowed_allows_repeats_same_teacher():
         student_limits={1: (2, 2)},
         locations=[],
     )
-    status, assignments, core, progress = solve_and_print(model, vars_, loc_vars, assumptions)
+    status, assignments, core, progress = solve_and_print(model, vars_, loc_vars, assumption_registry)
     assert status in (cp_model.OPTIMAL, cp_model.FEASIBLE)
     # Both slots scheduled, but with the same teacher id
     assigned = [(sid, tid, subj, sl) for (sid, tid, subj, sl, loc) in assignments]
@@ -62,7 +73,7 @@ def test_unsat_core_present_on_conflict():
     ]
     slots = 1
     unavailable = [{"teacher_id": 1, "slot": 0}]
-    model, vars_, loc_vars, assumptions = build_model(
+    model, vars_, loc_vars, assumption_registry = build_model(
         students, teachers, slots,
         min_lessons=1, max_lessons=1,
         allow_repeats=False,
@@ -71,12 +82,84 @@ def test_unsat_core_present_on_conflict():
         student_limits={1: (1, 1)},
         locations=[],
     )
-    status, assignments, core, progress = solve_and_print(model, vars_, loc_vars, assumptions)
+    status, assignments, core, progress = solve_and_print(model, vars_, loc_vars, assumption_registry)
     assert status == cp_model.INFEASIBLE, "Expected infeasible due to teacher unavailability and student min"
     assert core, "Expected an unsat core to be reported"
     # Core likely includes teacher_availability and student_limits
-    assert any(k in core for k in ("teacher_availability", "student_limits")), f"Unexpected core: {core}"
+    assert any(getattr(info, "kind", None) in ("teacher_availability", "student_limits") for info in core), f"Unexpected core: {core}"
     assert progress == [], "No progress messages expected when infeasible"
+    summaries = summarize_unsat_core(core)
+    teacher_summaries = [s for s in summaries if s.get('aggregated') and s.get('kind') == 'teacher_availability']
+    assert teacher_summaries, f"Expected teacher summaries; got {summaries}"
+    capacity_summary = next((s for s in teacher_summaries if s.get('category') == 'capacity'), None)
+    assert capacity_summary is not None, f"Expected capacity summary; got {teacher_summaries}"
+    assert capacity_summary.get('slots') == [0], f"Expected slot 0 in teacher summary; got {capacity_summary}"
+    assert capacity_summary.get('slot_candidates', {}).get(0) == 1, f"Expected one candidate lesson; got {capacity_summary}"
+    student_summary = next((s for s in summaries if s.get('aggregated') and s.get('kind') == 'student_limits'), None)
+    assert student_summary is not None, f"Expected aggregated student summary; got {summaries}"
+    assert 0 in student_summary.get('slots', []), f"Expected slot 0 in student summary; got {student_summary}"
+    assert student_summary.get('candidate_lessons') == [1], f"Expected candidate lessons of 1; got {student_summary}"
+
+
+def test_capacity_summary_formats_slot_candidates_human_readable():
+    summary = {
+        'kind': 'teacher_availability',
+        'aggregated': True,
+        'category': 'capacity',
+        'teacher_id': 5,
+        'teacher_name': 'Ms. Wong',
+        'slots': [0],
+        'slot_candidates': {0: 21},
+        'slot_labels': {0: '08:30-09:00'},
+    }
+    details = _format_summary_details(summary)
+    combined = ' '.join(details)
+    assert 'slot 0 (08:30-09:00) has 21 candidate lessons' in combined, combined
+
+
+def test_group_unsat_message_includes_group_and_subject_names():
+    group_offset = 10000
+    group_id = group_offset + 1
+    group_name = "Robotics Club"
+    subject_id = 9
+    subject_name = "Robotics"
+
+    students = [
+        make_row(1, [subject_id], name="Alice"),
+        make_row(group_id, [subject_id], name=group_name),
+    ]
+    teachers = [
+        {"id": 1, "subjects": json.dumps([subject_id]), "min_lessons": 0, "max_lessons": None},
+    ]
+    slots = 1
+    unavailable = [{"teacher_id": 1, "slot": 0}]
+    model, vars_, loc_vars, assumption_registry = build_model(
+        students, teachers, slots,
+        min_lessons=1, max_lessons=1,
+        allow_repeats=False,
+        unavailable=unavailable, fixed=[],
+        add_assumptions=True,
+        group_members={group_id: [1]},
+        student_limits={1: (1, 1)},
+        locations=[],
+        subject_lookup={subject_id: subject_name},
+    )
+    status, assignments, core, progress = solve_and_print(model, vars_, loc_vars, assumption_registry)
+    assert status == cp_model.INFEASIBLE, "Expected infeasible due to group requirements"
+    summaries = summarize_unsat_core(core)
+    aggregated_messages = []
+    for summary in summaries:
+        if summary.get('aggregated'):
+            kind = summary.get('kind')
+            base = UNSAT_REASON_MAP.get(kind, summary.get('label') or kind or 'Constraint conflict')
+            details = _format_summary_details(summary)
+            message = base
+            if details:
+                message = f"{base} ({'; '.join(details)})"
+            aggregated_messages.append(message)
+    combined = ' '.join(aggregated_messages)
+    assert group_name in combined, f"Expected group name in messages: {aggregated_messages}"
+    assert subject_name in combined, f"Expected subject name in messages: {aggregated_messages}"
 
 
 def main():
@@ -84,6 +167,8 @@ def main():
         ("no_locations", test_no_locations_allows_schedule),
         ("multi_teacher_disallowed_repeats_same_teacher", test_multi_teacher_disallowed_allows_repeats_same_teacher),
         ("unsat_core", test_unsat_core_present_on_conflict),
+        ("capacity_summary_formatting", test_capacity_summary_formats_slot_candidates_human_readable),
+        ("group_unsat_message", test_group_unsat_message_includes_group_and_subject_names),
     ]
     failures = []
     for name, fn in tests:
