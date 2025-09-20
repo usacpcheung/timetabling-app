@@ -1288,11 +1288,28 @@ def config():
             flash('Minimum lessons cannot exceed slots per day.', 'error')
             conn.close()
             return redirect(url_for('config'))
+        if max_lessons > slots_per_day:
+            flash('Maximum lessons cannot exceed slots per day.', 'error')
+            conn.close()
+            return redirect(url_for('config'))
         t_min_lessons = int(request.form['teacher_min_lessons'])
         t_max_lessons = int(request.form['teacher_max_lessons'])
+        if t_min_lessons < 0 or t_max_lessons < 0:
+            flash('Global teacher minimum and maximum lessons must be zero or greater.', 'error')
+            conn.close()
+            return redirect(url_for('config'))
         if t_min_lessons > t_max_lessons:
-            flash('Global teacher min lessons cannot exceed max lessons', 'error')
-            has_error = True
+            flash('Global teacher min lessons cannot exceed max lessons.', 'error')
+            conn.close()
+            return redirect(url_for('config'))
+        if t_min_lessons > slots_per_day:
+            flash('Global teacher minimum lessons cannot exceed slots per day.', 'error')
+            conn.close()
+            return redirect(url_for('config'))
+        if t_max_lessons > slots_per_day:
+            flash('Global teacher maximum lessons cannot exceed slots per day.', 'error')
+            conn.close()
+            return redirect(url_for('config'))
         allow_repeats = 1 if request.form.get('allow_repeats') else 0
         max_repeats = int(request.form['max_repeats'])
         prefer_consecutive = 1 if request.form.get('prefer_consecutive') else 0

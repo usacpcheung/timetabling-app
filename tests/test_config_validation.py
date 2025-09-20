@@ -145,6 +145,25 @@ def test_reject_negative_max_lessons(tmp_path):
     assert _config_row(app.DB_PATH) == original
 
 
+def test_reject_negative_teacher_lessons(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    conn.close()
+    original = _config_row(app.DB_PATH)
+
+    data = _valid_config_form(original)
+    data.setlist('teacher_min_lessons', ['-1'])
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert ('error', 'Global teacher minimum and maximum lessons must be zero or greater.') in flashes
+    assert _config_row(app.DB_PATH) == original
+
+
 def test_reject_min_lessons_greater_than_max(tmp_path):
     import app
 
@@ -182,4 +201,65 @@ def test_reject_min_lessons_greater_than_slots(tmp_path):
 
     assert response.status_code == 302
     assert ('error', 'Minimum lessons cannot exceed slots per day.') in flashes
+    assert _config_row(app.DB_PATH) == original
+
+
+def test_reject_max_lessons_greater_than_slots(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    conn.close()
+    original = _config_row(app.DB_PATH)
+
+    data = _valid_config_form(original)
+    slots = original['slots_per_day']
+    data.setlist('max_lessons', [str(slots + 1)])
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert ('error', 'Maximum lessons cannot exceed slots per day.') in flashes
+    assert _config_row(app.DB_PATH) == original
+
+
+def test_reject_teacher_min_lessons_greater_than_slots(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    conn.close()
+    original = _config_row(app.DB_PATH)
+
+    data = _valid_config_form(original)
+    slots = original['slots_per_day']
+    data.setlist('teacher_min_lessons', [str(slots + 1)])
+    data.setlist('teacher_max_lessons', [str(slots + 2)])
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert ('error', 'Global teacher minimum lessons cannot exceed slots per day.') in flashes
+    assert _config_row(app.DB_PATH) == original
+
+
+def test_reject_teacher_max_lessons_greater_than_slots(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    conn.close()
+    original = _config_row(app.DB_PATH)
+
+    data = _valid_config_form(original)
+    slots = original['slots_per_day']
+    data.setlist('teacher_max_lessons', [str(slots + 1)])
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert ('error', 'Global teacher maximum lessons cannot exceed slots per day.') in flashes
     assert _config_row(app.DB_PATH) == original
