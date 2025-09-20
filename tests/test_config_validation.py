@@ -263,3 +263,92 @@ def test_reject_teacher_max_lessons_greater_than_slots(tmp_path):
     assert response.status_code == 302
     assert ('error', 'Global teacher maximum lessons cannot exceed slots per day.') in flashes
     assert _config_row(app.DB_PATH) == original
+
+
+def test_individual_teacher_limits_can_exceed_slots(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    config_row = _config_row(app.DB_PATH)
+    slots = config_row['slots_per_day']
+
+    teacher = conn.execute(
+        'SELECT id, name, subjects FROM teachers ORDER BY id LIMIT 1'
+    ).fetchone()
+    teacher_id = teacher['id']
+    teacher_name = teacher['name']
+    teacher_subjects = json.loads(teacher['subjects'])
+    conn.close()
+
+    base_items = list(_valid_config_form(config_row).items(multi=True))
+    base_items.append(('teacher_id', str(teacher_id)))
+    base_items.append((f'teacher_name_{teacher_id}', teacher_name))
+    for subj_id in teacher_subjects:
+        base_items.append((f'teacher_subjects_{teacher_id}', str(subj_id)))
+    base_items.append((f'teacher_min_{teacher_id}', str(slots + 3)))
+    base_items.append((f'teacher_max_{teacher_id}', str(slots + 4)))
+    data = MultiDict(base_items)
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert all(category != 'error' for category, _ in flashes)
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    updated = conn.execute(
+        'SELECT min_lessons, max_lessons FROM teachers WHERE id=?',
+        (teacher_id,),
+    ).fetchone()
+    conn.close()
+
+    assert updated['min_lessons'] == slots + 3
+    assert updated['max_lessons'] == slots + 4
+
+
+def test_student_limits_ignore_global_rules(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    config_row = _config_row(app.DB_PATH)
+    slots = config_row['slots_per_day']
+
+    student = conn.execute(
+        'SELECT id, name, subjects, active FROM students ORDER BY id LIMIT 1'
+    ).fetchone()
+    student_id = student['id']
+    student_name = student['name']
+    student_subjects = json.loads(student['subjects'])
+    is_active = bool(student['active'])
+    conn.close()
+
+    base_items = list(_valid_config_form(config_row).items(multi=True))
+    base_items.append(('student_id', str(student_id)))
+    base_items.append((f'student_name_{student_id}', student_name))
+    for subj_id in student_subjects:
+        base_items.append((f'student_subjects_{student_id}', str(subj_id)))
+    if is_active:
+        base_items.append((f'student_active_{student_id}', '1'))
+    base_items.append((f'student_min_{student_id}', str(slots + 8)))
+    base_items.append((f'student_max_{student_id}', str(slots + 7)))
+    data = MultiDict(base_items)
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert all(category != 'error' for category, _ in flashes)
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    updated = conn.execute(
+        'SELECT min_lessons, max_lessons FROM students WHERE id=?',
+        (student_id,),
+    ).fetchone()
+    conn.close()
+
+    assert updated['min_lessons'] == slots + 8
+    assert updated['max_lessons'] == slots + 7
