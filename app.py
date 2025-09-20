@@ -2046,10 +2046,41 @@ def _format_subject_value(name, identifier):
     return None
 
 
+def _compute_slot_label_map(slot_count, slot_times, slot_duration):
+    labels = {}
+    last_start = None
+    for idx in range(slot_count):
+        if idx < len(slot_times):
+            try:
+                hours, minutes = map(int, str(slot_times[idx]).split(':'))
+                start = hours * 60 + minutes
+            except Exception:
+                start = (last_start + slot_duration) if last_start is not None else 8 * 60 + 30
+        else:
+            start = (last_start + slot_duration) if last_start is not None else 8 * 60 + 30
+        end = start + slot_duration
+        labels[idx] = f"{start // 60:02d}:{start % 60:02d}-{end // 60:02d}:{end % 60:02d}"
+        last_start = start
+    return labels
+
+
 def _format_list(prefix, values):
     if not values:
         return None
     return f"{prefix}=" + ','.join(str(v) for v in values)
+
+
+def _format_slot_list(prefix, slots, slot_labels):
+    if not slots:
+        return None
+    formatted = []
+    for slot in sorted(slots):
+        label = slot_labels.get(slot)
+        if label:
+            formatted.append(f"{slot} ({label})")
+        else:
+            formatted.append(str(slot))
+    return f"{prefix}=" + ', '.join(formatted)
 
 
 def _format_pairs(pairs):
@@ -2108,6 +2139,7 @@ def _summarize_teacher_availability(infos):
         if entry['capacity_infos']:
             slots = []
             slot_candidates = {}
+            slot_labels = {}
             for info in entry['capacity_infos']:
                 ctx = getattr(info, 'context', {}) or {}
                 slot = ctx.get('slot')
@@ -2116,6 +2148,9 @@ def _summarize_teacher_availability(infos):
                 candidate = ctx.get('candidate_lessons')
                 if slot is not None and candidate is not None and slot not in slot_candidates:
                     slot_candidates[slot] = candidate
+                label = ctx.get('slot_label')
+                if slot is not None and label and slot not in slot_labels:
+                    slot_labels[slot] = label
             summaries.append({
                 'kind': 'teacher_availability',
                 'aggregated': True,
@@ -2124,6 +2159,7 @@ def _summarize_teacher_availability(infos):
                 'teacher_name': teacher_name,
                 'slots': slots,
                 'slot_candidates': slot_candidates,
+                'slot_labels': slot_labels,
                 'label': getattr(entry['capacity_infos'][0], 'label', ''),
                 'infos': list(entry['capacity_infos']),
             })
@@ -2131,6 +2167,7 @@ def _summarize_teacher_availability(infos):
             slots = []
             pairs = []
             reasons = []
+            slot_labels = {}
             for info in entry['block_infos']:
                 ctx = getattr(info, 'context', {}) or {}
                 slot = ctx.get('slot')
@@ -2147,6 +2184,9 @@ def _summarize_teacher_availability(infos):
                 for reason in ctx.get('reasons') or []:
                     if reason and reason not in reasons:
                         reasons.append(reason)
+                label = ctx.get('slot_label')
+                if slot is not None and label and slot not in slot_labels:
+                    slot_labels[slot] = label
             summaries.append({
                 'kind': 'teacher_availability',
                 'aggregated': True,
@@ -2156,6 +2196,7 @@ def _summarize_teacher_availability(infos):
                 'slots': slots,
                 'pairs': pairs,
                 'reasons': reasons,
+                'slot_labels': slot_labels,
                 'label': getattr(entry['block_infos'][0], 'label', ''),
                 'infos': list(entry['block_infos']),
             })
@@ -2477,15 +2518,26 @@ def _format_summary_details(summary):
         if teacher_detail:
             details.append(teacher_detail)
         if summary.get('category') == 'capacity':
-            slots_detail = _format_list('slots', summary.get('slots'))
+            slot_labels = summary.get('slot_labels') or {}
+            slots_detail = _format_slot_list('slots', summary.get('slots'), slot_labels)
             if slots_detail:
                 details.append(slots_detail)
             slot_candidates = summary.get('slot_candidates') or {}
             if slot_candidates:
-                candidate_details = ','.join(f"{slot}:{slot_candidates[slot]}" for slot in slot_candidates)
-                details.append(f"slot_candidates={candidate_details}")
+                candidate_details = []
+                for slot in sorted(slot_candidates):
+                    count = slot_candidates[slot]
+                    label = slot_labels.get(slot)
+                    slot_text = f"slot {slot}"
+                    if label:
+                        slot_text = f"{slot_text} ({label})"
+                    noun = 'lesson' if count == 1 else 'lessons'
+                    candidate_details.append(f"{slot_text} has {count} candidate {noun}")
+                if candidate_details:
+                    details.append('slot demand: ' + '; '.join(candidate_details))
         elif summary.get('category') == 'block':
-            slots_detail = _format_list('blocked_slots', summary.get('slots'))
+            slot_labels = summary.get('slot_labels') or {}
+            slots_detail = _format_slot_list('blocked_slots', summary.get('slots'), slot_labels)
             if slots_detail:
                 details.append(slots_detail)
             pair_labels = _format_pairs(summary.get('pairs', []))
@@ -2601,6 +2653,12 @@ def generate_schedule(target_date=None):
     c.execute('SELECT * FROM config WHERE id=1')
     cfg = c.fetchone()
     slots = cfg['slots_per_day']
+    slot_duration = cfg['slot_duration']
+    try:
+        slot_times = json.loads(cfg['slot_start_times']) if cfg['slot_start_times'] else []
+    except Exception:
+        slot_times = []
+    slot_label_map = _compute_slot_label_map(slots, slot_times, slot_duration)
     min_lessons = cfg['min_lessons']
     max_lessons = cfg['max_lessons']
     teacher_min = cfg['teacher_min_lessons']
@@ -2822,7 +2880,8 @@ def generate_schedule(target_date=None):
         student_multi_teacher=student_multi,
         locations=locations,
         location_restrict=loc_restrict,
-        subject_lookup=subject_lookup)
+        subject_lookup=subject_lookup,
+        slot_labels=slot_label_map)
 
     progress_messages = []
 

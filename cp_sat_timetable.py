@@ -100,7 +100,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 student_repeat=None, student_unavailable=None,
                 student_multi_teacher=None,
                 locations=None, location_restrict=None,
-                subject_lookup=None):
+                subject_lookup=None, slot_labels=None):
     """Build CP-SAT model for the scheduling problem.
 
     When ``add_assumptions`` is ``True``, Boolean indicators are created for the
@@ -202,6 +202,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
     teacher_lookup = {t['id']: t for t in teachers}
     student_lookup = {s['id']: s for s in students}
     subject_lookup = subject_lookup or {}
+    slot_labels = slot_labels or {}
 
     # Map each group id to the subjects it requires and map each member student
     # to the subjects that must be taken through their group.  This helps filter
@@ -279,6 +280,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                                 'subject': subject,
                                 'subject_name': subject_lookup.get(subject),
                                 'slot': slot,
+                                'slot_label': slot_labels.get(slot),
                             },
                         )
                         if lit is not None:
@@ -301,6 +303,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                                     'subject': subject,
                                     'subject_name': subject_lookup.get(subject),
                                     'slot': slot,
+                                    'slot_label': slot_labels.get(slot),
                                     'reasons': reasons,
                                 },
                             )
@@ -339,6 +342,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                         'subject': subj,
                         'subject_name': subject_lookup.get(subj),
                         'slot': sl,
+                        'slot_label': slot_labels.get(sl),
                         'allowed_locations': [],
                     },
                 )
@@ -367,6 +371,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                         'teacher_id': teacher['id'],
                         'teacher_name': _get_optional(teacher, 'name'),
                         'slot': slot,
+                        'slot_label': slot_labels.get(slot),
                         'candidate_lessons': len(possible),
                     },
                 )

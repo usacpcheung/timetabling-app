@@ -101,6 +101,22 @@ def test_unsat_core_present_on_conflict():
     assert student_summary.get('candidate_lessons') == [1], f"Expected candidate lessons of 1; got {student_summary}"
 
 
+def test_capacity_summary_formats_slot_candidates_human_readable():
+    summary = {
+        'kind': 'teacher_availability',
+        'aggregated': True,
+        'category': 'capacity',
+        'teacher_id': 5,
+        'teacher_name': 'Ms. Wong',
+        'slots': [0],
+        'slot_candidates': {0: 21},
+        'slot_labels': {0: '08:30-09:00'},
+    }
+    details = _format_summary_details(summary)
+    combined = ' '.join(details)
+    assert 'slot 0 (08:30-09:00) has 21 candidate lessons' in combined, combined
+
+
 def test_group_unsat_message_includes_group_and_subject_names():
     group_offset = 10000
     group_id = group_offset + 1
@@ -151,6 +167,7 @@ def main():
         ("no_locations", test_no_locations_allows_schedule),
         ("multi_teacher_disallowed_repeats_same_teacher", test_multi_teacher_disallowed_allows_repeats_same_teacher),
         ("unsat_core", test_unsat_core_present_on_conflict),
+        ("capacity_summary_formatting", test_capacity_summary_formats_slot_candidates_human_readable),
         ("group_unsat_message", test_group_unsat_message_includes_group_and_subject_names),
     ]
     failures = []
