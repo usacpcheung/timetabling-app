@@ -57,15 +57,68 @@ document.addEventListener('DOMContentLoaded', function () {
     const slotsInput = document.querySelector('input[name="slots_per_day"]');
     const slotDurationInput = document.querySelector('input[name="slot_duration"]');
     const configForm = document.getElementById('config-form');
+    const saveButton = configForm ? configForm.querySelector('[data-config-save]') : null;
+    let allowSubmit = false;
+
+    const allowNextSubmit = () => {
+        allowSubmit = true;
+        setTimeout(() => {
+            allowSubmit = false;
+        }, 0);
+    };
+
+    const triggerConfigSubmit = () => {
+        if (!configForm) {
+            return;
+        }
+        allowNextSubmit();
+        if (typeof configForm.requestSubmit === 'function') {
+            configForm.requestSubmit();
+        } else {
+            configForm.submit();
+        }
+    };
 
     if (configForm) {
-        const selects = configForm.querySelectorAll('select:not([multiple])');
-        selects.forEach(sel => {
-            sel.addEventListener('keydown', function (e) {
-                if (e.key === 'Enter') {
-                    configForm.submit();
-                }
-            });
+        configForm.addEventListener('submit', event => {
+            if (!allowSubmit) {
+                event.preventDefault();
+            }
+        });
+
+        configForm.addEventListener('keydown', event => {
+            if (event.key !== 'Enter') {
+                return;
+            }
+
+            const target = event.target;
+            const isShortcut = event.ctrlKey || event.metaKey;
+
+            if (isShortcut) {
+                event.preventDefault();
+                triggerConfigSubmit();
+                return;
+            }
+
+            if (target && target.tagName === 'TEXTAREA') {
+                return;
+            }
+
+            if (target instanceof HTMLButtonElement && target.type === 'submit') {
+                allowNextSubmit();
+                return;
+            }
+
+            event.preventDefault();
+        });
+    }
+
+    if (saveButton) {
+        saveButton.addEventListener('click', allowNextSubmit);
+        saveButton.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                allowNextSubmit();
+            }
         });
     }
 
@@ -133,13 +186,14 @@ document.addEventListener('DOMContentLoaded', function () {
     const modalSaveButtons = document.querySelectorAll('[data-modal-save]');
     modalSaveButtons.forEach(btn => {
         btn.addEventListener('click', () => {
-            if (configForm && typeof configForm.requestSubmit === 'function') {
-                const modal = btn.closest('[data-config-modal]');
-                if (modal) {
-                    modalOriginalValues.delete(modal.id);
-                }
-                configForm.requestSubmit();
+            if (!configForm) {
+                return;
             }
+            const modal = btn.closest('[data-config-modal]');
+            if (modal) {
+                modalOriginalValues.delete(modal.id);
+            }
+            triggerConfigSubmit();
         });
     });
 
