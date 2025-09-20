@@ -2034,10 +2034,53 @@ def _format_entity(prefix, name, identifier):
     return None
 
 
+def _format_subject_value(name, identifier):
+    if name and identifier is not None:
+        if str(name) != str(identifier):
+            return f"{name} (id={identifier})"
+        return str(name)
+    if name:
+        return str(name)
+    if identifier is not None:
+        return str(identifier)
+    return None
+
+
+def _compute_slot_label_map(slot_count, slot_times, slot_duration):
+    labels = {}
+    last_start = None
+    for idx in range(slot_count):
+        if idx < len(slot_times):
+            try:
+                hours, minutes = map(int, str(slot_times[idx]).split(':'))
+                start = hours * 60 + minutes
+            except Exception:
+                start = (last_start + slot_duration) if last_start is not None else 8 * 60 + 30
+        else:
+            start = (last_start + slot_duration) if last_start is not None else 8 * 60 + 30
+        end = start + slot_duration
+        labels[idx] = f"{start // 60:02d}:{start % 60:02d}-{end // 60:02d}:{end % 60:02d}"
+        last_start = start
+    return labels
+
+
 def _format_list(prefix, values):
     if not values:
         return None
     return f"{prefix}=" + ','.join(str(v) for v in values)
+
+
+def _format_slot_list(prefix, slots, slot_labels):
+    if not slots:
+        return None
+    formatted = []
+    for slot in sorted(slots):
+        label = slot_labels.get(slot)
+        if label:
+            formatted.append(f"{slot} ({label})")
+        else:
+            formatted.append(str(slot))
+    return f"{prefix}=" + ', '.join(formatted)
 
 
 def _format_pairs(pairs):
@@ -2096,6 +2139,7 @@ def _summarize_teacher_availability(infos):
         if entry['capacity_infos']:
             slots = []
             slot_candidates = {}
+            slot_labels = {}
             for info in entry['capacity_infos']:
                 ctx = getattr(info, 'context', {}) or {}
                 slot = ctx.get('slot')
@@ -2104,6 +2148,9 @@ def _summarize_teacher_availability(infos):
                 candidate = ctx.get('candidate_lessons')
                 if slot is not None and candidate is not None and slot not in slot_candidates:
                     slot_candidates[slot] = candidate
+                label = ctx.get('slot_label')
+                if slot is not None and label and slot not in slot_labels:
+                    slot_labels[slot] = label
             summaries.append({
                 'kind': 'teacher_availability',
                 'aggregated': True,
@@ -2112,6 +2159,7 @@ def _summarize_teacher_availability(infos):
                 'teacher_name': teacher_name,
                 'slots': slots,
                 'slot_candidates': slot_candidates,
+                'slot_labels': slot_labels,
                 'label': getattr(entry['capacity_infos'][0], 'label', ''),
                 'infos': list(entry['capacity_infos']),
             })
@@ -2119,6 +2167,7 @@ def _summarize_teacher_availability(infos):
             slots = []
             pairs = []
             reasons = []
+            slot_labels = {}
             for info in entry['block_infos']:
                 ctx = getattr(info, 'context', {}) or {}
                 slot = ctx.get('slot')
@@ -2127,14 +2176,17 @@ def _summarize_teacher_availability(infos):
                 student_id = ctx.get('student_id')
                 student_name = ctx.get('student_name')
                 student_label = student_name or (f"Student {student_id}" if student_id is not None else None)
-                subject = ctx.get('subject')
-                if student_label or subject is not None:
-                    pair = (student_label, subject)
+                subject_label = _format_subject_value(ctx.get('subject_name'), ctx.get('subject'))
+                if student_label or subject_label is not None:
+                    pair = (student_label, subject_label)
                     if pair not in pairs:
                         pairs.append(pair)
                 for reason in ctx.get('reasons') or []:
                     if reason and reason not in reasons:
                         reasons.append(reason)
+                label = ctx.get('slot_label')
+                if slot is not None and label and slot not in slot_labels:
+                    slot_labels[slot] = label
             summaries.append({
                 'kind': 'teacher_availability',
                 'aggregated': True,
@@ -2144,6 +2196,7 @@ def _summarize_teacher_availability(infos):
                 'slots': slots,
                 'pairs': pairs,
                 'reasons': reasons,
+                'slot_labels': slot_labels,
                 'label': getattr(entry['block_infos'][0], 'label', ''),
                 'infos': list(entry['block_infos']),
             })
@@ -2183,9 +2236,9 @@ def _summarize_student_limits(infos):
             entry['slots'].append(slot)
         if label.startswith('student_block_') and slot is not None and slot not in entry['blocked_slots']:
             entry['blocked_slots'].append(slot)
-        subject = context.get('subject')
-        if subject is not None and subject not in entry['subjects']:
-            entry['subjects'].append(subject)
+        subject_label = _format_subject_value(context.get('subject_name'), context.get('subject'))
+        if subject_label and subject_label not in entry['subjects']:
+            entry['subjects'].append(subject_label)
         if context.get('min_lessons') is not None:
             entry['min_lessons'] = context['min_lessons']
         if context.get('max_lessons') is not None:
@@ -2232,6 +2285,7 @@ def _summarize_repeat_restrictions(infos):
         key = (student_id, subject)
         entry = groups.setdefault(key, {
             'student_name': context.get('student_name'),
+            'subject_name': context.get('subject_name'),
             'teachers': [],
             'slots': [],
             'repeat_limit': None,
@@ -2240,6 +2294,8 @@ def _summarize_repeat_restrictions(infos):
         })
         if context.get('student_name') and not entry['student_name']:
             entry['student_name'] = context['student_name']
+        if context.get('subject_name') and not entry.get('subject_name'):
+            entry['subject_name'] = context['subject_name']
         entry['infos'].append(info)
         teacher_id = context.get('teacher_id')
         teacher_name = context.get('teacher_name')
@@ -2267,6 +2323,7 @@ def _summarize_repeat_restrictions(infos):
             'student_id': student_id,
             'student_name': entry['student_name'],
             'subject': subject,
+            'subject_name': entry.get('subject_name'),
             'teachers': entry['teachers'],
             'slots': entry['slots'],
             'repeat_limit': entry['repeat_limit'],
@@ -2331,6 +2388,7 @@ def _summarize_fixed_assignments(infos):
         entry = groups.setdefault(key, {
             'student_name': context.get('student_name'),
             'teacher_name': context.get('teacher_name'),
+            'subject_name': context.get('subject_name'),
             'slots': [],
             'infos': [],
         })
@@ -2338,6 +2396,8 @@ def _summarize_fixed_assignments(infos):
             entry['student_name'] = context['student_name']
         if context.get('teacher_name') and not entry['teacher_name']:
             entry['teacher_name'] = context['teacher_name']
+        if context.get('subject_name') and not entry.get('subject_name'):
+            entry['subject_name'] = context['subject_name']
         entry['infos'].append(info)
         slot = context.get('slot')
         if slot is not None and slot not in entry['slots']:
@@ -2352,6 +2412,7 @@ def _summarize_fixed_assignments(infos):
             'teacher_id': teacher_id,
             'teacher_name': entry['teacher_name'],
             'subject': subject,
+            'subject_name': entry.get('subject_name'),
             'slots': entry['slots'],
             'label': getattr(entry['infos'][0], 'label', ''),
             'infos': entry['infos'],
@@ -2375,6 +2436,7 @@ def _summarize_location_restrictions(infos):
         entry = groups.setdefault(key, {
             'student_name': context.get('student_name'),
             'teacher_name': context.get('teacher_name'),
+            'subject_name': context.get('subject_name'),
             'slots': [],
             'allowed_locations': context.get('allowed_locations'),
             'infos': [],
@@ -2383,6 +2445,8 @@ def _summarize_location_restrictions(infos):
             entry['student_name'] = context['student_name']
         if context.get('teacher_name') and not entry['teacher_name']:
             entry['teacher_name'] = context['teacher_name']
+        if context.get('subject_name') and not entry.get('subject_name'):
+            entry['subject_name'] = context['subject_name']
         entry['infos'].append(info)
         slot = context.get('slot')
         if slot is not None and slot not in entry['slots']:
@@ -2399,6 +2463,7 @@ def _summarize_location_restrictions(infos):
             'teacher_id': teacher_id,
             'teacher_name': entry['teacher_name'],
             'subject': subject,
+            'subject_name': entry.get('subject_name'),
             'slots': entry['slots'],
             'allowed_locations': entry['allowed_locations'],
             'label': getattr(entry['infos'][0], 'label', ''),
@@ -2453,15 +2518,26 @@ def _format_summary_details(summary):
         if teacher_detail:
             details.append(teacher_detail)
         if summary.get('category') == 'capacity':
-            slots_detail = _format_list('slots', summary.get('slots'))
+            slot_labels = summary.get('slot_labels') or {}
+            slots_detail = _format_slot_list('slots', summary.get('slots'), slot_labels)
             if slots_detail:
                 details.append(slots_detail)
             slot_candidates = summary.get('slot_candidates') or {}
             if slot_candidates:
-                candidate_details = ','.join(f"{slot}:{slot_candidates[slot]}" for slot in slot_candidates)
-                details.append(f"slot_candidates={candidate_details}")
+                candidate_details = []
+                for slot in sorted(slot_candidates):
+                    count = slot_candidates[slot]
+                    label = slot_labels.get(slot)
+                    slot_text = f"slot {slot}"
+                    if label:
+                        slot_text = f"{slot_text} ({label})"
+                    noun = 'lesson' if count == 1 else 'lessons'
+                    candidate_details.append(f"{slot_text} has {count} candidate {noun}")
+                if candidate_details:
+                    details.append('slot demand: ' + '; '.join(candidate_details))
         elif summary.get('category') == 'block':
-            slots_detail = _format_list('blocked_slots', summary.get('slots'))
+            slot_labels = summary.get('slot_labels') or {}
+            slots_detail = _format_slot_list('blocked_slots', summary.get('slots'), slot_labels)
             if slots_detail:
                 details.append(slots_detail)
             pair_labels = _format_pairs(summary.get('pairs', []))
@@ -2502,9 +2578,9 @@ def _format_summary_details(summary):
         student_detail = _format_entity('student', summary.get('student_name'), summary.get('student_id'))
         if student_detail:
             details.append(student_detail)
-        subject = summary.get('subject')
-        if subject is not None:
-            details.append(f"subject={subject}")
+        subject_label = _format_subject_value(summary.get('subject_name'), summary.get('subject'))
+        if subject_label is not None:
+            details.append(f"subject={subject_label}")
         teacher_labels = _format_teacher_list(summary.get('teachers', []))
         if teacher_labels:
             details.append("teachers=" + ', '.join(teacher_labels))
@@ -2534,9 +2610,9 @@ def _format_summary_details(summary):
         teacher_detail = _format_entity('teacher', summary.get('teacher_name'), summary.get('teacher_id'))
         if teacher_detail:
             details.append(teacher_detail)
-        subject = summary.get('subject')
-        if subject is not None:
-            details.append(f"subject={subject}")
+        subject_label = _format_subject_value(summary.get('subject_name'), summary.get('subject'))
+        if subject_label is not None:
+            details.append(f"subject={subject_label}")
         slots_detail = _format_list('slots', summary.get('slots'))
         if slots_detail:
             details.append(slots_detail)
@@ -2547,9 +2623,9 @@ def _format_summary_details(summary):
         teacher_detail = _format_entity('teacher', summary.get('teacher_name'), summary.get('teacher_id'))
         if teacher_detail:
             details.append(teacher_detail)
-        subject = summary.get('subject')
-        if subject is not None:
-            details.append(f"subject={subject}")
+        subject_label = _format_subject_value(summary.get('subject_name'), summary.get('subject'))
+        if subject_label is not None:
+            details.append(f"subject={subject_label}")
         slots_detail = _format_list('slots', summary.get('slots'))
         if slots_detail:
             details.append(slots_detail)
@@ -2577,6 +2653,12 @@ def generate_schedule(target_date=None):
     c.execute('SELECT * FROM config WHERE id=1')
     cfg = c.fetchone()
     slots = cfg['slots_per_day']
+    slot_duration = cfg['slot_duration']
+    try:
+        slot_times = json.loads(cfg['slot_start_times']) if cfg['slot_start_times'] else []
+    except Exception:
+        slot_times = []
+    slot_label_map = _compute_slot_label_map(slots, slot_times, slot_duration)
     min_lessons = cfg['min_lessons']
     max_lessons = cfg['max_lessons']
     teacher_min = cfg['teacher_min_lessons']
@@ -2590,6 +2672,13 @@ def generate_schedule(target_date=None):
     students = c.fetchall()
     c.execute('SELECT * FROM groups')
     groups = c.fetchall()
+    c.execute('SELECT id, name FROM subjects')
+    subject_rows = c.fetchall()
+    subject_lookup = {row['id']: row['name'] for row in subject_rows}
+    c.execute('SELECT id, name FROM subjects_archive')
+    for row in c.fetchall():
+        if row['id'] not in subject_lookup:
+            subject_lookup[row['id']] = row['name']
     c.execute('SELECT id, name FROM students')
     name_rows = c.fetchall()
     student_name_map = {r['id']: r['name'] for r in name_rows}
@@ -2714,7 +2803,11 @@ def generate_schedule(target_date=None):
     # incorporate groups as pseudo students
     pseudo_students = []
     for g in groups:
-        ps = {"id": offset + g['id'], "subjects": g['subjects']}
+        ps = {
+            "id": offset + g['id'],
+            "subjects": g['subjects'],
+            "name": g['name'],
+        }
         pseudo_students.append(ps)
 
     actual_students = [dict(s) for s in students]
@@ -2786,7 +2879,9 @@ def generate_schedule(target_date=None):
         student_unavailable=student_unavailable,
         student_multi_teacher=student_multi,
         locations=locations,
-        location_restrict=loc_restrict)
+        location_restrict=loc_restrict,
+        subject_lookup=subject_lookup,
+        slot_labels=slot_label_map)
 
     progress_messages = []
 
