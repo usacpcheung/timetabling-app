@@ -99,7 +99,8 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 blocked=None, student_limits=None,
                 student_repeat=None, student_unavailable=None,
                 student_multi_teacher=None,
-                locations=None, location_restrict=None):
+                locations=None, location_restrict=None,
+                subject_lookup=None):
     """Build CP-SAT model for the scheduling problem.
 
     When ``add_assumptions`` is ``True``, Boolean indicators are created for the
@@ -156,6 +157,8 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
         locations: optional list of location identifiers.
         location_restrict: mapping ``student_id -> set(location_id)`` limiting
             the locations that may be used for that student or group.
+        subject_lookup: optional mapping ``subject_id -> display name`` used to
+            enrich assumption contexts with subject labels.
 
     Returns:
         model (cp_model.CpModel): The constructed model.
@@ -198,6 +201,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
 
     teacher_lookup = {t['id']: t for t in teachers}
     student_lookup = {s['id']: s for s in students}
+    subject_lookup = subject_lookup or {}
 
     # Map each group id to the subjects it requires and map each member student
     # to the subjects that must be taken through their group.  This helps filter
@@ -273,6 +277,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                                 'teacher_id': teacher['id'],
                                 'teacher_name': _get_optional(teacher, 'name'),
                                 'subject': subject,
+                                'subject_name': subject_lookup.get(subject),
                                 'slot': slot,
                             },
                         )
@@ -294,6 +299,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                                     'teacher_id': teacher['id'],
                                     'teacher_name': _get_optional(teacher, 'name'),
                                     'subject': subject,
+                                    'subject_name': subject_lookup.get(subject),
                                     'slot': slot,
                                     'reasons': reasons,
                                 },
@@ -331,6 +337,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                         'teacher_id': tid,
                         'teacher_name': _get_optional(teacher_lookup.get(tid), 'name'),
                         'subject': subj,
+                        'subject_name': subject_lookup.get(subj),
                         'slot': sl,
                         'allowed_locations': [],
                     },
@@ -458,6 +465,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                 'teacher_id': tid,
                 'teacher_name': _get_optional(teacher_info, 'name'),
                 'subject': subj,
+                'subject_name': subject_lookup.get(subj),
                 'repeat_limit': repeat_limit,
             },
         )
@@ -476,6 +484,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                             'teacher_id': tid,
                             'teacher_name': _get_optional(teacher_info, 'name'),
                             'subject': subj,
+                            'subject_name': subject_lookup.get(subj),
                             'slot': s,
                             'reason': 'no_consecutive_repeats',
                         },
@@ -524,6 +533,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                     'student_id': sid,
                     'student_name': _get_optional(student_lookup.get(sid), 'name'),
                     'subject': subj,
+                    'subject_name': subject_lookup.get(subj),
                     'teacher_ids': list(tmap.keys()),
                 },
             )
@@ -603,6 +613,7 @@ def build_model(students, teachers, slots, min_lessons, max_lessons,
                             'student_id': sid,
                             'student_name': _get_optional(student_lookup.get(sid), 'name'),
                             'subject': subject,
+                            'subject_name': subject_lookup.get(subject),
                             'required': True,
                             'candidate_lessons': len(subject_vars),
                         },

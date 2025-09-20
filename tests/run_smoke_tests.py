@@ -101,17 +101,19 @@ def test_unsat_core_present_on_conflict():
     assert student_summary.get('candidate_lessons') == [1], f"Expected candidate lessons of 1; got {student_summary}"
 
 
-def test_group_unsat_message_includes_group_name():
+def test_group_unsat_message_includes_group_and_subject_names():
     group_offset = 10000
     group_id = group_offset + 1
     group_name = "Robotics Club"
+    subject_id = 9
+    subject_name = "Robotics"
 
     students = [
-        make_row(1, ["Math"], name="Alice"),
-        make_row(group_id, ["Math"], name=group_name),
+        make_row(1, [subject_id], name="Alice"),
+        make_row(group_id, [subject_id], name=group_name),
     ]
     teachers = [
-        {"id": 1, "subjects": json.dumps(["Math"]), "min_lessons": 0, "max_lessons": None},
+        {"id": 1, "subjects": json.dumps([subject_id]), "min_lessons": 0, "max_lessons": None},
     ]
     slots = 1
     unavailable = [{"teacher_id": 1, "slot": 0}]
@@ -124,6 +126,7 @@ def test_group_unsat_message_includes_group_name():
         group_members={group_id: [1]},
         student_limits={1: (1, 1)},
         locations=[],
+        subject_lookup={subject_id: subject_name},
     )
     status, assignments, core, progress = solve_and_print(model, vars_, loc_vars, assumption_registry)
     assert status == cp_model.INFEASIBLE, "Expected infeasible due to group requirements"
@@ -140,6 +143,7 @@ def test_group_unsat_message_includes_group_name():
             aggregated_messages.append(message)
     combined = ' '.join(aggregated_messages)
     assert group_name in combined, f"Expected group name in messages: {aggregated_messages}"
+    assert subject_name in combined, f"Expected subject name in messages: {aggregated_messages}"
 
 
 def main():
@@ -147,7 +151,7 @@ def main():
         ("no_locations", test_no_locations_allows_schedule),
         ("multi_teacher_disallowed_repeats_same_teacher", test_multi_teacher_disallowed_allows_repeats_same_teacher),
         ("unsat_core", test_unsat_core_present_on_conflict),
-        ("group_unsat_message", test_group_unsat_message_includes_group_name),
+        ("group_unsat_message", test_group_unsat_message_includes_group_and_subject_names),
     ]
     failures = []
     for name, fn in tests:
