@@ -69,7 +69,7 @@
         </form>
     </div>
 
-<form id="config-form" method="post" class="space-y-6">
+<form id="config-form" method="post" class="space-y-6 config-form">
 <div id="config-accordion" data-accordion="open" data-active-classes="bg-emerald-300" data-inactive-classes="text-grey-900" class="mb-4">
     <!-- Help & Guidance -->
     <h2 id="heading-help">
@@ -660,7 +660,10 @@
         </fieldset>
     </div>
 </div>
-        <button type="submit" class="w-full bg-emerald-500 text-white border rounded-md px-3 py-2 hover:bg-emerald-600 transition">Save</button>
+        <div class="sticky-action-bar flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+            <a href="{{ url_for('index') }}" class="inline-flex w-full sm:w-auto justify-center bg-white text-emerald-700 border border-emerald-300 rounded-md px-3 py-2 hover:bg-emerald-100 transition">Cancel</a>
+            <button type="submit" class="w-full sm:w-auto bg-emerald-500 text-white border border-emerald-500 rounded-md px-3 py-2 hover:bg-emerald-600 transition">Save</button>
+        </div>
     </form>
 
     <form method="post" action="{{ url_for('reset_db') }}" id="reset-db-form" class="mt-4">
