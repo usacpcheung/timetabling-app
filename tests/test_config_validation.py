@@ -65,6 +65,28 @@ def _valid_config_form(row):
     return MultiDict(data)
 
 
+def _teacher_edit_form(config_row, teacher_row):
+    data = _valid_config_form(config_row)
+    tid = teacher_row['id']
+    data.add('teacher_id', str(tid))
+    data.add(f'teacher_name_{tid}', teacher_row['name'])
+    for subj_id in json.loads(teacher_row['subjects']):
+        data.add(f'teacher_subjects_{tid}', str(subj_id))
+    return data
+
+
+def _student_edit_form(config_row, student_row):
+    data = _valid_config_form(config_row)
+    sid = student_row['id']
+    data.add('student_id', str(sid))
+    data.add(f'student_name_{sid}', student_row['name'])
+    for subj_id in json.loads(student_row['subjects']):
+        data.add(f'student_subjects_{sid}', str(subj_id))
+    if student_row['active']:
+        data.add(f'student_active_{sid}', '1')
+    return data
+
+
 def test_reject_zero_slots_per_day(tmp_path):
     import app
 
@@ -265,7 +287,7 @@ def test_reject_teacher_max_lessons_greater_than_slots(tmp_path):
     assert _config_row(app.DB_PATH) == original
 
 
-def test_individual_teacher_limits_can_exceed_slots(tmp_path):
+def test_reject_teacher_individual_min_exceeding_slots(tmp_path):
     import app
 
     conn = setup_db(tmp_path)
@@ -273,42 +295,105 @@ def test_individual_teacher_limits_can_exceed_slots(tmp_path):
     slots = config_row['slots_per_day']
 
     teacher = conn.execute(
-        'SELECT id, name, subjects FROM teachers ORDER BY id LIMIT 1'
+        'SELECT id, name, subjects, min_lessons, max_lessons FROM teachers ORDER BY id LIMIT 1'
     ).fetchone()
-    teacher_id = teacher['id']
-    teacher_name = teacher['name']
-    teacher_subjects = json.loads(teacher['subjects'])
     conn.close()
 
-    base_items = list(_valid_config_form(config_row).items(multi=True))
-    base_items.append(('teacher_id', str(teacher_id)))
-    base_items.append((f'teacher_name_{teacher_id}', teacher_name))
-    for subj_id in teacher_subjects:
-        base_items.append((f'teacher_subjects_{teacher_id}', str(subj_id)))
-    base_items.append((f'teacher_min_{teacher_id}', str(slots + 3)))
-    base_items.append((f'teacher_max_{teacher_id}', str(slots + 4)))
-    data = MultiDict(base_items)
+    data = _teacher_edit_form(config_row, teacher)
+    data.setlist(f'teacher_min_{teacher["id"]}', [str(slots + 1)])
 
     with app.app.test_request_context('/config', method='POST', data=data):
         response = app.config()
         flashes = get_flashed_messages(with_categories=True)
 
     assert response.status_code == 302
-    assert all(category != 'error' for category, _ in flashes)
+    expected = 'Teacher minimum lessons cannot exceed slots per day for ' + teacher['name'] + '.'
+    assert ('error', expected) in flashes
 
     conn = sqlite3.connect(app.DB_PATH)
     conn.row_factory = sqlite3.Row
     updated = conn.execute(
         'SELECT min_lessons, max_lessons FROM teachers WHERE id=?',
-        (teacher_id,),
+        (teacher['id'],),
     ).fetchone()
     conn.close()
 
-    assert updated['min_lessons'] == slots + 3
-    assert updated['max_lessons'] == slots + 4
+    assert updated['min_lessons'] == teacher['min_lessons']
+    assert updated['max_lessons'] == teacher['max_lessons']
 
 
-def test_student_limits_ignore_global_rules(tmp_path):
+def test_reject_teacher_individual_max_exceeding_slots(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    config_row = _config_row(app.DB_PATH)
+    slots = config_row['slots_per_day']
+
+    teacher = conn.execute(
+        'SELECT id, name, subjects, min_lessons, max_lessons FROM teachers ORDER BY id LIMIT 1'
+    ).fetchone()
+    conn.close()
+
+    data = _teacher_edit_form(config_row, teacher)
+    data.setlist(f'teacher_max_{teacher["id"]}', [str(slots + 2)])
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    expected = 'Teacher maximum lessons cannot exceed slots per day for ' + teacher['name'] + '.'
+    assert ('error', expected) in flashes
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    updated = conn.execute(
+        'SELECT min_lessons, max_lessons FROM teachers WHERE id=?',
+        (teacher['id'],),
+    ).fetchone()
+    conn.close()
+
+    assert updated['min_lessons'] == teacher['min_lessons']
+    assert updated['max_lessons'] == teacher['max_lessons']
+
+
+def test_reject_teacher_individual_min_greater_than_max(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    config_row = _config_row(app.DB_PATH)
+    slots = config_row['slots_per_day']
+
+    teacher = conn.execute(
+        'SELECT id, name, subjects, min_lessons, max_lessons FROM teachers ORDER BY id LIMIT 1'
+    ).fetchone()
+    conn.close()
+
+    data = _teacher_edit_form(config_row, teacher)
+    data.setlist(f'teacher_min_{teacher["id"]}', [str(slots)])
+    data.setlist(f'teacher_max_{teacher["id"]}', [str(max(slots - 1, 0))])
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    expected = 'Teacher min lessons greater than max for ' + teacher['name']
+    assert ('error', expected) in flashes
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    updated = conn.execute(
+        'SELECT min_lessons, max_lessons FROM teachers WHERE id=?',
+        (teacher['id'],),
+    ).fetchone()
+    conn.close()
+
+    assert updated['min_lessons'] == teacher['min_lessons']
+    assert updated['max_lessons'] == teacher['max_lessons']
+
+
+def test_reject_student_individual_min_exceeding_slots(tmp_path):
     import app
 
     conn = setup_db(tmp_path)
@@ -316,39 +401,99 @@ def test_student_limits_ignore_global_rules(tmp_path):
     slots = config_row['slots_per_day']
 
     student = conn.execute(
-        'SELECT id, name, subjects, active FROM students ORDER BY id LIMIT 1'
+        'SELECT id, name, subjects, active, min_lessons, max_lessons FROM students ORDER BY id LIMIT 1'
     ).fetchone()
-    student_id = student['id']
-    student_name = student['name']
-    student_subjects = json.loads(student['subjects'])
-    is_active = bool(student['active'])
     conn.close()
 
-    base_items = list(_valid_config_form(config_row).items(multi=True))
-    base_items.append(('student_id', str(student_id)))
-    base_items.append((f'student_name_{student_id}', student_name))
-    for subj_id in student_subjects:
-        base_items.append((f'student_subjects_{student_id}', str(subj_id)))
-    if is_active:
-        base_items.append((f'student_active_{student_id}', '1'))
-    base_items.append((f'student_min_{student_id}', str(slots + 8)))
-    base_items.append((f'student_max_{student_id}', str(slots + 7)))
-    data = MultiDict(base_items)
+    data = _student_edit_form(config_row, student)
+    data.setlist(f'student_min_{student["id"]}', [str(slots + 3)])
 
     with app.app.test_request_context('/config', method='POST', data=data):
         response = app.config()
         flashes = get_flashed_messages(with_categories=True)
 
     assert response.status_code == 302
-    assert all(category != 'error' for category, _ in flashes)
+    expected = 'Student minimum lessons cannot exceed slots per day for ' + student['name'] + '.'
+    assert ('error', expected) in flashes
 
     conn = sqlite3.connect(app.DB_PATH)
     conn.row_factory = sqlite3.Row
     updated = conn.execute(
         'SELECT min_lessons, max_lessons FROM students WHERE id=?',
-        (student_id,),
+        (student['id'],),
     ).fetchone()
     conn.close()
 
-    assert updated['min_lessons'] == slots + 8
-    assert updated['max_lessons'] == slots + 7
+    assert updated['min_lessons'] == student['min_lessons']
+    assert updated['max_lessons'] == student['max_lessons']
+
+
+def test_reject_student_individual_max_exceeding_slots(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    config_row = _config_row(app.DB_PATH)
+    slots = config_row['slots_per_day']
+
+    student = conn.execute(
+        'SELECT id, name, subjects, active, min_lessons, max_lessons FROM students ORDER BY id LIMIT 1'
+    ).fetchone()
+    conn.close()
+
+    data = _student_edit_form(config_row, student)
+    data.setlist(f'student_max_{student["id"]}', [str(slots + 5)])
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    expected = 'Student maximum lessons cannot exceed slots per day for ' + student['name'] + '.'
+    assert ('error', expected) in flashes
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    updated = conn.execute(
+        'SELECT min_lessons, max_lessons FROM students WHERE id=?',
+        (student['id'],),
+    ).fetchone()
+    conn.close()
+
+    assert updated['min_lessons'] == student['min_lessons']
+    assert updated['max_lessons'] == student['max_lessons']
+
+
+def test_reject_student_individual_min_greater_than_max(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    config_row = _config_row(app.DB_PATH)
+    slots = config_row['slots_per_day']
+
+    student = conn.execute(
+        'SELECT id, name, subjects, active, min_lessons, max_lessons FROM students ORDER BY id LIMIT 1'
+    ).fetchone()
+    conn.close()
+
+    data = _student_edit_form(config_row, student)
+    data.setlist(f'student_min_{student["id"]}', [str(slots)])
+    data.setlist(f'student_max_{student["id"]}', [str(max(slots - 1, 0))])
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    expected = 'Student min lessons greater than max for ' + student['name']
+    assert ('error', expected) in flashes
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    updated = conn.execute(
+        'SELECT min_lessons, max_lessons FROM students WHERE id=?',
+        (student['id'],),
+    ).fetchone()
+    conn.close()
+
+    assert updated['min_lessons'] == student['min_lessons']
+    assert updated['max_lessons'] == student['max_lessons']

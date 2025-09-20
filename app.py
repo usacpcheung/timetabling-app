@@ -1435,6 +1435,22 @@ def config():
                 tmax = request.form.get(f'teacher_max_{tid}')
                 min_val = int(tmin) if tmin else None
                 max_val = int(tmax) if tmax else None
+                if min_val is not None and min_val < 0:
+                    flash('Teacher minimum lessons must be zero or greater for ' + name + '.', 'error')
+                    has_error = True
+                    continue
+                if max_val is not None and max_val < 0:
+                    flash('Teacher maximum lessons must be zero or greater for ' + name + '.', 'error')
+                    has_error = True
+                    continue
+                if min_val is not None and min_val > slots_per_day:
+                    flash('Teacher minimum lessons cannot exceed slots per day for ' + name + '.', 'error')
+                    has_error = True
+                    continue
+                if max_val is not None and max_val > slots_per_day:
+                    flash('Teacher maximum lessons cannot exceed slots per day for ' + name + '.', 'error')
+                    has_error = True
+                    continue
                 if min_val is not None and max_val is not None and min_val > max_val:
                     flash('Teacher min lessons greater than max for ' + name, 'error')
                     has_error = True
@@ -1449,10 +1465,28 @@ def config():
             subj_json = json.dumps(new_tsubs)
             min_val = int(new_tmin) if new_tmin else None
             max_val = int(new_tmax) if new_tmax else None
+            invalid_teacher = False
+            if min_val is not None and min_val < 0:
+                flash('New teacher minimum lessons must be zero or greater.', 'error')
+                has_error = True
+                invalid_teacher = True
+            if max_val is not None and max_val < 0:
+                flash('New teacher maximum lessons must be zero or greater.', 'error')
+                has_error = True
+                invalid_teacher = True
+            if min_val is not None and min_val > slots_per_day:
+                flash('New teacher minimum lessons cannot exceed slots per day.', 'error')
+                has_error = True
+                invalid_teacher = True
+            if max_val is not None and max_val > slots_per_day:
+                flash('New teacher maximum lessons cannot exceed slots per day.', 'error')
+                has_error = True
+                invalid_teacher = True
             if min_val is not None and max_val is not None and min_val > max_val:
                 flash('New teacher min lessons greater than max', 'error')
                 has_error = True
-            else:
+                invalid_teacher = True
+            if not invalid_teacher:
                 c.execute('INSERT INTO teachers (name, subjects, min_lessons, max_lessons) VALUES (?, ?, ?, ?)',
                           (new_tname, subj_json, min_val, max_val))
 
@@ -1530,6 +1564,26 @@ def config():
                 max_val = int(smax) if smax else None
                 max_rep_val = int(max_rep) if max_rep else None
                 rep_sub_json = json.dumps(rep_subs) if rep_subs else None
+                if min_val is not None and min_val < 0:
+                    flash('Student minimum lessons must be zero or greater for ' + name + '.', 'error')
+                    has_error = True
+                    continue
+                if max_val is not None and max_val < 0:
+                    flash('Student maximum lessons must be zero or greater for ' + name + '.', 'error')
+                    has_error = True
+                    continue
+                if min_val is not None and min_val > slots_per_day:
+                    flash('Student minimum lessons cannot exceed slots per day for ' + name + '.', 'error')
+                    has_error = True
+                    continue
+                if max_val is not None and max_val > slots_per_day:
+                    flash('Student maximum lessons cannot exceed slots per day for ' + name + '.', 'error')
+                    has_error = True
+                    continue
+                if min_val is not None and max_val is not None and min_val > max_val:
+                    flash('Student min lessons greater than max for ' + name, 'error')
+                    has_error = True
+                    continue
                 c.execute('''UPDATE students SET name=?, subjects=?, active=?,
                              min_lessons=?, max_lessons=?, allow_repeats=?,
                              max_repeats=?, allow_consecutive=?, prefer_consecutive=?,
@@ -1574,30 +1628,52 @@ def config():
             max_val = int(new_smax) if new_smax else None
             max_rep_val = int(new_max_rep) if new_max_rep else None
             rep_sub_json = json.dumps(new_rep_subs) if new_rep_subs else None
-            c.execute('''INSERT INTO students (name, subjects, active, min_lessons, max_lessons,
-                      allow_repeats, max_repeats, allow_consecutive, prefer_consecutive, allow_multi_teacher, repeat_subjects)
-                      VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                      (new_sname, subj_json, min_val, max_val, new_allow_rep,
-                       max_rep_val, new_allow_con, new_prefer_con, new_allow_multi, rep_sub_json))
-            new_sid = c.lastrowid
-            for sl in new_unav:
-                c.execute('INSERT INTO student_unavailable (student_id, slot) VALUES (?, ?)',
-                          (new_sid, int(sl)))
-            block_map_current[new_sid] = set()
-            for tid in new_blocks:
-                tval = int(tid)
-                if not block_allowed(new_sid, tval, teacher_map_block, student_groups_block,
-                                       group_members_block, group_subj_map_block,
-                                       block_map_current, fixed_pairs):
-                    flash('Cannot block selected teacher for student', 'error')
-                    has_error = True
-                    continue
-                c.execute('INSERT INTO student_teacher_block (student_id, teacher_id) VALUES (?, ?)',
-                          (new_sid, tval))
-                block_map_current.setdefault(new_sid, set()).add(tval)
-            for lid in request.form.getlist('new_student_locs'):
-                c.execute('INSERT INTO student_locations (student_id, location_id) VALUES (?, ?)',
-                          (new_sid, int(lid)))
+            invalid_student = False
+            if min_val is not None and min_val < 0:
+                flash('New student minimum lessons must be zero or greater.', 'error')
+                has_error = True
+                invalid_student = True
+            if max_val is not None and max_val < 0:
+                flash('New student maximum lessons must be zero or greater.', 'error')
+                has_error = True
+                invalid_student = True
+            if min_val is not None and min_val > slots_per_day:
+                flash('New student minimum lessons cannot exceed slots per day.', 'error')
+                has_error = True
+                invalid_student = True
+            if max_val is not None and max_val > slots_per_day:
+                flash('New student maximum lessons cannot exceed slots per day.', 'error')
+                has_error = True
+                invalid_student = True
+            if min_val is not None and max_val is not None and min_val > max_val:
+                flash('New student min lessons greater than max.', 'error')
+                has_error = True
+                invalid_student = True
+            if not invalid_student:
+                c.execute('''INSERT INTO students (name, subjects, active, min_lessons, max_lessons,
+                          allow_repeats, max_repeats, allow_consecutive, prefer_consecutive, allow_multi_teacher, repeat_subjects)
+                          VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                          (new_sname, subj_json, min_val, max_val, new_allow_rep,
+                           max_rep_val, new_allow_con, new_prefer_con, new_allow_multi, rep_sub_json))
+                new_sid = c.lastrowid
+                for sl in new_unav:
+                    c.execute('INSERT INTO student_unavailable (student_id, slot) VALUES (?, ?)',
+                              (new_sid, int(sl)))
+                block_map_current[new_sid] = set()
+                for tid in new_blocks:
+                    tval = int(tid)
+                    if not block_allowed(new_sid, tval, teacher_map_block, student_groups_block,
+                                           group_members_block, group_subj_map_block,
+                                           block_map_current, fixed_pairs):
+                        flash('Cannot block selected teacher for student', 'error')
+                        has_error = True
+                        continue
+                    c.execute('INSERT INTO student_teacher_block (student_id, teacher_id) VALUES (?, ?)',
+                              (new_sid, tval))
+                    block_map_current.setdefault(new_sid, set()).add(tval)
+                for lid in request.form.getlist('new_student_locs'):
+                    c.execute('INSERT INTO student_locations (student_id, location_id) VALUES (?, ?)',
+                              (new_sid, int(lid)))
 
         # Build helper maps used when validating group changes. These maps
         # describe which teachers can teach each subject, what subjects every
