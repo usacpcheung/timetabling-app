@@ -158,7 +158,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const modalToggles = document.querySelectorAll('[data-modal-toggle]');
     modalToggles.forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', event => {
             const targetId = btn.getAttribute('data-modal-target');
             if (!targetId) return;
             const modal = document.getElementById(targetId);
@@ -166,8 +166,39 @@ document.addEventListener('DOMContentLoaded', function () {
             if (modal.classList.contains('hidden')) {
                 modalOriginalValues.set(targetId, captureModalState(modal));
             }
+            event.preventDefault();
+            event.stopPropagation();
+            const existingInstance = window.FlowbiteInstances && typeof window.FlowbiteInstances.getInstance === 'function'
+                ? window.FlowbiteInstances.getInstance('Modal', targetId)
+                : null;
+            const instance = existingInstance || (typeof window.Modal === 'function'
+                ? new window.Modal(modal, { closable: false }, { id: modal.id, override: true })
+                : null);
+            if (instance && typeof instance.show === 'function') {
+                instance.show();
+            }
         });
     });
+
+    const modalElements = document.querySelectorAll('[data-config-modal]');
+    const ensureModalInstances = () => {
+        if (typeof window === 'undefined' || typeof window.Modal !== 'function') {
+            return;
+        }
+        modalElements.forEach(modalEl => {
+            if (!modalEl || !modalEl.id) {
+                return;
+            }
+            new window.Modal(
+                modalEl,
+                { closable: false },
+                { id: modalEl.id, override: true }
+            );
+        });
+    };
+    if (modalElements.length) {
+        setTimeout(ensureModalInstances, 0);
+    }
 
     const modalCancelButtons = document.querySelectorAll('[data-modal-cancel]');
     modalCancelButtons.forEach(btn => {
@@ -179,6 +210,12 @@ document.addEventListener('DOMContentLoaded', function () {
             if (state) {
                 restoreModalState(state);
                 modalOriginalValues.delete(modal.id);
+            }
+            const instance = window.FlowbiteInstances && typeof window.FlowbiteInstances.getInstance === 'function'
+                ? window.FlowbiteInstances.getInstance('Modal', modal.id)
+                : null;
+            if (instance && typeof instance.hide === 'function') {
+                instance.hide();
             }
         });
     });
@@ -192,6 +229,12 @@ document.addEventListener('DOMContentLoaded', function () {
             const modal = btn.closest('[data-config-modal]');
             if (modal) {
                 modalOriginalValues.delete(modal.id);
+                const instance = window.FlowbiteInstances && typeof window.FlowbiteInstances.getInstance === 'function'
+                    ? window.FlowbiteInstances.getInstance('Modal', modal.id)
+                    : null;
+                if (instance && typeof instance.hide === 'function') {
+                    instance.hide();
+                }
             }
             triggerConfigSubmit();
         });
