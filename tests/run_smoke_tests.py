@@ -1,5 +1,13 @@
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from ortools.sat.python import cp_model
 from cp_sat_timetable import build_model, solve_and_print
+from app import summarize_unsat_core
 import json
 
 
@@ -77,6 +85,17 @@ def test_unsat_core_present_on_conflict():
     # Core likely includes teacher_availability and student_limits
     assert any(getattr(info, "kind", None) in ("teacher_availability", "student_limits") for info in core), f"Unexpected core: {core}"
     assert progress == [], "No progress messages expected when infeasible"
+    summaries = summarize_unsat_core(core)
+    teacher_summaries = [s for s in summaries if s.get('aggregated') and s.get('kind') == 'teacher_availability']
+    assert teacher_summaries, f"Expected teacher summaries; got {summaries}"
+    capacity_summary = next((s for s in teacher_summaries if s.get('category') == 'capacity'), None)
+    assert capacity_summary is not None, f"Expected capacity summary; got {teacher_summaries}"
+    assert capacity_summary.get('slots') == [0], f"Expected slot 0 in teacher summary; got {capacity_summary}"
+    assert capacity_summary.get('slot_candidates', {}).get(0) == 1, f"Expected one candidate lesson; got {capacity_summary}"
+    student_summary = next((s for s in summaries if s.get('aggregated') and s.get('kind') == 'student_limits'), None)
+    assert student_summary is not None, f"Expected aggregated student summary; got {summaries}"
+    assert 0 in student_summary.get('slots', []), f"Expected slot 0 in student summary; got {student_summary}"
+    assert student_summary.get('candidate_lessons') == [1], f"Expected candidate lessons of 1; got {student_summary}"
 
 
 def main():
