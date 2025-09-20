@@ -1,5 +1,6 @@
 """Regression tests for configuration validation logic."""
 
+import json
 import os
 import sys
 import sqlite3
@@ -21,12 +22,47 @@ def setup_db(tmp_path):
     return conn
 
 
-def _config_values(db_path):
+def _config_row(db_path):
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
-    row = conn.execute('SELECT slots_per_day, slot_duration FROM config WHERE id=1').fetchone()
+    row = conn.execute('SELECT * FROM config WHERE id=1').fetchone()
     conn.close()
-    return row['slots_per_day'], row['slot_duration']
+    return dict(row)
+
+
+def _valid_config_form(row):
+    slot_starts = json.loads(row['slot_start_times']) if row['slot_start_times'] else []
+    data = [
+        ('slots_per_day', str(row['slots_per_day'])),
+        ('slot_duration', str(row['slot_duration'])),
+    ]
+    for idx, start in enumerate(slot_starts, start=1):
+        data.append((f'slot_start_{idx}', start))
+    data.extend([
+        ('min_lessons', str(row['min_lessons'])),
+        ('max_lessons', str(row['max_lessons'])),
+        ('teacher_min_lessons', str(row['teacher_min_lessons'])),
+        ('teacher_max_lessons', str(row['teacher_max_lessons'])),
+        ('max_repeats', str(row['max_repeats'])),
+        ('consecutive_weight', str(row['consecutive_weight'])),
+        ('attendance_weight', str(row['attendance_weight'])),
+        ('group_weight', str(row['group_weight'])),
+        ('well_attend_weight', str(row['well_attend_weight'])),
+        ('balance_weight', str(row['balance_weight'])),
+        ('solver_time_limit', str(row['solver_time_limit'])),
+    ])
+    for flag in [
+        'allow_repeats',
+        'prefer_consecutive',
+        'allow_consecutive',
+        'require_all_subjects',
+        'use_attendance_priority',
+        'allow_multi_teacher',
+        'balance_teacher_load',
+    ]:
+        if row[flag]:
+            data.append((flag, '1'))
+    return MultiDict(data)
 
 
 def test_reject_zero_slots_per_day(tmp_path):
@@ -34,7 +70,7 @@ def test_reject_zero_slots_per_day(tmp_path):
 
     conn = setup_db(tmp_path)
     conn.close()
-    original = _config_values(app.DB_PATH)
+    original = _config_row(app.DB_PATH)
 
     data = MultiDict([
         ('slots_per_day', '0'),
@@ -47,7 +83,7 @@ def test_reject_zero_slots_per_day(tmp_path):
 
     assert response.status_code == 302
     assert ('error', 'Slots per day and slot duration must be positive integers.') in flashes
-    assert _config_values(app.DB_PATH) == original
+    assert _config_row(app.DB_PATH) == original
 
 
 def test_reject_negative_slot_duration(tmp_path):
@@ -55,7 +91,7 @@ def test_reject_negative_slot_duration(tmp_path):
 
     conn = setup_db(tmp_path)
     conn.close()
-    original = _config_values(app.DB_PATH)
+    original = _config_row(app.DB_PATH)
 
     data = MultiDict([
         ('slots_per_day', '8'),
@@ -68,4 +104,82 @@ def test_reject_negative_slot_duration(tmp_path):
 
     assert response.status_code == 302
     assert ('error', 'Slots per day and slot duration must be positive integers.') in flashes
-    assert _config_values(app.DB_PATH) == original
+    assert _config_row(app.DB_PATH) == original
+
+
+def test_reject_negative_min_lessons(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    conn.close()
+    original = _config_row(app.DB_PATH)
+
+    data = _valid_config_form(original)
+    data.setlist('min_lessons', ['-1'])
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert ('error', 'Minimum and maximum lessons must be zero or greater.') in flashes
+    assert _config_row(app.DB_PATH) == original
+
+
+def test_reject_negative_max_lessons(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    conn.close()
+    original = _config_row(app.DB_PATH)
+
+    data = _valid_config_form(original)
+    data.setlist('max_lessons', ['-3'])
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert ('error', 'Minimum and maximum lessons must be zero or greater.') in flashes
+    assert _config_row(app.DB_PATH) == original
+
+
+def test_reject_min_lessons_greater_than_max(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    conn.close()
+    original = _config_row(app.DB_PATH)
+
+    data = _valid_config_form(original)
+    data.setlist('min_lessons', [str(original['max_lessons'] + 1)])
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert ('error', 'Minimum lessons cannot exceed maximum lessons.') in flashes
+    assert _config_row(app.DB_PATH) == original
+
+
+def test_reject_min_lessons_greater_than_slots(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    conn.close()
+    original = _config_row(app.DB_PATH)
+
+    data = _valid_config_form(original)
+    slots = original['slots_per_day']
+    data.setlist('min_lessons', [str(slots + 1)])
+    data.setlist('max_lessons', [str(slots + 2)])
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert ('error', 'Minimum lessons cannot exceed slots per day.') in flashes
+    assert _config_row(app.DB_PATH) == original

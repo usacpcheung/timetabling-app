@@ -1276,6 +1276,18 @@ def config():
             start_times.append(f"{h:02d}:{m:02d}")
         min_lessons = int(request.form['min_lessons'])
         max_lessons = int(request.form['max_lessons'])
+        if min_lessons < 0 or max_lessons < 0:
+            flash('Minimum and maximum lessons must be zero or greater.', 'error')
+            conn.close()
+            return redirect(url_for('config'))
+        if min_lessons > max_lessons:
+            flash('Minimum lessons cannot exceed maximum lessons.', 'error')
+            conn.close()
+            return redirect(url_for('config'))
+        if min_lessons > slots_per_day:
+            flash('Minimum lessons cannot exceed slots per day.', 'error')
+            conn.close()
+            return redirect(url_for('config'))
         t_min_lessons = int(request.form['teacher_min_lessons'])
         t_max_lessons = int(request.form['teacher_max_lessons'])
         if t_min_lessons > t_max_lessons:
