@@ -14,14 +14,14 @@ def test_no_locations_allows_schedule():
         {"id": 2, "subjects": json.dumps(["English"]), "min_lessons": 0, "max_lessons": None},
     ]
     slots = 2
-    model, vars_, loc_vars, assumptions = build_model(
+    model, vars_, loc_vars, assumption_registry = build_model(
         students, teachers, slots,
         min_lessons=0, max_lessons=2,
         unavailable=[], fixed=[],
         add_assumptions=True,
         locations=None,  # no locations configured
     )
-    status, assignments, core, progress = solve_and_print(model, vars_, loc_vars, assumptions)
+    status, assignments, core, progress = solve_and_print(model, vars_, loc_vars, assumption_registry)
     assert status in (cp_model.OPTIMAL, cp_model.FEASIBLE)
     assert len(assignments) > 0, "Expected some lessons to be scheduled without locations"
     assert progress, "Expected at least one progress message"
@@ -34,7 +34,7 @@ def test_multi_teacher_disallowed_allows_repeats_same_teacher():
         {"id": 2, "subjects": json.dumps(["Math"]), "min_lessons": 0, "max_lessons": None},
     ]
     slots = 2
-    model, vars_, loc_vars, assumptions = build_model(
+    model, vars_, loc_vars, assumption_registry = build_model(
         students, teachers, slots,
         min_lessons=2, max_lessons=2,
         allow_repeats=True, max_repeats=2,
@@ -44,7 +44,7 @@ def test_multi_teacher_disallowed_allows_repeats_same_teacher():
         student_limits={1: (2, 2)},
         locations=[],
     )
-    status, assignments, core, progress = solve_and_print(model, vars_, loc_vars, assumptions)
+    status, assignments, core, progress = solve_and_print(model, vars_, loc_vars, assumption_registry)
     assert status in (cp_model.OPTIMAL, cp_model.FEASIBLE)
     # Both slots scheduled, but with the same teacher id
     assigned = [(sid, tid, subj, sl) for (sid, tid, subj, sl, loc) in assignments]
@@ -62,7 +62,7 @@ def test_unsat_core_present_on_conflict():
     ]
     slots = 1
     unavailable = [{"teacher_id": 1, "slot": 0}]
-    model, vars_, loc_vars, assumptions = build_model(
+    model, vars_, loc_vars, assumption_registry = build_model(
         students, teachers, slots,
         min_lessons=1, max_lessons=1,
         allow_repeats=False,
@@ -71,11 +71,11 @@ def test_unsat_core_present_on_conflict():
         student_limits={1: (1, 1)},
         locations=[],
     )
-    status, assignments, core, progress = solve_and_print(model, vars_, loc_vars, assumptions)
+    status, assignments, core, progress = solve_and_print(model, vars_, loc_vars, assumption_registry)
     assert status == cp_model.INFEASIBLE, "Expected infeasible due to teacher unavailability and student min"
     assert core, "Expected an unsat core to be reported"
     # Core likely includes teacher_availability and student_limits
-    assert any(k in core for k in ("teacher_availability", "student_limits")), f"Unexpected core: {core}"
+    assert any(getattr(info, "kind", None) in ("teacher_availability", "student_limits") for info in core), f"Unexpected core: {core}"
     assert progress == [], "No progress messages expected when infeasible"
 
 

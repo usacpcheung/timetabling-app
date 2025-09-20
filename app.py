@@ -2216,7 +2216,7 @@ def generate_schedule(target_date=None):
     for gid, locs in group_loc_map.items():
         loc_restrict[offset + gid] = locs
 
-    model, vars_, loc_vars, assumptions = build_model(
+    model, vars_, loc_vars, assumption_registry = build_model(
         full_students, teachers, slots, min_lessons, max_lessons,
         allow_repeats=allow_repeats, max_repeats=max_repeats,
         prefer_consecutive=prefer_consecutive, allow_consecutive=allow_consecutive,
@@ -2248,7 +2248,7 @@ def generate_schedule(target_date=None):
         model,
         vars_,
         loc_vars,
-        assumptions,
+        assumption_registry,
         time_limit=solver_time_limit,
         progress_callback=progress_cb,
     )
@@ -2307,10 +2307,26 @@ def generate_schedule(target_date=None):
                 'teacher_limits': 'Teacher lesson limits are too strict.',
                 'student_limits': 'Student lesson or subject requirements conflict.',
                 'repeat_restrictions': 'Repeat or consecutive lesson restrictions prevent a schedule.',
+                'fixed_assignment': 'A fixed assignment could not be satisfied.',
+                'location_restriction': 'Location restrictions prevent required lessons.',
             }
             flash('No feasible timetable could be generated.', 'error')
-            for name in core:
-                flash(reason_map.get(name, name), 'error')
+            for info in core:
+                base = reason_map.get(getattr(info, 'kind', ''), getattr(info, 'label', ''))
+                details = []
+                label = getattr(info, 'label', None)
+                if label and label != base:
+                    details.append(f'label={label}')
+                context = getattr(info, 'context', {}) or {}
+                for key in sorted(context.keys()):
+                    value = context[key]
+                    if isinstance(value, (list, tuple, set)):
+                        value = ','.join(str(v) for v in value)
+                    details.append(f"{key}={value}")
+                message = base
+                if details:
+                    message = f"{base} ({'; '.join(details)})"
+                flash(message, 'error')
     conn.commit()
     conn.close()
 

@@ -2,7 +2,6 @@ from ortools.sat.python import cp_model
 from cp_sat_timetable import build_model, solve_and_print
 import json
 
-
 def make_row(id_, subjects):
     return {"id": id_, "subjects": json.dumps(subjects)}
 
@@ -21,7 +20,7 @@ def test_repeat_allowed_only_for_selected_subjects():
             "repeat_subjects": ["Math"],
         }
     }
-    model, vars_, loc_vars, assumptions = build_model(
+    model, vars_, loc_vars, assumption_registry = build_model(
         students,
         teachers,
         slots,
@@ -33,7 +32,7 @@ def test_repeat_allowed_only_for_selected_subjects():
         student_repeat=student_repeat,
         locations=[],
     )
-    status, assignments, _, _ = solve_and_print(model, vars_, loc_vars, assumptions)
+    status, assignments, _, _ = solve_and_print(model, vars_, loc_vars, assumption_registry)
     assert status in (cp_model.OPTIMAL, cp_model.FEASIBLE)
     subjects = [subj for (_, _, subj, _, _) in assignments]
     assert subjects.count("English") <= 1, "English should not be repeated"
