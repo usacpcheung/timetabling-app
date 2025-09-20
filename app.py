@@ -2714,7 +2714,11 @@ def generate_schedule(target_date=None):
     # incorporate groups as pseudo students
     pseudo_students = []
     for g in groups:
-        ps = {"id": offset + g['id'], "subjects": g['subjects']}
+        ps = {
+            "id": offset + g['id'],
+            "subjects": g['subjects'],
+            "name": g['name'],
+        }
         pseudo_students.append(ps)
 
     actual_students = [dict(s) for s in students]
