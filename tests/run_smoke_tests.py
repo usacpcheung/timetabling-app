@@ -157,6 +157,34 @@ def test_unsat_core_present_on_conflict():
         f"Expected summary to mention limited feasible slots, got: {summaries}"
     )
 
+    # Subject requirement conflicts should group students by subject.
+    students = [
+        make_row(1, ["Math"]),
+        make_row(2, ["Math"]),
+    ]
+    teachers = [
+        {"id": 1, "subjects": json.dumps(["Math"]), "min_lessons": 0, "max_lessons": None},
+    ]
+    slots = 1
+    unavailable = [{"teacher_id": 1, "slot": 0}]
+    model, vars_, loc_vars, assumptions = build_model(
+        students, teachers, slots,
+        min_lessons=0, max_lessons=1,
+        allow_repeats=False,
+        unavailable=unavailable, fixed=[],
+        add_assumptions=True,
+        student_limits={1: (0, 1), 2: (0, 1)},
+        locations=[],
+    )
+    status, assignments, core, progress = solve_and_print(model, vars_, loc_vars, assumptions)
+    assert status == cp_model.INFEASIBLE, "Expected infeasible due to missing subject coverage"
+    summaries = summarise_core_conflicts(core)
+    assert any(
+        'subject math' in msg.lower() and 'still missing' in msg.lower()
+        and 'student #1' in msg and 'student #2' in msg
+        for msg in summaries
+    ), f"Expected grouped subject requirement summary, got: {summaries}"
+
 
 def main():
     tests = [

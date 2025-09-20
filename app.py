@@ -108,6 +108,7 @@ def summarise_core_conflicts(core_details):
     teacher_groups = {}
     teacher_limit_groups = {}
     student_groups = {}
+    subject_requirement_groups = {}
     repeat_limit_groups = {}
     multi_teacher_groups = {}
     teachers_by_student_subject = {}
@@ -142,6 +143,14 @@ def summarise_core_conflicts(core_details):
 
     def render_teachers(teacher_labels):
         labels = [lbl for lbl in teacher_labels if lbl]
+        if not labels:
+            return ''
+        if len(labels) == 1:
+            return labels[0]
+        return ', '.join(labels[:-1]) + f" and {labels[-1]}"
+
+    def render_students(student_labels):
+        labels = [lbl for lbl in student_labels if lbl]
         if not labels:
             return ''
         if len(labels) == 1:
@@ -213,22 +222,46 @@ def summarise_core_conflicts(core_details):
                     if stored.get(k) in (None, [], {}):
                         stored[k] = v
             continue
-        if category == 'student_limits' and kind == 'unavailable_slot':
-            sid = detail.get('student_id')
-            group = student_groups.get(sid)
-            if group is None:
-                label = detail.get('student_label') or detail.get('student_name')
-                if not label:
-                    label = f"Student ID {sid}" if sid is not None else 'Student'
-                group = {
-                    'label': label,
-                    'slots': [],
-                    'index': len(results),
-                }
-                student_groups[sid] = group
-                results.append(None)
-            group['slots'].append((detail.get('slot'), slot_display(detail)))
-            continue
+        if category == 'student_limits':
+            if kind == 'unavailable_slot':
+                sid = detail.get('student_id')
+                group = student_groups.get(sid)
+                if group is None:
+                    label = detail.get('student_label') or detail.get('student_name')
+                    if not label:
+                        label = f"Student ID {sid}" if sid is not None else 'Student'
+                    group = {
+                        'label': label,
+                        'slots': [],
+                        'index': len(results),
+                    }
+                    student_groups[sid] = group
+                    results.append(None)
+                group['slots'].append((detail.get('slot'), slot_display(detail)))
+                continue
+            if kind == 'subject_requirement':
+                subject_key = detail.get('subject')
+                subject_label = detail.get('subject_name') or detail.get('subject_label')
+                if not subject_label:
+                    subject_label = ensure_subject_label(detail)
+                key = (subject_key, subject_label)
+                group = subject_requirement_groups.get(key)
+                if group is None:
+                    group = {
+                        'subject_label': subject_label or 'the subject',
+                        'students': [],
+                        'seen': set(),
+                        'sort_key': (
+                            (subject_label or 'the subject').lower(),
+                            subject_label or 'the subject',
+                        ),
+                    }
+                    subject_requirement_groups[key] = group
+                student_label = ensure_student_label(detail)
+                if student_label not in group['seen']:
+                    group['students'].append(student_label)
+                    group['seen'].add(student_label)
+                continue
         if category == 'repeat_restrictions':
             sid = detail.get('student_id')
             subj = detail.get('subject')
@@ -375,6 +408,19 @@ def summarise_core_conflicts(core_details):
         else:
             message = f"{student_label} must use a single teacher for {subject_label}."
         results[group['index']] = f"Conflict: {message}"
+
+    for _, group in sorted(
+        subject_requirement_groups.items(),
+        key=lambda item: item[1]['sort_key'],
+    ):
+        subject_label = group['subject_label'] or 'the subject'
+        students = sorted(group['students'], key=lambda lbl: lbl.lower())
+        student_text = render_students(students)
+        if student_text:
+            message = f"{subject_label} still missing for {student_text}."
+        else:
+            message = f"{subject_label} is still missing."
+        results.append(f"Conflict: {message}")
 
     return [msg for msg in results if msg is not None]
 
