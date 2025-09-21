@@ -355,6 +355,7 @@
                     <div class="relative bg-white rounded-lg shadow dark:bg-gray-700">
                         <div class="p-4">
                             <h3 class="text-lg mb-2">Advanced settings for {{ s['name'] }}</h3>
+                            {% set student_allow_repeats = s['allow_repeats'] if s['allow_repeats'] is not none else config['allow_repeats'] %}
                             <label class="block">Blocked Slots:
                                 <select multiple name="student_unavail_{{ s['id'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
                                     {% for i in range(config['slots_per_day']) %}
@@ -369,10 +370,10 @@
                                 <input type="number" name="student_max_{{ s['id'] }}" value="{{ s['max_lessons'] if s['max_lessons'] is not none else config['max_lessons'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
                             </label>
                             <label class="flex items-center gap-2">Allow repeated lessons?
-                                <input type="checkbox" name="student_allow_repeats_{{ s['id'] }}" data-repeat-target="student_repeat_subjects_{{ s['id'] }}" {% if (s['allow_repeats'] if s['allow_repeats'] is not none else config['allow_repeats']) %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
+                                <input type="checkbox" name="student_allow_repeats_{{ s['id'] }}" data-repeat-target="student_repeat_subjects_{{ s['id'] }} student_max_repeats_{{ s['id'] }} student_allow_consecutive_{{ s['id'] }} student_prefer_consecutive_{{ s['id'] }}" {% if student_allow_repeats %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
                             </label>
-                            <label class="block">Repeatable subjects:
-                                <select id="student_repeat_subjects_{{ s['id'] }}" multiple name="student_repeat_subjects_{{ s['id'] }}" {% if not (s['allow_repeats'] if s['allow_repeats'] is not none else config['allow_repeats']) %}disabled{% endif %} class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                            <label class="block repeat-control {% if not student_allow_repeats %}repeat-disabled{% endif %}">Repeatable subjects:
+                                <select id="student_repeat_subjects_{{ s['id'] }}" multiple name="student_repeat_subjects_{{ s['id'] }}" {% if not student_allow_repeats %}disabled{% endif %} class="border border-emerald-300 rounded-lg p-2.5 w-full">
                                     {% for sub in subjects %}
                                         {% if sub['id'] in student_map[s['id']] %}
                                             <option value="{{ sub['id'] }}" {% if sub['id'] in s['repeat_subjects'] %}selected{% endif %}>{{ sub['name'] }}</option>
@@ -383,15 +384,21 @@
                             <label class="flex items-center gap-2">Allow different teachers per subject?
                                 <input type="checkbox" name="student_multi_teacher_{{ s['id'] }}" {% if (s['allow_multi_teacher'] if s['allow_multi_teacher'] is not none else config['allow_multi_teacher']) %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
                             </label>
-                            <label class="block">Max repeats:
-                                <input type="number" name="student_max_repeats_{{ s['id'] }}" value="{{ s['max_repeats'] if s['max_repeats'] is not none else config['max_repeats'] }}" min="1" class="border border-emerald-300 rounded-lg p-2.5 w-full">
-                            </label>
-                            <label class="flex items-center gap-2">Allow consecutive repeats?
-                                <input type="checkbox" name="student_allow_consecutive_{{ s['id'] }}" {% if (s['allow_consecutive'] if s['allow_consecutive'] is not none else config['allow_consecutive']) %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
-                            </label>
-                            <label class="flex items-center gap-2">Prefer consecutive repeats?
-                                <input type="checkbox" name="student_prefer_consecutive_{{ s['id'] }}" {% if (s['prefer_consecutive'] if s['prefer_consecutive'] is not none else config['prefer_consecutive']) %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
-                            </label>
+                            <div class="repeat-control {% if not student_allow_repeats %}repeat-disabled{% endif %}">
+                                <label class="block" for="student_max_repeats_{{ s['id'] }}">Max repeats:
+                                    <input id="student_max_repeats_{{ s['id'] }}" type="number" name="student_max_repeats_{{ s['id'] }}" value="{{ s['max_repeats'] if s['max_repeats'] is not none else config['max_repeats'] }}" min="1" {% if not student_allow_repeats %}disabled{% endif %} class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                                </label>
+                            </div>
+                            <div class="repeat-control {% if not student_allow_repeats %}repeat-disabled{% endif %}">
+                                <label class="flex items-center gap-2" for="student_allow_consecutive_{{ s['id'] }}">Allow consecutive repeats?
+                                    <input id="student_allow_consecutive_{{ s['id'] }}" type="checkbox" name="student_allow_consecutive_{{ s['id'] }}" {% if (s['allow_consecutive'] if s['allow_consecutive'] is not none else config['allow_consecutive']) %}checked{% endif %} {% if not student_allow_repeats %}disabled{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
+                                </label>
+                            </div>
+                            <div class="repeat-control {% if not student_allow_repeats %}repeat-disabled{% endif %}">
+                                <label class="flex items-center gap-2" for="student_prefer_consecutive_{{ s['id'] }}">Prefer consecutive repeats?
+                                    <input id="student_prefer_consecutive_{{ s['id'] }}" type="checkbox" name="student_prefer_consecutive_{{ s['id'] }}" {% if (s['prefer_consecutive'] if s['prefer_consecutive'] is not none else config['prefer_consecutive']) %}checked{% endif %} {% if not student_allow_repeats %}disabled{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
+                                </label>
+                            </div>
                             <div class="mt-4 flex justify-end gap-2">
                                 <button type="button" data-modal-hide="adv-{{ s['id'] }}" data-modal-cancel class="border border-emerald-300 text-emerald-700 px-3 py-1 rounded hover:bg-emerald-50">Cancel</button>
                                 <button type="button" data-modal-save class="bg-emerald-500 text-white px-3 py-1 rounded">Save changes</button>
@@ -434,6 +441,7 @@
                     <div class="relative bg-white rounded-lg shadow dark:bg-gray-700">
                         <div class="p-4">
                             <h3 class="text-lg mb-2">Advanced settings for new student</h3>
+                            {% set new_student_allow_repeats = config['allow_repeats'] %}
                             <label class="block">Blocked Slots:
                                 <select multiple name="new_student_unavail" class="border border-emerald-300 rounded-lg p-2.5 w-full">
                                     {% for i in range(config['slots_per_day']) %}
@@ -448,10 +456,10 @@
                                 <input type="number" name="new_student_max" value="{{ config['max_lessons'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
                             </label>
                             <label class="flex items-center gap-2">Allow repeated lessons?
-                                <input type="checkbox" name="new_student_allow_repeats" data-repeat-target="new_student_repeat_subjects" {% if config['allow_repeats'] %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
+                                <input type="checkbox" name="new_student_allow_repeats" data-repeat-target="new_student_repeat_subjects new_student_max_repeats new_student_allow_consecutive new_student_prefer_consecutive" {% if new_student_allow_repeats %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
                             </label>
-                            <label class="block">Repeatable subjects:
-                                <select id="new_student_repeat_subjects" multiple name="new_student_repeat_subjects" {% if not config['allow_repeats'] %}disabled{% endif %} class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                            <label class="block repeat-control {% if not new_student_allow_repeats %}repeat-disabled{% endif %}">Repeatable subjects:
+                                <select id="new_student_repeat_subjects" multiple name="new_student_repeat_subjects" {% if not new_student_allow_repeats %}disabled{% endif %} class="border border-emerald-300 rounded-lg p-2.5 w-full">
                                     {% for sub in subjects %}
                                         <option value="{{ sub['id'] }}">{{ sub['name'] }}</option>
                                     {% endfor %}
@@ -460,15 +468,21 @@
                             <label class="flex items-center gap-2">Allow different teachers per subject?
                                 <input type="checkbox" name="new_student_multi_teacher" {% if config['allow_multi_teacher'] %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
                             </label>
-                            <label class="block">Max repeats:
-                                <input type="number" name="new_student_max_repeats" value="{{ config['max_repeats'] }}" min="1" class="border border-emerald-300 rounded-lg p-2.5 w-full">
-                            </label>
-                            <label class="flex items-center gap-2">Allow consecutive repeats?
-                                <input type="checkbox" name="new_student_allow_consecutive" {% if config['allow_consecutive'] %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
-                            </label>
-                            <label class="flex items-center gap-2">Prefer consecutive repeats?
-                                <input type="checkbox" name="new_student_prefer_consecutive" {% if config['prefer_consecutive'] %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
-                            </label>
+                            <div class="repeat-control {% if not new_student_allow_repeats %}repeat-disabled{% endif %}">
+                                <label class="block" for="new_student_max_repeats">Max repeats:
+                                    <input id="new_student_max_repeats" type="number" name="new_student_max_repeats" value="{{ config['max_repeats'] }}" min="1" {% if not new_student_allow_repeats %}disabled{% endif %} class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                                </label>
+                            </div>
+                            <div class="repeat-control {% if not new_student_allow_repeats %}repeat-disabled{% endif %}">
+                                <label class="flex items-center gap-2" for="new_student_allow_consecutive">Allow consecutive repeats?
+                                    <input id="new_student_allow_consecutive" type="checkbox" name="new_student_allow_consecutive" {% if config['allow_consecutive'] %}checked{% endif %} {% if not new_student_allow_repeats %}disabled{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
+                                </label>
+                            </div>
+                            <div class="repeat-control {% if not new_student_allow_repeats %}repeat-disabled{% endif %}">
+                                <label class="flex items-center gap-2" for="new_student_prefer_consecutive">Prefer consecutive repeats?
+                                    <input id="new_student_prefer_consecutive" type="checkbox" name="new_student_prefer_consecutive" {% if config['prefer_consecutive'] %}checked{% endif %} {% if not new_student_allow_repeats %}disabled{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
+                                </label>
+                            </div>
                             <div class="mt-4 flex justify-end gap-2">
                                 <button type="button" data-modal-hide="adv-new" data-modal-cancel class="border border-emerald-300 text-emerald-700 px-3 py-1 rounded hover:bg-emerald-50">Cancel</button>
                                 <button type="button" data-modal-save class="bg-emerald-500 text-white px-3 py-1 rounded">Save changes</button>
