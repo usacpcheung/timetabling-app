@@ -56,6 +56,189 @@ document.addEventListener('DOMContentLoaded', function () {
     const slotTimesContainer = document.getElementById('slot-times');
     const slotsInput = document.querySelector('input[name="slots_per_day"]');
     const slotDurationInput = document.querySelector('input[name="slot_duration"]');
+    const configForm = document.getElementById('config-form');
+    const saveButton = configForm ? configForm.querySelector('[data-config-save]') : null;
+    let allowSubmit = false;
+
+    const allowNextSubmit = () => {
+        allowSubmit = true;
+        setTimeout(() => {
+            allowSubmit = false;
+        }, 0);
+    };
+
+    const triggerConfigSubmit = () => {
+        if (!configForm) {
+            return;
+        }
+        allowNextSubmit();
+        if (typeof configForm.requestSubmit === 'function') {
+            configForm.requestSubmit();
+        } else {
+            configForm.submit();
+        }
+    };
+
+    if (configForm) {
+        configForm.addEventListener('submit', event => {
+            if (!allowSubmit) {
+                event.preventDefault();
+            }
+        });
+
+        configForm.addEventListener('keydown', event => {
+            if (event.key !== 'Enter') {
+                return;
+            }
+
+            const target = event.target;
+            const isShortcut = event.ctrlKey || event.metaKey;
+
+            if (isShortcut) {
+                event.preventDefault();
+                triggerConfigSubmit();
+                return;
+            }
+
+            if (target && target.tagName === 'TEXTAREA') {
+                return;
+            }
+
+            if (target instanceof HTMLButtonElement && target.type === 'submit') {
+                allowNextSubmit();
+                return;
+            }
+
+            event.preventDefault();
+        });
+    }
+
+    if (saveButton) {
+        saveButton.addEventListener('click', allowNextSubmit);
+        saveButton.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                allowNextSubmit();
+            }
+        });
+    }
+
+    const modalOriginalValues = new Map();
+
+    function captureModalState(modal) {
+        return Array.from(modal.querySelectorAll('input, select, textarea')).map(field => {
+            if (field.tagName === 'SELECT' && field.multiple) {
+                return {
+                    field,
+                    type: 'multiple',
+                    values: Array.from(field.options).filter(opt => opt.selected).map(opt => opt.value)
+                };
+            }
+            if (field.type === 'checkbox' || field.type === 'radio') {
+                return { field, type: 'checked', checked: field.checked };
+            }
+            return { field, type: 'value', value: field.value };
+        });
+    }
+
+    function restoreModalState(state) {
+        state.forEach(item => {
+            if (!item || !item.field) return;
+            if (item.type === 'multiple') {
+                const values = new Set(item.values || []);
+                Array.from(item.field.options).forEach(opt => {
+                    opt.selected = values.has(opt.value);
+                });
+            } else if (item.type === 'checked') {
+                item.field.checked = !!item.checked;
+            } else {
+                item.field.value = item.value;
+            }
+        });
+    }
+
+    const modalToggles = document.querySelectorAll('[data-modal-toggle]');
+    modalToggles.forEach(btn => {
+        btn.addEventListener('click', event => {
+            const targetId = btn.getAttribute('data-modal-target');
+            if (!targetId) return;
+            const modal = document.getElementById(targetId);
+            if (!modal) return;
+            if (modal.classList.contains('hidden')) {
+                modalOriginalValues.set(targetId, captureModalState(modal));
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            const existingInstance = window.FlowbiteInstances && typeof window.FlowbiteInstances.getInstance === 'function'
+                ? window.FlowbiteInstances.getInstance('Modal', targetId)
+                : null;
+            const instance = existingInstance || (typeof window.Modal === 'function'
+                ? new window.Modal(modal, { closable: false }, { id: modal.id, override: true })
+                : null);
+            if (instance && typeof instance.show === 'function') {
+                instance.show();
+            }
+        });
+    });
+
+    const modalElements = document.querySelectorAll('[data-config-modal]');
+    const ensureModalInstances = () => {
+        if (typeof window === 'undefined' || typeof window.Modal !== 'function') {
+            return;
+        }
+        modalElements.forEach(modalEl => {
+            if (!modalEl || !modalEl.id) {
+                return;
+            }
+            new window.Modal(
+                modalEl,
+                { closable: false },
+                { id: modalEl.id, override: true }
+            );
+        });
+    };
+    if (modalElements.length) {
+        setTimeout(ensureModalInstances, 0);
+    }
+
+    const modalCancelButtons = document.querySelectorAll('[data-modal-cancel]');
+    modalCancelButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetId = btn.getAttribute('data-modal-hide');
+            const modal = targetId ? document.getElementById(targetId) : btn.closest('[data-config-modal]');
+            if (!modal) return;
+            const state = modalOriginalValues.get(modal.id);
+            if (state) {
+                restoreModalState(state);
+                modalOriginalValues.delete(modal.id);
+            }
+            const instance = window.FlowbiteInstances && typeof window.FlowbiteInstances.getInstance === 'function'
+                ? window.FlowbiteInstances.getInstance('Modal', modal.id)
+                : null;
+            if (instance && typeof instance.hide === 'function') {
+                instance.hide();
+            }
+        });
+    });
+
+    const modalSaveButtons = document.querySelectorAll('[data-modal-save]');
+    modalSaveButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (!configForm) {
+                return;
+            }
+            const modal = btn.closest('[data-config-modal]');
+            if (modal) {
+                modalOriginalValues.delete(modal.id);
+                const instance = window.FlowbiteInstances && typeof window.FlowbiteInstances.getInstance === 'function'
+                    ? window.FlowbiteInstances.getInstance('Modal', modal.id)
+                    : null;
+                if (instance && typeof instance.hide === 'function') {
+                    instance.hide();
+                }
+            }
+            triggerConfigSubmit();
+        });
+    });
 
     if (!teacherSelect || !studentSelect || !subjectSelect || !slotSelect) {
         return;
@@ -68,18 +251,6 @@ document.addEventListener('DOMContentLoaded', function () {
     const assignData = JSON.parse(document.getElementById('assign-data').textContent);
     const subjectMap = JSON.parse(document.getElementById('subject-map').textContent);
     const totalSlots = parseInt(slotSelect.dataset.totalSlots, 10);
-
-    const configForm = document.querySelector('form[method="post"]:not([action])');
-    if (configForm) {
-        const selects = configForm.querySelectorAll('select:not([multiple])');
-        selects.forEach(sel => {
-            sel.addEventListener('keydown', function (e) {
-                if (e.key === 'Enter') {
-                    configForm.submit();
-                }
-            });
-        });
-    }
 
     // Convert "HH:MM" to minutes.
     function parseTime(str) {

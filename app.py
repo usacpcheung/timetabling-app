@@ -1242,8 +1242,17 @@ def config():
     c = conn.cursor()
     if request.method == 'POST':
         has_error = False
-        slots_per_day = int(request.form['slots_per_day'])
-        slot_duration = int(request.form['slot_duration'])
+        try:
+            slots_per_day = int(request.form['slots_per_day'])
+            slot_duration = int(request.form['slot_duration'])
+        except (KeyError, TypeError, ValueError):
+            flash('Slots per day and slot duration must be positive integers.', 'error')
+            conn.close()
+            return redirect(url_for('config'))
+        if slots_per_day < 1 or slot_duration < 1:
+            flash('Slots per day and slot duration must be positive integers.', 'error')
+            conn.close()
+            return redirect(url_for('config'))
         start_times = []
         for i in range(1, slots_per_day + 1):
             val = request.form.get(f'slot_start_{i}')
@@ -1267,16 +1276,63 @@ def config():
             start_times.append(f"{h:02d}:{m:02d}")
         min_lessons = int(request.form['min_lessons'])
         max_lessons = int(request.form['max_lessons'])
+        if min_lessons < 0 or max_lessons < 0:
+            flash('Minimum and maximum lessons must be zero or greater.', 'error')
+            conn.close()
+            return redirect(url_for('config'))
+        if min_lessons > max_lessons:
+            flash('Minimum lessons cannot exceed maximum lessons.', 'error')
+            conn.close()
+            return redirect(url_for('config'))
+        if min_lessons > slots_per_day:
+            flash('Minimum lessons cannot exceed slots per day.', 'error')
+            conn.close()
+            return redirect(url_for('config'))
+        if max_lessons > slots_per_day:
+            flash('Maximum lessons cannot exceed slots per day.', 'error')
+            conn.close()
+            return redirect(url_for('config'))
         t_min_lessons = int(request.form['teacher_min_lessons'])
         t_max_lessons = int(request.form['teacher_max_lessons'])
+        if t_min_lessons < 0 or t_max_lessons < 0:
+            flash('Global teacher minimum and maximum lessons must be zero or greater.', 'error')
+            conn.close()
+            return redirect(url_for('config'))
         if t_min_lessons > t_max_lessons:
-            flash('Global teacher min lessons cannot exceed max lessons', 'error')
-            has_error = True
-        allow_repeats = 1 if request.form.get('allow_repeats') else 0
-        max_repeats = int(request.form['max_repeats'])
-        prefer_consecutive = 1 if request.form.get('prefer_consecutive') else 0
-        allow_consecutive = 1 if request.form.get('allow_consecutive') else 0
-        consecutive_weight = int(request.form['consecutive_weight'])
+            flash('Global teacher min lessons cannot exceed max lessons.', 'error')
+            conn.close()
+            return redirect(url_for('config'))
+        if t_min_lessons > slots_per_day:
+            flash('Global teacher minimum lessons cannot exceed slots per day.', 'error')
+            conn.close()
+            return redirect(url_for('config'))
+        if t_max_lessons > slots_per_day:
+            flash('Global teacher maximum lessons cannot exceed slots per day.', 'error')
+            conn.close()
+            return redirect(url_for('config'))
+        repeat_defaults = c.execute(
+            'SELECT max_repeats, prefer_consecutive, allow_consecutive, consecutive_weight '
+            'FROM config WHERE id=1'
+        ).fetchone()
+        allow_repeats = 1 if 'allow_repeats' in request.form else 0
+        max_repeats_raw = request.form.get('max_repeats')
+        max_repeats_posted = max_repeats_raw is not None and max_repeats_raw.strip() != ''
+        if max_repeats_posted:
+            max_repeats = int(max_repeats_raw)
+        else:
+            max_repeats = repeat_defaults['max_repeats'] if repeat_defaults else 1
+        prefer_consecutive_posted = 'prefer_consecutive' in request.form
+        prefer_consecutive = 1 if prefer_consecutive_posted else 0
+        allow_consecutive_posted = 'allow_consecutive' in request.form
+        allow_consecutive = 1 if allow_consecutive_posted else 0
+        consecutive_weight_raw = request.form.get('consecutive_weight')
+        consecutive_weight_posted = (
+            consecutive_weight_raw is not None and consecutive_weight_raw.strip() != ''
+        )
+        if consecutive_weight_posted:
+            consecutive_weight = int(consecutive_weight_raw)
+        else:
+            consecutive_weight = repeat_defaults['consecutive_weight'] if repeat_defaults else 0
         require_all_subjects = 1 if request.form.get('require_all_subjects') else 0
         use_attendance_priority = 1 if request.form.get('use_attendance_priority') else 0
         attendance_weight = int(request.form['attendance_weight'])
@@ -1305,8 +1361,28 @@ def config():
             )
 
         if not allow_repeats:
-            allow_consecutive = 0
-            prefer_consecutive = 0
+            repeat_conflict = (
+                (max_repeats_posted and max_repeats > 1)
+                or allow_consecutive_posted
+                or prefer_consecutive_posted
+                or (consecutive_weight_posted and consecutive_weight != 0)
+            )
+            if repeat_conflict:
+                flash(
+                    'Repeated lesson settings require "Allow repeated lessons?" to be enabled.',
+                    'error'
+                )
+                has_error = True
+                if repeat_defaults:
+                    max_repeats = repeat_defaults['max_repeats']
+                    allow_consecutive = repeat_defaults['allow_consecutive']
+                    prefer_consecutive = repeat_defaults['prefer_consecutive']
+                    consecutive_weight = repeat_defaults['consecutive_weight']
+            else:
+                max_repeats = 1
+                allow_consecutive = 0
+                prefer_consecutive = 0
+                consecutive_weight = 0
         else:
             if not allow_consecutive and prefer_consecutive:
                 flash('Cannot prefer consecutive slots when consecutive repeats are disallowed.',
@@ -1315,10 +1391,6 @@ def config():
             if max_repeats < 2:
                 flash('Max repeats must be at least 2', 'error')
                 has_error = True
-        if not allow_multi_teacher and allow_repeats:
-            flash('Cannot allow repeats when different teachers per subject are disallowed.', 'error')
-            has_error = True
-
         c.execute("""UPDATE config SET slots_per_day=?, slot_duration=?, slot_start_times=?,
                      min_lessons=?, max_lessons=?, teacher_min_lessons=?, teacher_max_lessons=?,
                      allow_repeats=?, max_repeats=?,
@@ -1397,6 +1469,22 @@ def config():
                 tmax = request.form.get(f'teacher_max_{tid}')
                 min_val = int(tmin) if tmin else None
                 max_val = int(tmax) if tmax else None
+                if min_val is not None and min_val < 0:
+                    flash('Teacher minimum lessons must be zero or greater for ' + name + '.', 'error')
+                    has_error = True
+                    continue
+                if max_val is not None and max_val < 0:
+                    flash('Teacher maximum lessons must be zero or greater for ' + name + '.', 'error')
+                    has_error = True
+                    continue
+                if min_val is not None and min_val > slots_per_day:
+                    flash('Teacher minimum lessons cannot exceed slots per day for ' + name + '.', 'error')
+                    has_error = True
+                    continue
+                if max_val is not None and max_val > slots_per_day:
+                    flash('Teacher maximum lessons cannot exceed slots per day for ' + name + '.', 'error')
+                    has_error = True
+                    continue
                 if min_val is not None and max_val is not None and min_val > max_val:
                     flash('Teacher min lessons greater than max for ' + name, 'error')
                     has_error = True
@@ -1411,10 +1499,28 @@ def config():
             subj_json = json.dumps(new_tsubs)
             min_val = int(new_tmin) if new_tmin else None
             max_val = int(new_tmax) if new_tmax else None
+            invalid_teacher = False
+            if min_val is not None and min_val < 0:
+                flash('New teacher minimum lessons must be zero or greater.', 'error')
+                has_error = True
+                invalid_teacher = True
+            if max_val is not None and max_val < 0:
+                flash('New teacher maximum lessons must be zero or greater.', 'error')
+                has_error = True
+                invalid_teacher = True
+            if min_val is not None and min_val > slots_per_day:
+                flash('New teacher minimum lessons cannot exceed slots per day.', 'error')
+                has_error = True
+                invalid_teacher = True
+            if max_val is not None and max_val > slots_per_day:
+                flash('New teacher maximum lessons cannot exceed slots per day.', 'error')
+                has_error = True
+                invalid_teacher = True
             if min_val is not None and max_val is not None and min_val > max_val:
                 flash('New teacher min lessons greater than max', 'error')
                 has_error = True
-            else:
+                invalid_teacher = True
+            if not invalid_teacher:
                 c.execute('INSERT INTO teachers (name, subjects, min_lessons, max_lessons) VALUES (?, ?, ?, ?)',
                           (new_tname, subj_json, min_val, max_val))
 
@@ -1492,6 +1598,26 @@ def config():
                 max_val = int(smax) if smax else None
                 max_rep_val = int(max_rep) if max_rep else None
                 rep_sub_json = json.dumps(rep_subs) if rep_subs else None
+                if min_val is not None and min_val < 0:
+                    flash('Student minimum lessons must be zero or greater for ' + name + '.', 'error')
+                    has_error = True
+                    continue
+                if max_val is not None and max_val < 0:
+                    flash('Student maximum lessons must be zero or greater for ' + name + '.', 'error')
+                    has_error = True
+                    continue
+                if min_val is not None and min_val > slots_per_day:
+                    flash('Student minimum lessons cannot exceed slots per day for ' + name + '.', 'error')
+                    has_error = True
+                    continue
+                if max_val is not None and max_val > slots_per_day:
+                    flash('Student maximum lessons cannot exceed slots per day for ' + name + '.', 'error')
+                    has_error = True
+                    continue
+                if min_val is not None and max_val is not None and min_val > max_val:
+                    flash('Student min lessons greater than max for ' + name, 'error')
+                    has_error = True
+                    continue
                 c.execute('''UPDATE students SET name=?, subjects=?, active=?,
                              min_lessons=?, max_lessons=?, allow_repeats=?,
                              max_repeats=?, allow_consecutive=?, prefer_consecutive=?,
@@ -1536,30 +1662,52 @@ def config():
             max_val = int(new_smax) if new_smax else None
             max_rep_val = int(new_max_rep) if new_max_rep else None
             rep_sub_json = json.dumps(new_rep_subs) if new_rep_subs else None
-            c.execute('''INSERT INTO students (name, subjects, active, min_lessons, max_lessons,
-                      allow_repeats, max_repeats, allow_consecutive, prefer_consecutive, allow_multi_teacher, repeat_subjects)
-                      VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                      (new_sname, subj_json, min_val, max_val, new_allow_rep,
-                       max_rep_val, new_allow_con, new_prefer_con, new_allow_multi, rep_sub_json))
-            new_sid = c.lastrowid
-            for sl in new_unav:
-                c.execute('INSERT INTO student_unavailable (student_id, slot) VALUES (?, ?)',
-                          (new_sid, int(sl)))
-            block_map_current[new_sid] = set()
-            for tid in new_blocks:
-                tval = int(tid)
-                if not block_allowed(new_sid, tval, teacher_map_block, student_groups_block,
-                                       group_members_block, group_subj_map_block,
-                                       block_map_current, fixed_pairs):
-                    flash('Cannot block selected teacher for student', 'error')
-                    has_error = True
-                    continue
-                c.execute('INSERT INTO student_teacher_block (student_id, teacher_id) VALUES (?, ?)',
-                          (new_sid, tval))
-                block_map_current.setdefault(new_sid, set()).add(tval)
-            for lid in request.form.getlist('new_student_locs'):
-                c.execute('INSERT INTO student_locations (student_id, location_id) VALUES (?, ?)',
-                          (new_sid, int(lid)))
+            invalid_student = False
+            if min_val is not None and min_val < 0:
+                flash('New student minimum lessons must be zero or greater.', 'error')
+                has_error = True
+                invalid_student = True
+            if max_val is not None and max_val < 0:
+                flash('New student maximum lessons must be zero or greater.', 'error')
+                has_error = True
+                invalid_student = True
+            if min_val is not None and min_val > slots_per_day:
+                flash('New student minimum lessons cannot exceed slots per day.', 'error')
+                has_error = True
+                invalid_student = True
+            if max_val is not None and max_val > slots_per_day:
+                flash('New student maximum lessons cannot exceed slots per day.', 'error')
+                has_error = True
+                invalid_student = True
+            if min_val is not None and max_val is not None and min_val > max_val:
+                flash('New student min lessons greater than max.', 'error')
+                has_error = True
+                invalid_student = True
+            if not invalid_student:
+                c.execute('''INSERT INTO students (name, subjects, active, min_lessons, max_lessons,
+                          allow_repeats, max_repeats, allow_consecutive, prefer_consecutive, allow_multi_teacher, repeat_subjects)
+                          VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                          (new_sname, subj_json, min_val, max_val, new_allow_rep,
+                           max_rep_val, new_allow_con, new_prefer_con, new_allow_multi, rep_sub_json))
+                new_sid = c.lastrowid
+                for sl in new_unav:
+                    c.execute('INSERT INTO student_unavailable (student_id, slot) VALUES (?, ?)',
+                              (new_sid, int(sl)))
+                block_map_current[new_sid] = set()
+                for tid in new_blocks:
+                    tval = int(tid)
+                    if not block_allowed(new_sid, tval, teacher_map_block, student_groups_block,
+                                           group_members_block, group_subj_map_block,
+                                           block_map_current, fixed_pairs):
+                        flash('Cannot block selected teacher for student', 'error')
+                        has_error = True
+                        continue
+                    c.execute('INSERT INTO student_teacher_block (student_id, teacher_id) VALUES (?, ?)',
+                              (new_sid, tval))
+                    block_map_current.setdefault(new_sid, set()).add(tval)
+                for lid in request.form.getlist('new_student_locs'):
+                    c.execute('INSERT INTO student_locations (student_id, location_id) VALUES (?, ?)',
+                              (new_sid, int(lid)))
 
         # Build helper maps used when validating group changes. These maps
         # describe which teachers can teach each subject, what subjects every
