@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import sqlite3
+from html.parser import HTMLParser
 
 from flask import get_flashed_messages
 from werkzeug.datastructures import MultiDict
@@ -209,6 +210,69 @@ def test_allow_repeats_without_multi_teacher(tmp_path):
     updated = _config_row(app.DB_PATH)
     assert updated['allow_repeats'] == 1
     assert updated['allow_multi_teacher'] == 0
+
+
+def test_reject_repeat_settings_when_repeats_disabled(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    conn.close()
+    original = _config_row(app.DB_PATH)
+
+    data = _valid_config_form(original)
+    data.pop('allow_repeats', None)
+    data.setlist('max_repeats', ['3'])
+    data.setlist('consecutive_weight', ['2'])
+    data.setlist('allow_consecutive', ['1'])
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    expected = 'Repeated lesson settings require "Allow repeated lessons?" to be enabled.'
+    assert ('error', expected) in flashes
+    updated = _config_row(app.DB_PATH)
+    assert updated['allow_repeats'] == original['allow_repeats']
+    assert updated['max_repeats'] == original['max_repeats']
+    assert updated['allow_consecutive'] == original['allow_consecutive']
+    assert updated['consecutive_weight'] == original['consecutive_weight']
+
+
+def test_repeat_controls_render_disabled_when_repeats_off(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    conn.close()
+
+    with app.app.test_client() as client:
+        response = client.get('/config')
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+
+    class InputCollector(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.inputs = []
+
+        def handle_starttag(self, tag, attrs):
+            if tag != 'input':
+                return
+            self.inputs.append(dict(attrs))
+
+    parser = InputCollector()
+    parser.feed(html)
+
+    def assert_disabled(name):
+        for attrs in parser.inputs:
+            if attrs.get('name') == name:
+                assert 'disabled' in attrs, f'{name} should render disabled when repeats are off'
+                return
+        raise AssertionError(f'Could not find input named {name}')
+
+    for field in ('max_repeats', 'allow_consecutive', 'prefer_consecutive', 'consecutive_weight'):
+        assert_disabled(field)
 
 
 def test_reject_min_lessons_greater_than_max(tmp_path):

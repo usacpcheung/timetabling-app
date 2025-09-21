@@ -177,23 +177,23 @@
             <label class="block">Max lessons per teacher:
                 <input type="number" name="teacher_max_lessons" value="{{ config['teacher_max_lessons'] }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
-            <label class="flex items-center gap-2">Allow repeated lessons?
-                <input type="checkbox" name="allow_repeats" {% if config['allow_repeats'] %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
+            <label class="flex items-center gap-2" for="allow_repeats">Allow repeated lessons?
+                <input id="allow_repeats" type="checkbox" name="allow_repeats" data-repeat-target="max_repeats allow_consecutive prefer_consecutive consecutive_weight" {% if config['allow_repeats'] %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
             </label>
             <label class="flex items-center gap-2">Allow different teachers per subject?
                 <input type="checkbox" name="allow_multi_teacher" {% if config['allow_multi_teacher'] %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
             </label>
-            <label class="block">Max repeats per teacher/subject:
-                <input type="number" name="max_repeats" value="{{ config['max_repeats'] }}" min="1" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+            <label class="block" for="max_repeats">Max repeats per teacher/subject:
+                <input id="max_repeats" type="number" name="max_repeats" value="{{ config['max_repeats'] }}" min="1" {% if not config['allow_repeats'] %}disabled{% endif %} class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
-            <label class="flex items-center gap-2">Allow consecutive repeat slots?
-                <input type="checkbox" name="allow_consecutive" {% if config['allow_consecutive'] %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
+            <label class="flex items-center gap-2" for="allow_consecutive">Allow consecutive repeat slots?
+                <input id="allow_consecutive" type="checkbox" name="allow_consecutive" {% if config['allow_consecutive'] %}checked{% endif %} {% if not config['allow_repeats'] %}disabled{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
             </label>
-            <label class="flex items-center gap-2">Prefer consecutive repeats?
-                <input type="checkbox" name="prefer_consecutive" {% if config['prefer_consecutive'] %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
+            <label class="flex items-center gap-2" for="prefer_consecutive">Prefer consecutive repeats?
+                <input id="prefer_consecutive" type="checkbox" name="prefer_consecutive" {% if config['prefer_consecutive'] %}checked{% endif %} {% if not config['allow_repeats'] %}disabled{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
             </label>
-            <label class="block">Consecutive preference weight:
-                <input type="number" name="consecutive_weight" value="{{ config['consecutive_weight'] }}" min="1" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+            <label class="block" for="consecutive_weight">Consecutive preference weight:
+                <input id="consecutive_weight" type="number" name="consecutive_weight" value="{{ config['consecutive_weight'] }}" min="1" {% if not config['allow_repeats'] %}disabled{% endif %} class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
             <label class="flex items-center gap-2">Require all subjects?
                 <input type="checkbox" name="require_all_subjects" {% if config['require_all_subjects'] %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
@@ -690,16 +690,19 @@
     }
 
     function bindRepeatToggle(toggle) {
-        const targetId = toggle.dataset.repeatTarget;
-        if (!targetId) {
-            return;
-        }
-        const select = document.getElementById(targetId);
-        if (!select) {
+        const targetAttr = toggle.dataset.repeatTarget || '';
+        const targets = targetAttr
+            .split(/\s+/)
+            .map(id => id && document.getElementById(id))
+            .filter(Boolean);
+        if (!targets.length) {
             return;
         }
         const updateDisabledState = () => {
-            select.disabled = !toggle.checked;
+            const disabled = !toggle.checked;
+            targets.forEach(target => {
+                target.disabled = disabled;
+            });
         };
         toggle.addEventListener('change', updateDisabledState);
         updateDisabledState();

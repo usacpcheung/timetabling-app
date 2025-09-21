@@ -1310,11 +1310,23 @@ def config():
             flash('Global teacher maximum lessons cannot exceed slots per day.', 'error')
             conn.close()
             return redirect(url_for('config'))
+        repeat_defaults = c.execute(
+            'SELECT max_repeats, prefer_consecutive, allow_consecutive, consecutive_weight '
+            'FROM config WHERE id=1'
+        ).fetchone()
         allow_repeats = 1 if request.form.get('allow_repeats') else 0
-        max_repeats = int(request.form['max_repeats'])
+        max_repeats_raw = request.form.get('max_repeats')
+        if max_repeats_raw is None:
+            max_repeats = repeat_defaults['max_repeats'] if repeat_defaults else 1
+        else:
+            max_repeats = int(max_repeats_raw)
         prefer_consecutive = 1 if request.form.get('prefer_consecutive') else 0
         allow_consecutive = 1 if request.form.get('allow_consecutive') else 0
-        consecutive_weight = int(request.form['consecutive_weight'])
+        consecutive_weight_raw = request.form.get('consecutive_weight')
+        if consecutive_weight_raw is None:
+            consecutive_weight = repeat_defaults['consecutive_weight'] if repeat_defaults else 0
+        else:
+            consecutive_weight = int(consecutive_weight_raw)
         require_all_subjects = 1 if request.form.get('require_all_subjects') else 0
         use_attendance_priority = 1 if request.form.get('use_attendance_priority') else 0
         attendance_weight = int(request.form['attendance_weight'])
@@ -1343,8 +1355,28 @@ def config():
             )
 
         if not allow_repeats:
-            allow_consecutive = 0
-            prefer_consecutive = 0
+            repeat_conflict = (
+                max_repeats > 1
+                or allow_consecutive
+                or prefer_consecutive
+                or consecutive_weight != 0
+            )
+            if repeat_conflict:
+                flash(
+                    'Repeated lesson settings require "Allow repeated lessons?" to be enabled.',
+                    'error'
+                )
+                has_error = True
+                if repeat_defaults:
+                    max_repeats = repeat_defaults['max_repeats']
+                    allow_consecutive = repeat_defaults['allow_consecutive']
+                    prefer_consecutive = repeat_defaults['prefer_consecutive']
+                    consecutive_weight = repeat_defaults['consecutive_weight']
+            else:
+                max_repeats = 1
+                allow_consecutive = 0
+                prefer_consecutive = 0
+                consecutive_weight = 0
         else:
             if not allow_consecutive and prefer_consecutive:
                 flash('Cannot prefer consecutive slots when consecutive repeats are disallowed.',
