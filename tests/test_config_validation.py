@@ -239,6 +239,45 @@ def test_reject_repeat_settings_when_repeats_disabled(tmp_path):
     assert updated['consecutive_weight'] == original['consecutive_weight']
 
 
+def test_disable_repeats_without_repeat_inputs(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    conn.execute(
+        'UPDATE config SET allow_repeats=1, max_repeats=4, allow_consecutive=1, '
+        'prefer_consecutive=1, consecutive_weight=5 WHERE id=1'
+    )
+    conn.commit()
+    conn.close()
+
+    original = _config_row(app.DB_PATH)
+    assert original['allow_repeats'] == 1
+
+    data = _valid_config_form(original)
+    for field in (
+        'allow_repeats',
+        'max_repeats',
+        'allow_consecutive',
+        'prefer_consecutive',
+        'consecutive_weight',
+    ):
+        data.pop(field, None)
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert not any(category == 'error' for category, _ in flashes)
+
+    updated = _config_row(app.DB_PATH)
+    assert updated['allow_repeats'] == 0
+    assert updated['max_repeats'] == 1
+    assert updated['allow_consecutive'] == 0
+    assert updated['prefer_consecutive'] == 0
+    assert updated['consecutive_weight'] == 0
+
+
 def test_repeat_controls_render_disabled_when_repeats_off(tmp_path):
     import app
 
