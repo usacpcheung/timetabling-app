@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import sqlite3
+from html.parser import HTMLParser
 
 from flask import get_flashed_messages
 from werkzeug.datastructures import MultiDict
@@ -209,6 +210,125 @@ def test_allow_repeats_without_multi_teacher(tmp_path):
     updated = _config_row(app.DB_PATH)
     assert updated['allow_repeats'] == 1
     assert updated['allow_multi_teacher'] == 0
+
+
+def test_reject_repeat_settings_when_repeats_disabled(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    conn.close()
+    original = _config_row(app.DB_PATH)
+
+    data = _valid_config_form(original)
+    data.pop('allow_repeats', None)
+    data.setlist('max_repeats', ['3'])
+    data.setlist('consecutive_weight', ['2'])
+    data.setlist('allow_consecutive', ['1'])
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    expected = 'Repeated lesson settings require "Allow repeated lessons?" to be enabled.'
+    assert ('error', expected) in flashes
+    updated = _config_row(app.DB_PATH)
+    assert updated['allow_repeats'] == original['allow_repeats']
+    assert updated['max_repeats'] == original['max_repeats']
+    assert updated['allow_consecutive'] == original['allow_consecutive']
+    assert updated['consecutive_weight'] == original['consecutive_weight']
+
+
+def test_disable_repeats_without_repeat_inputs(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    conn.execute(
+        'UPDATE config SET allow_repeats=1, max_repeats=4, allow_consecutive=1, '
+        'prefer_consecutive=1, consecutive_weight=5 WHERE id=1'
+    )
+    conn.commit()
+    conn.close()
+
+    original = _config_row(app.DB_PATH)
+    assert original['allow_repeats'] == 1
+
+    data = _valid_config_form(original)
+    for field in (
+        'allow_repeats',
+        'max_repeats',
+        'allow_consecutive',
+        'prefer_consecutive',
+        'consecutive_weight',
+    ):
+        data.pop(field, None)
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert not any(category == 'error' for category, _ in flashes)
+
+    updated = _config_row(app.DB_PATH)
+    assert updated['allow_repeats'] == 0
+    assert updated['max_repeats'] == 1
+    assert updated['allow_consecutive'] == 0
+    assert updated['prefer_consecutive'] == 0
+    assert updated['consecutive_weight'] == 0
+
+
+def test_repeat_controls_render_disabled_when_repeats_off(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    conn.close()
+
+    with app.app.test_client() as client:
+        response = client.get('/config')
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+
+    class InputCollector(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.inputs = []
+            self.labels = {}
+
+        def handle_starttag(self, tag, attrs):
+            if tag != 'input':
+                if tag == 'label':
+                    attrs_dict = dict(attrs)
+                    target = attrs_dict.get('for')
+                    if target:
+                        self.labels[target] = attrs_dict
+                return
+            self.inputs.append(dict(attrs))
+
+    parser = InputCollector()
+    parser.feed(html)
+
+    def assert_disabled(name):
+        for attrs in parser.inputs:
+            if attrs.get('name') == name:
+                assert 'disabled' in attrs, f'{name} should render disabled when repeats are off'
+                return
+        raise AssertionError(f'Could not find input named {name}')
+
+    for field in ('max_repeats', 'allow_consecutive', 'prefer_consecutive', 'consecutive_weight'):
+        assert_disabled(field)
+
+    def assert_dimmed(field_id):
+        attrs = parser.labels.get(field_id)
+        assert attrs is not None, f'Label for {field_id} should be present'
+        classes = attrs.get('class', '')
+        class_list = classes.split()
+        assert 'repeat-control' in class_list, f'Label for {field_id} should mark repeat-control'
+        assert 'repeat-disabled' in class_list, f'Label for {field_id} should be dimmed when repeats are off'
+
+    for label_id in ('max_repeats', 'allow_consecutive', 'prefer_consecutive', 'consecutive_weight'):
+        assert_dimmed(label_id)
 
 
 def test_reject_min_lessons_greater_than_max(tmp_path):
