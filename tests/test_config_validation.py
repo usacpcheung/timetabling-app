@@ -255,9 +255,15 @@ def test_repeat_controls_render_disabled_when_repeats_off(tmp_path):
         def __init__(self):
             super().__init__()
             self.inputs = []
+            self.labels = {}
 
         def handle_starttag(self, tag, attrs):
             if tag != 'input':
+                if tag == 'label':
+                    attrs_dict = dict(attrs)
+                    target = attrs_dict.get('for')
+                    if target:
+                        self.labels[target] = attrs_dict
                 return
             self.inputs.append(dict(attrs))
 
@@ -273,6 +279,17 @@ def test_repeat_controls_render_disabled_when_repeats_off(tmp_path):
 
     for field in ('max_repeats', 'allow_consecutive', 'prefer_consecutive', 'consecutive_weight'):
         assert_disabled(field)
+
+    def assert_dimmed(field_id):
+        attrs = parser.labels.get(field_id)
+        assert attrs is not None, f'Label for {field_id} should be present'
+        classes = attrs.get('class', '')
+        class_list = classes.split()
+        assert 'repeat-control' in class_list, f'Label for {field_id} should mark repeat-control'
+        assert 'repeat-disabled' in class_list, f'Label for {field_id} should be dimmed when repeats are off'
+
+    for label_id in ('max_repeats', 'allow_consecutive', 'prefer_consecutive', 'consecutive_weight'):
+        assert_dimmed(label_id)
 
 
 def test_reject_min_lessons_greater_than_max(tmp_path):

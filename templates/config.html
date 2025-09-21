@@ -23,6 +23,9 @@
         border-top-left-radius: 0;
         border-top-right-radius: 0;
     }
+    .repeat-control.repeat-disabled {
+        opacity: 0.6;
+    }
     </style>
 </head>
 <body class="bg-emerald-50 min-h-screen">
@@ -183,16 +186,16 @@
             <label class="flex items-center gap-2">Allow different teachers per subject?
                 <input type="checkbox" name="allow_multi_teacher" {% if config['allow_multi_teacher'] %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
             </label>
-            <label class="block" for="max_repeats">Max repeats per teacher/subject:
+            <label class="block repeat-control {% if not config['allow_repeats'] %}repeat-disabled{% endif %}" for="max_repeats">Max repeats per teacher/subject:
                 <input id="max_repeats" type="number" name="max_repeats" value="{{ config['max_repeats'] }}" min="1" {% if not config['allow_repeats'] %}disabled{% endif %} class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
-            <label class="flex items-center gap-2" for="allow_consecutive">Allow consecutive repeat slots?
+            <label class="flex items-center gap-2 repeat-control {% if not config['allow_repeats'] %}repeat-disabled{% endif %}" for="allow_consecutive">Allow consecutive repeat slots?
                 <input id="allow_consecutive" type="checkbox" name="allow_consecutive" {% if config['allow_consecutive'] %}checked{% endif %} {% if not config['allow_repeats'] %}disabled{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
             </label>
-            <label class="flex items-center gap-2" for="prefer_consecutive">Prefer consecutive repeats?
+            <label class="flex items-center gap-2 repeat-control {% if not config['allow_repeats'] %}repeat-disabled{% endif %}" for="prefer_consecutive">Prefer consecutive repeats?
                 <input id="prefer_consecutive" type="checkbox" name="prefer_consecutive" {% if config['prefer_consecutive'] %}checked{% endif %} {% if not config['allow_repeats'] %}disabled{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
             </label>
-            <label class="block" for="consecutive_weight">Consecutive preference weight:
+            <label class="block repeat-control {% if not config['allow_repeats'] %}repeat-disabled{% endif %}" for="consecutive_weight">Consecutive preference weight:
                 <input id="consecutive_weight" type="number" name="consecutive_weight" value="{{ config['consecutive_weight'] }}" min="1" {% if not config['allow_repeats'] %}disabled{% endif %} class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
             <label class="flex items-center gap-2">Require all subjects?
@@ -700,8 +703,17 @@
         }
         const updateDisabledState = () => {
             const disabled = !toggle.checked;
+            const wrappers = Array.from(new Set(
+                targets
+                    .map(target => target.closest('.repeat-control'))
+                    .filter(Boolean)
+            ));
             targets.forEach(target => {
                 target.disabled = disabled;
+                target.classList.toggle('cursor-not-allowed', disabled);
+            });
+            wrappers.forEach(wrapper => {
+                wrapper.classList.toggle('repeat-disabled', disabled);
             });
         };
         toggle.addEventListener('change', updateDisabledState);
