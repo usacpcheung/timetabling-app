@@ -18,12 +18,36 @@ document.addEventListener('DOMContentLoaded', function () {
                 const panel = document.querySelector(id);
                 return panel && !panel.classList.contains('hidden');
             });
-        localStorage.setItem(ACC_KEY, JSON.stringify(open));
+        try {
+            localStorage.setItem(ACC_KEY, JSON.stringify(open));
+        } catch (err) {
+            return;
+        }
     }
 
-    const savedRaw = localStorage.getItem(ACC_KEY);
-    if (savedRaw) {
-        const savedPanels = JSON.parse(savedRaw);
+    function restoreAccordionState() {
+        let savedRaw;
+        try {
+            savedRaw = localStorage.getItem(ACC_KEY);
+        } catch (err) {
+            return;
+        }
+        if (!savedRaw) {
+            return;
+        }
+
+        let savedPanels = [];
+        try {
+            const parsed = JSON.parse(savedRaw);
+            if (Array.isArray(parsed)) {
+                savedPanels = parsed;
+            } else {
+                // Fall back to an empty array so invalid storage entries don't break the accordion state.
+            }
+        } catch (err) {
+            // Keep the default [] when JSON parsing fails.
+        }
+
         accordionButtons.forEach(btn => {
             const id = btn.getAttribute('data-accordion-target');
             const panel = document.querySelector(id);
@@ -45,6 +69,8 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
     }
+
+    restoreAccordionState();
 
     accordionButtons.forEach(btn => {
         btn.addEventListener('click', () => {
