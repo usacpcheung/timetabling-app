@@ -88,6 +88,124 @@ def _student_edit_form(config_row, student_row):
     return data
 
 
+def _post_invalid_weight(tmp_path, field, value, expected_error, extra_updates=None):
+    import app
+
+    conn = setup_db(tmp_path)
+    conn.close()
+    original = _config_row(app.DB_PATH)
+
+    data = _valid_config_form(original)
+    if extra_updates:
+        for key, update in extra_updates.items():
+            if isinstance(update, (list, tuple)):
+                values = [str(item) for item in update]
+            else:
+                values = [str(update)]
+            data.setlist(key, values)
+    data.setlist(field, [str(value)])
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert ('error', expected_error) in flashes
+    assert _config_row(app.DB_PATH) == original
+
+
+def test_reject_negative_consecutive_weight(tmp_path):
+    _post_invalid_weight(
+        tmp_path,
+        'consecutive_weight',
+        '-1',
+        'Consecutive weight must be at least 1.',
+        extra_updates={'allow_repeats': '1', 'max_repeats': '2'},
+    )
+
+
+def test_reject_non_numeric_consecutive_weight(tmp_path):
+    _post_invalid_weight(
+        tmp_path,
+        'consecutive_weight',
+        'abc',
+        'Consecutive weight must be an integer.',
+        extra_updates={'allow_repeats': '1', 'max_repeats': '2'},
+    )
+
+
+def test_reject_negative_attendance_weight(tmp_path):
+    _post_invalid_weight(
+        tmp_path,
+        'attendance_weight',
+        '-5',
+        'Attendance weight must be at least 1.',
+    )
+
+
+def test_reject_non_numeric_attendance_weight(tmp_path):
+    _post_invalid_weight(
+        tmp_path,
+        'attendance_weight',
+        'oops',
+        'Attendance weight must be an integer.',
+    )
+
+
+def test_reject_negative_well_attend_weight(tmp_path):
+    _post_invalid_weight(
+        tmp_path,
+        'well_attend_weight',
+        '-0.5',
+        'Well-attend weight must be zero or greater.',
+    )
+
+
+def test_reject_non_numeric_well_attend_weight(tmp_path):
+    _post_invalid_weight(
+        tmp_path,
+        'well_attend_weight',
+        'bad',
+        'Well-attend weight must be a number.',
+    )
+
+
+def test_reject_negative_group_weight(tmp_path):
+    _post_invalid_weight(
+        tmp_path,
+        'group_weight',
+        '-0.5',
+        'Group weight must be zero or greater.',
+    )
+
+
+def test_reject_non_numeric_group_weight(tmp_path):
+    _post_invalid_weight(
+        tmp_path,
+        'group_weight',
+        'invalid',
+        'Group weight must be a number.',
+    )
+
+
+def test_reject_negative_balance_weight(tmp_path):
+    _post_invalid_weight(
+        tmp_path,
+        'balance_weight',
+        '-1',
+        'Balance weight must be at least 1.',
+    )
+
+
+def test_reject_non_numeric_balance_weight(tmp_path):
+    _post_invalid_weight(
+        tmp_path,
+        'balance_weight',
+        'nope',
+        'Balance weight must be an integer.',
+    )
+
+
 def test_reject_zero_slots_per_day(tmp_path):
     import app
 

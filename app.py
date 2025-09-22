@@ -1311,7 +1311,8 @@ def config():
             conn.close()
             return redirect(url_for('config'))
         repeat_defaults = c.execute(
-            'SELECT max_repeats, prefer_consecutive, allow_consecutive, consecutive_weight '
+            'SELECT max_repeats, prefer_consecutive, allow_consecutive, consecutive_weight, '
+            'attendance_weight, well_attend_weight, group_weight, balance_weight '
             'FROM config WHERE id=1'
         ).fetchone()
         allow_repeats = 1 if 'allow_repeats' in request.form else 0
@@ -1329,18 +1330,93 @@ def config():
         consecutive_weight_posted = (
             consecutive_weight_raw is not None and consecutive_weight_raw.strip() != ''
         )
+        consecutive_weight_default = (
+            repeat_defaults['consecutive_weight'] if repeat_defaults else 0
+        )
+        consecutive_weight = consecutive_weight_default
+        consecutive_weight_valid = True
         if consecutive_weight_posted:
-            consecutive_weight = int(consecutive_weight_raw)
-        else:
-            consecutive_weight = repeat_defaults['consecutive_weight'] if repeat_defaults else 0
+            try:
+                consecutive_weight = int(consecutive_weight_raw)
+            except (TypeError, ValueError):
+                flash('Consecutive weight must be an integer.', 'error')
+                has_error = True
+                consecutive_weight = consecutive_weight_default
+                consecutive_weight_valid = False
         require_all_subjects = 1 if request.form.get('require_all_subjects') else 0
         use_attendance_priority = 1 if request.form.get('use_attendance_priority') else 0
-        attendance_weight = int(request.form['attendance_weight'])
-        well_attend_weight = float(request.form['well_attend_weight'])
-        group_weight = float(request.form['group_weight'])
+        attendance_weight_raw = request.form.get('attendance_weight', '').strip()
+        attendance_weight_default = (
+            repeat_defaults['attendance_weight'] if repeat_defaults else 1
+        )
+        attendance_weight = attendance_weight_default
+        attendance_weight_valid = True
+        try:
+            attendance_weight = int(attendance_weight_raw)
+        except (TypeError, ValueError):
+            flash('Attendance weight must be an integer.', 'error')
+            has_error = True
+            attendance_weight = attendance_weight_default
+            attendance_weight_valid = False
+        well_attend_weight_raw = request.form.get('well_attend_weight', '').strip()
+        well_attend_weight_default = (
+            repeat_defaults['well_attend_weight'] if repeat_defaults else 0.0
+        )
+        well_attend_weight = well_attend_weight_default
+        well_attend_weight_valid = True
+        try:
+            well_attend_weight = float(well_attend_weight_raw)
+        except (TypeError, ValueError):
+            flash('Well-attend weight must be a number.', 'error')
+            has_error = True
+            well_attend_weight = well_attend_weight_default
+            well_attend_weight_valid = False
+        group_weight_raw = request.form.get('group_weight', '').strip()
+        group_weight_default = repeat_defaults['group_weight'] if repeat_defaults else 0.0
+        group_weight = group_weight_default
+        group_weight_valid = True
+        try:
+            group_weight = float(group_weight_raw)
+        except (TypeError, ValueError):
+            flash('Group weight must be a number.', 'error')
+            has_error = True
+            group_weight = group_weight_default
+            group_weight_valid = False
         allow_multi_teacher = 1 if request.form.get('allow_multi_teacher') else 0
         balance_teacher_load = 1 if request.form.get('balance_teacher_load') else 0
-        balance_weight = int(request.form['balance_weight'])
+        balance_weight_raw = request.form.get('balance_weight', '').strip()
+        balance_weight_default = (
+            repeat_defaults['balance_weight'] if repeat_defaults else 1
+        )
+        balance_weight = balance_weight_default
+        balance_weight_valid = True
+        try:
+            balance_weight = int(balance_weight_raw)
+        except (TypeError, ValueError):
+            flash('Balance weight must be an integer.', 'error')
+            has_error = True
+            balance_weight = balance_weight_default
+            balance_weight_valid = False
+        if consecutive_weight_valid and allow_repeats and consecutive_weight < 1:
+            flash('Consecutive weight must be at least 1.', 'error')
+            has_error = True
+            consecutive_weight = consecutive_weight_default
+        if attendance_weight_valid and attendance_weight < 1:
+            flash('Attendance weight must be at least 1.', 'error')
+            has_error = True
+            attendance_weight = attendance_weight_default
+        if well_attend_weight_valid and well_attend_weight < 0:
+            flash('Well-attend weight must be zero or greater.', 'error')
+            has_error = True
+            well_attend_weight = well_attend_weight_default
+        if group_weight_valid and group_weight < 0:
+            flash('Group weight must be zero or greater.', 'error')
+            has_error = True
+            group_weight = group_weight_default
+        if balance_weight_valid and balance_weight < 1:
+            flash('Balance weight must be at least 1.', 'error')
+            has_error = True
+            balance_weight = balance_weight_default
         solver_time_limit_raw = request.form.get('solver_time_limit', '').strip()
         if solver_time_limit_raw:
             try:
