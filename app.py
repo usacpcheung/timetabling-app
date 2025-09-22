@@ -1985,6 +1985,26 @@ def config():
                                   (tid, slot))
                         unav_set.add((tid, slot))
 
+        # Ensure teachers still have enough available slots to meet their minimums
+        blocked_counts = {}
+        for tid, slot in unav_set:
+            blocked_counts[tid] = blocked_counts.get(tid, 0) + 1
+        c.execute('SELECT id, name, min_lessons FROM teachers')
+        teacher_rows = c.fetchall()
+        for teacher in teacher_rows:
+            tid = teacher['id']
+            blocked = blocked_counts.get(tid, 0)
+            effective_min = teacher['min_lessons'] if teacher['min_lessons'] is not None else t_min_lessons
+            if effective_min is None:
+                effective_min = 0
+            remaining = slots_per_day - blocked
+            if effective_min > remaining:
+                flash(
+                    f"{teacher['name']} requires at least {effective_min} lessons but only {max(0, remaining)} slots remain after marking unavailability.",
+                    'error'
+                )
+                has_error = True
+
         # update fixed assignments
         assign_ids = request.form.getlist('assign_id')
         del_assign = set(request.form.getlist('assign_delete'))

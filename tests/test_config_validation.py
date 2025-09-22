@@ -656,6 +656,47 @@ def test_reject_teacher_individual_min_greater_than_max(tmp_path):
     assert updated['max_lessons'] == teacher['max_lessons']
 
 
+def test_reject_teacher_unavailability_that_breaks_minimum(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    teacher_row = conn.execute('SELECT id, name FROM teachers WHERE name=?', ('Teacher A',)).fetchone()
+    assert teacher_row is not None
+    original_unavailability = [
+        (row['teacher_id'], row['slot'])
+        for row in conn.execute('SELECT teacher_id, slot FROM teacher_unavailable').fetchall()
+    ]
+    conn.close()
+
+    original_config = _config_row(app.DB_PATH)
+
+    data = _valid_config_form(original_config)
+    data.setlist('teacher_min_lessons', ['5'])
+    data.add('new_unavail_teacher', str(teacher_row['id']))
+    for slot in ['1', '2', '3', '4', '5']:
+        data.add('new_unavail_slot', slot)
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    expected_message = (
+        f"{teacher_row['name']} requires at least 5 lessons but only 3 slots remain after marking unavailability."
+    )
+    assert ('error', expected_message) in flashes
+    assert _config_row(app.DB_PATH) == original_config
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    updated_unavailability = [
+        (row['teacher_id'], row['slot'])
+        for row in conn.execute('SELECT teacher_id, slot FROM teacher_unavailable').fetchall()
+    ]
+    conn.close()
+    assert updated_unavailability == original_unavailability
+
+
 def test_reject_student_individual_min_exceeding_slots(tmp_path):
     import app
 
