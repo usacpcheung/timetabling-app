@@ -1694,6 +1694,14 @@ def config():
                     flash('Student min lessons greater than max for ' + name, 'error')
                     has_error = True
                     continue
+                unavail_values = request.form.getlist(f'student_unavail_{sid}')
+                unavail_slots = {int(sl) for sl in unavail_values if sl != ''}
+                effective_min = min_val if min_val is not None else min_lessons
+                remaining_slots = slots_per_day - len(unavail_slots)
+                if effective_min is not None and effective_min > remaining_slots:
+                    flash('Student minimum lessons cannot exceed available slots after marking unavailability for ' + name + '.', 'error')
+                    has_error = True
+                    continue
                 c.execute('''UPDATE students SET name=?, subjects=?, active=?,
                              min_lessons=?, max_lessons=?, allow_repeats=?,
                              max_repeats=?, allow_consecutive=?, prefer_consecutive=?,
@@ -1701,11 +1709,10 @@ def config():
                           (name, subj_json, active, min_val, max_val,
                            allow_rep, max_rep_val, allow_con, prefer_con,
                            allow_multi, rep_sub_json, int(sid)))
-                slots = request.form.getlist(f'student_unavail_{sid}')
                 c.execute('DELETE FROM student_unavailable WHERE student_id=?', (int(sid),))
-                for sl in slots:
+                for sl in sorted(unavail_slots):
                     c.execute('INSERT INTO student_unavailable (student_id, slot) VALUES (?, ?)',
-                              (int(sid), int(sl)))
+                              (int(sid), sl))
                 blocks = request.form.getlist(f'student_block_{sid}')
                 c.execute('DELETE FROM student_teacher_block WHERE student_id=?', (int(sid),))
                 block_map_current[int(sid)] = set()
@@ -1759,6 +1766,13 @@ def config():
                 flash('New student min lessons greater than max.', 'error')
                 has_error = True
                 invalid_student = True
+            new_unav_slots = {int(sl) for sl in new_unav if sl != ''}
+            effective_min = min_val if min_val is not None else min_lessons
+            remaining_slots = slots_per_day - len(new_unav_slots)
+            if effective_min is not None and effective_min > remaining_slots:
+                flash('New student minimum lessons cannot exceed available slots after marking unavailability for ' + new_sname + '.', 'error')
+                has_error = True
+                invalid_student = True
             if not invalid_student:
                 c.execute('''INSERT INTO students (name, subjects, active, min_lessons, max_lessons,
                           allow_repeats, max_repeats, allow_consecutive, prefer_consecutive, allow_multi_teacher, repeat_subjects)
@@ -1766,9 +1780,9 @@ def config():
                           (new_sname, subj_json, min_val, max_val, new_allow_rep,
                            max_rep_val, new_allow_con, new_prefer_con, new_allow_multi, rep_sub_json))
                 new_sid = c.lastrowid
-                for sl in new_unav:
+                for sl in sorted(new_unav_slots):
                     c.execute('INSERT INTO student_unavailable (student_id, slot) VALUES (?, ?)',
-                              (new_sid, int(sl)))
+                              (new_sid, sl))
                 block_map_current[new_sid] = set()
                 for tid in new_blocks:
                     tval = int(tid)

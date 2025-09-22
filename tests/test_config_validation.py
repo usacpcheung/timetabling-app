@@ -305,6 +305,61 @@ def test_reject_negative_teacher_lessons(tmp_path):
     assert _config_row(app.DB_PATH) == original
 
 
+def test_reject_student_minimum_exceeding_available_slots(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    config_row = _config_row(app.DB_PATH)
+    student_row = conn.execute('SELECT * FROM students LIMIT 1').fetchone()
+    original_student = dict(student_row)
+    original_unavail = [
+        row['slot']
+        for row in conn.execute(
+            'SELECT slot FROM student_unavailable WHERE student_id=? ORDER BY slot',
+            (student_row['id'],),
+        )
+    ]
+    conn.close()
+
+    data = _student_edit_form(config_row, student_row)
+    sid = student_row['id']
+    assert config_row['slots_per_day'] >= 2
+    blocked_slots = [str(i) for i in range(config_row['slots_per_day'] - 1)]
+    desired_min = min(config_row['slots_per_day'], config_row['min_lessons'] + 2)
+    data.setlist(f'student_min_{sid}', [str(desired_min)])
+    data.setlist(f'student_max_{sid}', [str(config_row['slots_per_day'])])
+    data.setlist(f'student_unavail_{sid}', blocked_slots)
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    expected = (
+        'error',
+        f"Student minimum lessons cannot exceed available slots after marking unavailability for {student_row['name']}.",
+    )
+    assert expected in flashes
+
+    assert _config_row(app.DB_PATH) == config_row
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    updated = conn.execute('SELECT min_lessons, max_lessons FROM students WHERE id=?', (sid,)).fetchone()
+    updated_unavail = [
+        row['slot']
+        for row in conn.execute(
+            'SELECT slot FROM student_unavailable WHERE student_id=? ORDER BY slot',
+            (sid,),
+        )
+    ]
+    conn.close()
+
+    assert updated['min_lessons'] == original_student['min_lessons']
+    assert updated['max_lessons'] == original_student['max_lessons']
+    assert updated_unavail == original_unavail
+
+
 def test_allow_repeats_without_multi_teacher(tmp_path):
     import app
 
