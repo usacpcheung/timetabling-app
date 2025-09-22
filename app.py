@@ -1311,7 +1311,8 @@ def config():
             conn.close()
             return redirect(url_for('config'))
         repeat_defaults = c.execute(
-            'SELECT max_repeats, prefer_consecutive, allow_consecutive, consecutive_weight '
+            'SELECT max_repeats, prefer_consecutive, allow_consecutive, consecutive_weight, '
+            'attendance_weight, well_attend_weight, group_weight, balance_weight '
             'FROM config WHERE id=1'
         ).fetchone()
         allow_repeats = 1 if 'allow_repeats' in request.form else 0
@@ -1329,18 +1330,93 @@ def config():
         consecutive_weight_posted = (
             consecutive_weight_raw is not None and consecutive_weight_raw.strip() != ''
         )
+        consecutive_weight_default = (
+            repeat_defaults['consecutive_weight'] if repeat_defaults else 0
+        )
+        consecutive_weight = consecutive_weight_default
+        consecutive_weight_valid = True
         if consecutive_weight_posted:
-            consecutive_weight = int(consecutive_weight_raw)
-        else:
-            consecutive_weight = repeat_defaults['consecutive_weight'] if repeat_defaults else 0
+            try:
+                consecutive_weight = int(consecutive_weight_raw)
+            except (TypeError, ValueError):
+                flash('Consecutive weight must be an integer.', 'error')
+                has_error = True
+                consecutive_weight = consecutive_weight_default
+                consecutive_weight_valid = False
         require_all_subjects = 1 if request.form.get('require_all_subjects') else 0
         use_attendance_priority = 1 if request.form.get('use_attendance_priority') else 0
-        attendance_weight = int(request.form['attendance_weight'])
-        well_attend_weight = float(request.form['well_attend_weight'])
-        group_weight = float(request.form['group_weight'])
+        attendance_weight_raw = request.form.get('attendance_weight', '').strip()
+        attendance_weight_default = (
+            repeat_defaults['attendance_weight'] if repeat_defaults else 1
+        )
+        attendance_weight = attendance_weight_default
+        attendance_weight_valid = True
+        try:
+            attendance_weight = int(attendance_weight_raw)
+        except (TypeError, ValueError):
+            flash('Attendance weight must be an integer.', 'error')
+            has_error = True
+            attendance_weight = attendance_weight_default
+            attendance_weight_valid = False
+        well_attend_weight_raw = request.form.get('well_attend_weight', '').strip()
+        well_attend_weight_default = (
+            repeat_defaults['well_attend_weight'] if repeat_defaults else 0.0
+        )
+        well_attend_weight = well_attend_weight_default
+        well_attend_weight_valid = True
+        try:
+            well_attend_weight = float(well_attend_weight_raw)
+        except (TypeError, ValueError):
+            flash('Well-attend weight must be a number.', 'error')
+            has_error = True
+            well_attend_weight = well_attend_weight_default
+            well_attend_weight_valid = False
+        group_weight_raw = request.form.get('group_weight', '').strip()
+        group_weight_default = repeat_defaults['group_weight'] if repeat_defaults else 0.0
+        group_weight = group_weight_default
+        group_weight_valid = True
+        try:
+            group_weight = float(group_weight_raw)
+        except (TypeError, ValueError):
+            flash('Group weight must be a number.', 'error')
+            has_error = True
+            group_weight = group_weight_default
+            group_weight_valid = False
         allow_multi_teacher = 1 if request.form.get('allow_multi_teacher') else 0
         balance_teacher_load = 1 if request.form.get('balance_teacher_load') else 0
-        balance_weight = int(request.form['balance_weight'])
+        balance_weight_raw = request.form.get('balance_weight', '').strip()
+        balance_weight_default = (
+            repeat_defaults['balance_weight'] if repeat_defaults else 1
+        )
+        balance_weight = balance_weight_default
+        balance_weight_valid = True
+        try:
+            balance_weight = int(balance_weight_raw)
+        except (TypeError, ValueError):
+            flash('Balance weight must be an integer.', 'error')
+            has_error = True
+            balance_weight = balance_weight_default
+            balance_weight_valid = False
+        if consecutive_weight_valid and allow_repeats and consecutive_weight < 1:
+            flash('Consecutive weight must be at least 1.', 'error')
+            has_error = True
+            consecutive_weight = consecutive_weight_default
+        if attendance_weight_valid and attendance_weight < 1:
+            flash('Attendance weight must be at least 1.', 'error')
+            has_error = True
+            attendance_weight = attendance_weight_default
+        if well_attend_weight_valid and well_attend_weight < 0:
+            flash('Well-attend weight must be zero or greater.', 'error')
+            has_error = True
+            well_attend_weight = well_attend_weight_default
+        if group_weight_valid and group_weight < 0:
+            flash('Group weight must be zero or greater.', 'error')
+            has_error = True
+            group_weight = group_weight_default
+        if balance_weight_valid and balance_weight < 1:
+            flash('Balance weight must be at least 1.', 'error')
+            has_error = True
+            balance_weight = balance_weight_default
         solver_time_limit_raw = request.form.get('solver_time_limit', '').strip()
         if solver_time_limit_raw:
             try:
@@ -1618,6 +1694,14 @@ def config():
                     flash('Student min lessons greater than max for ' + name, 'error')
                     has_error = True
                     continue
+                unavail_values = request.form.getlist(f'student_unavail_{sid}')
+                unavail_slots = {int(sl) for sl in unavail_values if sl != ''}
+                effective_min = min_val if min_val is not None else min_lessons
+                remaining_slots = slots_per_day - len(unavail_slots)
+                if effective_min is not None and effective_min > remaining_slots:
+                    flash('Student minimum lessons cannot exceed available slots after marking unavailability for ' + name + '.', 'error')
+                    has_error = True
+                    continue
                 c.execute('''UPDATE students SET name=?, subjects=?, active=?,
                              min_lessons=?, max_lessons=?, allow_repeats=?,
                              max_repeats=?, allow_consecutive=?, prefer_consecutive=?,
@@ -1625,11 +1709,10 @@ def config():
                           (name, subj_json, active, min_val, max_val,
                            allow_rep, max_rep_val, allow_con, prefer_con,
                            allow_multi, rep_sub_json, int(sid)))
-                slots = request.form.getlist(f'student_unavail_{sid}')
                 c.execute('DELETE FROM student_unavailable WHERE student_id=?', (int(sid),))
-                for sl in slots:
+                for sl in sorted(unavail_slots):
                     c.execute('INSERT INTO student_unavailable (student_id, slot) VALUES (?, ?)',
-                              (int(sid), int(sl)))
+                              (int(sid), sl))
                 blocks = request.form.getlist(f'student_block_{sid}')
                 c.execute('DELETE FROM student_teacher_block WHERE student_id=?', (int(sid),))
                 block_map_current[int(sid)] = set()
@@ -1683,6 +1766,13 @@ def config():
                 flash('New student min lessons greater than max.', 'error')
                 has_error = True
                 invalid_student = True
+            new_unav_slots = {int(sl) for sl in new_unav if sl != ''}
+            effective_min = min_val if min_val is not None else min_lessons
+            remaining_slots = slots_per_day - len(new_unav_slots)
+            if effective_min is not None and effective_min > remaining_slots:
+                flash('New student minimum lessons cannot exceed available slots after marking unavailability for ' + new_sname + '.', 'error')
+                has_error = True
+                invalid_student = True
             if not invalid_student:
                 c.execute('''INSERT INTO students (name, subjects, active, min_lessons, max_lessons,
                           allow_repeats, max_repeats, allow_consecutive, prefer_consecutive, allow_multi_teacher, repeat_subjects)
@@ -1690,9 +1780,9 @@ def config():
                           (new_sname, subj_json, min_val, max_val, new_allow_rep,
                            max_rep_val, new_allow_con, new_prefer_con, new_allow_multi, rep_sub_json))
                 new_sid = c.lastrowid
-                for sl in new_unav:
+                for sl in sorted(new_unav_slots):
                     c.execute('INSERT INTO student_unavailable (student_id, slot) VALUES (?, ?)',
-                              (new_sid, int(sl)))
+                              (new_sid, sl))
                 block_map_current[new_sid] = set()
                 for tid in new_blocks:
                     tval = int(tid)
@@ -1908,6 +1998,26 @@ def config():
                         c.execute('INSERT INTO teacher_unavailable (teacher_id, slot) VALUES (?, ?)',
                                   (tid, slot))
                         unav_set.add((tid, slot))
+
+        # Ensure teachers still have enough available slots to meet their minimums
+        blocked_counts = {}
+        for tid, slot in unav_set:
+            blocked_counts[tid] = blocked_counts.get(tid, 0) + 1
+        c.execute('SELECT id, name, min_lessons FROM teachers')
+        teacher_rows = c.fetchall()
+        for teacher in teacher_rows:
+            tid = teacher['id']
+            blocked = blocked_counts.get(tid, 0)
+            effective_min = teacher['min_lessons'] if teacher['min_lessons'] is not None else t_min_lessons
+            if effective_min is None:
+                effective_min = 0
+            remaining = slots_per_day - blocked
+            if effective_min > remaining:
+                flash(
+                    f"{teacher['name']} requires at least {effective_min} lessons but only {max(0, remaining)} slots remain after marking unavailability.",
+                    'error'
+                )
+                has_error = True
 
         # update fixed assignments
         assign_ids = request.form.getlist('assign_id')

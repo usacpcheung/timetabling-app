@@ -187,7 +187,7 @@
                 <input type="checkbox" name="allow_multi_teacher" {% if config['allow_multi_teacher'] %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
             </label>
             <label class="block repeat-control {% if not config['allow_repeats'] %}repeat-disabled{% endif %}" for="max_repeats">Max repeats per teacher/subject:
-                <input id="max_repeats" type="number" name="max_repeats" value="{{ config['max_repeats'] }}" min="1" {% if not config['allow_repeats'] %}disabled{% endif %} class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                <input id="max_repeats" type="number" name="max_repeats" value="{{ config['max_repeats'] }}" min="2" {% if not config['allow_repeats'] %}disabled{% endif %} class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
             <label class="flex items-center gap-2 repeat-control {% if not config['allow_repeats'] %}repeat-disabled{% endif %}" for="allow_consecutive">Allow consecutive repeat slots?
                 <input id="allow_consecutive" type="checkbox" name="allow_consecutive" {% if config['allow_consecutive'] %}checked{% endif %} {% if not config['allow_repeats'] %}disabled{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
@@ -386,7 +386,7 @@
                             </label>
                             <div class="repeat-control {% if not student_allow_repeats %}repeat-disabled{% endif %}">
                                 <label class="block" for="student_max_repeats_{{ s['id'] }}">Max repeats:
-                                    <input id="student_max_repeats_{{ s['id'] }}" type="number" name="student_max_repeats_{{ s['id'] }}" value="{{ s['max_repeats'] if s['max_repeats'] is not none else config['max_repeats'] }}" min="1" {% if not student_allow_repeats %}disabled{% endif %} class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                                    <input id="student_max_repeats_{{ s['id'] }}" type="number" name="student_max_repeats_{{ s['id'] }}" value="{{ s['max_repeats'] if s['max_repeats'] is not none else config['max_repeats'] }}" min="2" {% if not student_allow_repeats %}disabled{% endif %} class="border border-emerald-300 rounded-lg p-2.5 w-full">
                                 </label>
                             </div>
                             <div class="repeat-control {% if not student_allow_repeats %}repeat-disabled{% endif %}">
@@ -470,7 +470,7 @@
                             </label>
                             <div class="repeat-control {% if not new_student_allow_repeats %}repeat-disabled{% endif %}">
                                 <label class="block" for="new_student_max_repeats">Max repeats:
-                                    <input id="new_student_max_repeats" type="number" name="new_student_max_repeats" value="{{ config['max_repeats'] }}" min="1" {% if not new_student_allow_repeats %}disabled{% endif %} class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                                    <input id="new_student_max_repeats" type="number" name="new_student_max_repeats" value="{{ config['max_repeats'] }}" min="2" {% if not new_student_allow_repeats %}disabled{% endif %} class="border border-emerald-300 rounded-lg p-2.5 w-full">
                                 </label>
                             </div>
                             <div class="repeat-control {% if not new_student_allow_repeats %}repeat-disabled{% endif %}">

@@ -88,6 +88,124 @@ def _student_edit_form(config_row, student_row):
     return data
 
 
+def _post_invalid_weight(tmp_path, field, value, expected_error, extra_updates=None):
+    import app
+
+    conn = setup_db(tmp_path)
+    conn.close()
+    original = _config_row(app.DB_PATH)
+
+    data = _valid_config_form(original)
+    if extra_updates:
+        for key, update in extra_updates.items():
+            if isinstance(update, (list, tuple)):
+                values = [str(item) for item in update]
+            else:
+                values = [str(update)]
+            data.setlist(key, values)
+    data.setlist(field, [str(value)])
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert ('error', expected_error) in flashes
+    assert _config_row(app.DB_PATH) == original
+
+
+def test_reject_negative_consecutive_weight(tmp_path):
+    _post_invalid_weight(
+        tmp_path,
+        'consecutive_weight',
+        '-1',
+        'Consecutive weight must be at least 1.',
+        extra_updates={'allow_repeats': '1', 'max_repeats': '2'},
+    )
+
+
+def test_reject_non_numeric_consecutive_weight(tmp_path):
+    _post_invalid_weight(
+        tmp_path,
+        'consecutive_weight',
+        'abc',
+        'Consecutive weight must be an integer.',
+        extra_updates={'allow_repeats': '1', 'max_repeats': '2'},
+    )
+
+
+def test_reject_negative_attendance_weight(tmp_path):
+    _post_invalid_weight(
+        tmp_path,
+        'attendance_weight',
+        '-5',
+        'Attendance weight must be at least 1.',
+    )
+
+
+def test_reject_non_numeric_attendance_weight(tmp_path):
+    _post_invalid_weight(
+        tmp_path,
+        'attendance_weight',
+        'oops',
+        'Attendance weight must be an integer.',
+    )
+
+
+def test_reject_negative_well_attend_weight(tmp_path):
+    _post_invalid_weight(
+        tmp_path,
+        'well_attend_weight',
+        '-0.5',
+        'Well-attend weight must be zero or greater.',
+    )
+
+
+def test_reject_non_numeric_well_attend_weight(tmp_path):
+    _post_invalid_weight(
+        tmp_path,
+        'well_attend_weight',
+        'bad',
+        'Well-attend weight must be a number.',
+    )
+
+
+def test_reject_negative_group_weight(tmp_path):
+    _post_invalid_weight(
+        tmp_path,
+        'group_weight',
+        '-0.5',
+        'Group weight must be zero or greater.',
+    )
+
+
+def test_reject_non_numeric_group_weight(tmp_path):
+    _post_invalid_weight(
+        tmp_path,
+        'group_weight',
+        'invalid',
+        'Group weight must be a number.',
+    )
+
+
+def test_reject_negative_balance_weight(tmp_path):
+    _post_invalid_weight(
+        tmp_path,
+        'balance_weight',
+        '-1',
+        'Balance weight must be at least 1.',
+    )
+
+
+def test_reject_non_numeric_balance_weight(tmp_path):
+    _post_invalid_weight(
+        tmp_path,
+        'balance_weight',
+        'nope',
+        'Balance weight must be an integer.',
+    )
+
+
 def test_reject_zero_slots_per_day(tmp_path):
     import app
 
@@ -185,6 +303,61 @@ def test_reject_negative_teacher_lessons(tmp_path):
     assert response.status_code == 302
     assert ('error', 'Global teacher minimum and maximum lessons must be zero or greater.') in flashes
     assert _config_row(app.DB_PATH) == original
+
+
+def test_reject_student_minimum_exceeding_available_slots(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    config_row = _config_row(app.DB_PATH)
+    student_row = conn.execute('SELECT * FROM students LIMIT 1').fetchone()
+    original_student = dict(student_row)
+    original_unavail = [
+        row['slot']
+        for row in conn.execute(
+            'SELECT slot FROM student_unavailable WHERE student_id=? ORDER BY slot',
+            (student_row['id'],),
+        )
+    ]
+    conn.close()
+
+    data = _student_edit_form(config_row, student_row)
+    sid = student_row['id']
+    assert config_row['slots_per_day'] >= 2
+    blocked_slots = [str(i) for i in range(config_row['slots_per_day'] - 1)]
+    desired_min = min(config_row['slots_per_day'], config_row['min_lessons'] + 2)
+    data.setlist(f'student_min_{sid}', [str(desired_min)])
+    data.setlist(f'student_max_{sid}', [str(config_row['slots_per_day'])])
+    data.setlist(f'student_unavail_{sid}', blocked_slots)
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    expected = (
+        'error',
+        f"Student minimum lessons cannot exceed available slots after marking unavailability for {student_row['name']}.",
+    )
+    assert expected in flashes
+
+    assert _config_row(app.DB_PATH) == config_row
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    updated = conn.execute('SELECT min_lessons, max_lessons FROM students WHERE id=?', (sid,)).fetchone()
+    updated_unavail = [
+        row['slot']
+        for row in conn.execute(
+            'SELECT slot FROM student_unavailable WHERE student_id=? ORDER BY slot',
+            (sid,),
+        )
+    ]
+    conn.close()
+
+    assert updated['min_lessons'] == original_student['min_lessons']
+    assert updated['max_lessons'] == original_student['max_lessons']
+    assert updated_unavail == original_unavail
 
 
 def test_allow_repeats_without_multi_teacher(tmp_path):
@@ -536,6 +709,47 @@ def test_reject_teacher_individual_min_greater_than_max(tmp_path):
 
     assert updated['min_lessons'] == teacher['min_lessons']
     assert updated['max_lessons'] == teacher['max_lessons']
+
+
+def test_reject_teacher_unavailability_that_breaks_minimum(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    teacher_row = conn.execute('SELECT id, name FROM teachers WHERE name=?', ('Teacher A',)).fetchone()
+    assert teacher_row is not None
+    original_unavailability = [
+        (row['teacher_id'], row['slot'])
+        for row in conn.execute('SELECT teacher_id, slot FROM teacher_unavailable').fetchall()
+    ]
+    conn.close()
+
+    original_config = _config_row(app.DB_PATH)
+
+    data = _valid_config_form(original_config)
+    data.setlist('teacher_min_lessons', ['5'])
+    data.add('new_unavail_teacher', str(teacher_row['id']))
+    for slot in ['1', '2', '3', '4', '5']:
+        data.add('new_unavail_slot', slot)
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    expected_message = (
+        f"{teacher_row['name']} requires at least 5 lessons but only 3 slots remain after marking unavailability."
+    )
+    assert ('error', expected_message) in flashes
+    assert _config_row(app.DB_PATH) == original_config
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    updated_unavailability = [
+        (row['teacher_id'], row['slot'])
+        for row in conn.execute('SELECT teacher_id, slot FROM teacher_unavailable').fetchall()
+    ]
+    conn.close()
+    assert updated_unavailability == original_unavailability
 
 
 def test_reject_student_individual_min_exceeding_slots(tmp_path):
