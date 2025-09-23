@@ -31,6 +31,7 @@ def test_deleting_teacher_archives_and_cleans(tmp_path):
     c.execute("INSERT INTO teacher_unavailable (teacher_id, slot) VALUES (1, 0)")
     c.execute("INSERT INTO student_teacher_block (student_id, teacher_id) VALUES (1, 1)")
     c.execute("INSERT INTO fixed_assignments (teacher_id, student_id, group_id, subject_id, slot) VALUES (1, NULL, NULL, ?, 0)", (math_id,))
+    c.execute('UPDATE students SET active=0')
     conn.commit()
     conn.close()
 

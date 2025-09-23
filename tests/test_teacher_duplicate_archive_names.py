@@ -18,6 +18,8 @@ def test_deleted_teachers_with_same_name_are_distinct(tmp_path):
     import app
     conn = setup_db(tmp_path)
     c = conn.cursor()
+    c.execute('UPDATE students SET active=0')
+    conn.commit()
     c.execute('DELETE FROM teachers')
     c.execute('DELETE FROM teachers_archive')
     conn.commit()
