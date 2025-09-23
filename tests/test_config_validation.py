@@ -755,6 +755,61 @@ def test_reject_teacher_unavailability_that_breaks_minimum(tmp_path):
     assert updated_unavailability == original_unavailability
 
 
+def test_warn_when_disabling_last_teacher_for_subject(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    config_row = _config_row(app.DB_PATH)
+    teacher = conn.execute(
+        'SELECT * FROM teachers WHERE name=?',
+        ('Teacher B',),
+    ).fetchone()
+    assert teacher is not None
+
+    subject_ids = [int(sid) for sid in json.loads(teacher['subjects'])]
+    assert len(subject_ids) == 1
+    subject_id = subject_ids[0]
+    subject_row = conn.execute(
+        'SELECT name FROM subjects WHERE id=?',
+        (subject_id,),
+    ).fetchone()
+    assert subject_row is not None
+    subject_name = subject_row['name']
+
+    students = conn.execute('SELECT * FROM students').fetchall()
+    target_student = None
+    for student in students:
+        subjects = [int(sid) for sid in json.loads(student['subjects'])]
+        if subject_id in subjects:
+            target_student = student
+            break
+    assert target_student is not None
+    student_name = target_student['name']
+
+    conn.close()
+
+    data = _teacher_edit_form(config_row, teacher)
+    data.pop(f'teacher_need_lessons_{teacher["id"]}', None)
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    expected = ('error', f'No teacher available for {subject_name} for student {student_name}')
+    assert expected in flashes
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    updated = conn.execute(
+        'SELECT needs_lessons FROM teachers WHERE id=?',
+        (teacher['id'],),
+    ).fetchone()
+    conn.close()
+
+    assert updated['needs_lessons'] == teacher['needs_lessons']
+
+
 def test_reject_student_individual_min_exceeding_slots(tmp_path):
     import app
 
@@ -870,6 +925,12 @@ def test_teacher_without_lessons_flag_is_optional(tmp_path, monkeypatch):
     teacher_row = conn.execute('SELECT * FROM teachers ORDER BY id LIMIT 1').fetchone()
     tid = teacher_row['id']
     slots = config_row['slots_per_day']
+
+    conn.execute(
+        'INSERT INTO teachers (name, subjects, min_lessons, max_lessons, needs_lessons) VALUES (?, ?, ?, ?, ?)',
+        ('Backup Teacher', teacher_row['subjects'], None, None, 1),
+    )
+    conn.commit()
 
     data = _teacher_edit_form(config_row, teacher_row)
     data.add('allow_repeats', '1')

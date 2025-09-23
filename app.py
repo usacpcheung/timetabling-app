@@ -112,6 +112,18 @@ def _teacher_needs_lessons(row):
         return True
 
 
+def _student_is_active(row):
+    """Return ``True`` when a student row is marked as active."""
+
+    value = _get_row_value(row, 'active', 1)
+    if value is None:
+        return True
+    try:
+        return bool(int(value))
+    except (TypeError, ValueError):
+        return True
+
+
 def init_db():
     """Create the SQLite tables and populate default rows.
 
@@ -1857,21 +1869,67 @@ def config():
         # Build helper maps used when validating group changes. These maps
         # describe which teachers can teach each subject, what subjects every
         # student requires and any existing teacher blocks.
+        def _normalize_subject_set(raw):
+            result = set()
+            if not raw:
+                return result
+            try:
+                parsed = json.loads(raw)
+            except (TypeError, ValueError):
+                return result
+            for item in parsed:
+                try:
+                    result.add(int(item))
+                except (TypeError, ValueError):
+                    continue
+            return result
+
         c.execute('SELECT id, subjects, needs_lessons FROM teachers')
         trows = c.fetchall()
-        teacher_map_validate = {
-            t['id']: json.loads(t['subjects'])
-            for t in trows
-            if _teacher_needs_lessons(t)
-        }
-        c.execute('SELECT id, subjects FROM students')
+        teacher_map_validate = {}
+        for t in trows:
+            if not _teacher_needs_lessons(t):
+                continue
+            teacher_map_validate[t['id']] = _normalize_subject_set(t['subjects'])
+        c.execute('SELECT id, name, subjects, active FROM students')
         srows = c.fetchall()
-        student_subj_map = {s['id']: set(json.loads(s['subjects'])) for s in srows}
+        student_subj_map = {}
+        student_meta = {}
+        for s in srows:
+            student_subj_map[s['id']] = _normalize_subject_set(s['subjects'])
+            student_meta[s['id']] = {
+                'name': _get_row_value(s, 'name', f"Student {s['id']}") or f"Student {s['id']}",
+                'active': _student_is_active(s),
+            }
         c.execute('SELECT student_id, teacher_id FROM student_teacher_block')
         block_rows = c.fetchall()
         block_map_validate = {}
         for r in block_rows:
             block_map_validate.setdefault(r['student_id'], set()).add(r['teacher_id'])
+
+        c.execute('SELECT id, name FROM subjects')
+        subject_name_map = {row['id']: row['name'] for row in c.fetchall()}
+
+        for sid, meta in student_meta.items():
+            if not meta['active']:
+                continue
+            required_subjects = student_subj_map.get(sid, set())
+            if not required_subjects:
+                continue
+            blocked_teachers = block_map_validate.get(sid, set())
+            for subj in required_subjects:
+                available = any(
+                    subj in tsubs and tid not in blocked_teachers
+                    for tid, tsubs in teacher_map_validate.items()
+                )
+                if not available:
+                    subject_label = subject_name_map.get(subj) or str(subj)
+                    flash(
+                        f'No teacher available for {subject_label} for student {meta["name"]}',
+                        'error',
+                    )
+                    has_error = True
+                    break
 
         # === Update group definitions ===
         # Every existing group is processed. We first handle deletions and then
