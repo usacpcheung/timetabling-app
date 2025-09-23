@@ -810,6 +810,66 @@ def test_warn_when_disabling_last_teacher_for_subject(tmp_path):
     assert updated['needs_lessons'] == teacher['needs_lessons']
 
 
+def test_group_validation_reports_subject_name_when_teacher_blocked(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    config_row = _config_row(app.DB_PATH)
+
+    subject_row = conn.execute(
+        'SELECT id, name FROM subjects WHERE name=?',
+        ('Science',),
+    ).fetchone()
+    assert subject_row is not None
+
+    teacher_row = conn.execute(
+        'SELECT id FROM teachers WHERE name=?',
+        ('Teacher B',),
+    ).fetchone()
+    assert teacher_row is not None
+
+    member_rows = conn.execute(
+        'SELECT id FROM students WHERE name IN (?, ?)',
+        ('Student 2', 'Student 4'),
+    ).fetchall()
+    member_ids = [row['id'] for row in member_rows]
+    assert member_ids, 'Expected at least one student requiring Science'
+
+    groups_before = conn.execute('SELECT COUNT(*) FROM groups').fetchone()[0]
+
+    for sid in member_ids:
+        conn.execute(
+            'INSERT INTO student_teacher_block (student_id, teacher_id) VALUES (?, ?)',
+            (sid, teacher_row['id']),
+        )
+
+    conn.commit()
+    conn.close()
+
+    data = _valid_config_form(config_row)
+    group_name = 'Science Blocked Group'
+    data.add('new_group_name', group_name)
+    data.setlist('new_group_subjects', [str(subject_row['id'])])
+    data.setlist('new_group_members', [str(sid) for sid in member_ids])
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    expected_message = f'No teacher available for {subject_row["name"]} in group {group_name}'
+    assert ('error', expected_message) in flashes
+
+    assert _config_row(app.DB_PATH) == config_row
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    groups_after = conn.execute('SELECT COUNT(*) FROM groups').fetchone()[0]
+    conn.close()
+
+    assert groups_after == groups_before
+
+
 def test_reject_student_individual_min_exceeding_slots(tmp_path):
     import app
 

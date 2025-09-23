@@ -1982,7 +1982,8 @@ def config():
                         ok = True
                         break
                 if not ok:
-                    flash(f'No teacher available for {subj} in group {name}', 'error')
+                    subject_label = subject_name_map.get(subj) or str(subj)
+                    flash(f'No teacher available for {subject_label} in group {name}', 'error')
                     has_error = True
                     valid = False
                     break
@@ -2019,7 +2020,8 @@ def config():
                         ok = True
                         break
                 if not ok:
-                    flash(f'No teacher available for {subj} in group {ng_name}', 'error')
+                    subject_label = subject_name_map.get(subj) or str(subj)
+                    flash(f'No teacher available for {subject_label} in group {ng_name}', 'error')
                     has_error = True
                     valid = False
                     break
