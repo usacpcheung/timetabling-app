@@ -141,6 +141,19 @@
                 <li>Min/Max lessons, Allow Repeats, Max Repeats, Allow/Prefer Consecutive, Allow Different Teachers per Subject, Blocked Slots.</li>
                 <li>These settings override the global defaults for that student only.</li>
             </ul>
+
+            <p class="mb-2"><strong>Validation reminders for a healthy configuration</strong>:</p>
+            <ul class="list-disc ms-6 mb-4">
+                <li><strong>Slots per day &amp; slot duration</strong>: Must be positive integers. Provide a start time for every slot; each start must be at least one <em>slot duration</em> after the previous start.</li>
+                <li><strong>Global lesson limits</strong>: Student and teacher minimum/maximum lessons must be zero or greater, the minimum cannot exceed the maximum, and both must be no higher than the number of slots per day.</li>
+                <li><strong>Per-person overrides</strong>: Teacher and student overrides obey the same non-negative / min ≤ max / ≤ slots-per-day rules. Student minimums must also fit within the remaining slots after marking unavailability.</li>
+                <li><strong>Repeat options</strong>: Repeat settings only apply when <em>Allow repeated lessons?</em> is enabled. With repeats on, <em>Max repeats</em> must be at least 2, <em>Prefer consecutive</em> requires <em>Allow consecutive</em>, and <em>consecutive_weight</em> must be an integer ≥ 1.</li>
+                <li><strong>Objective weights</strong>: <em>attendance_weight</em> and <em>balance_weight</em> must be positive integers. <em>well_attend_weight</em> and <em>group_weight</em> must be zero or greater; negative values are rejected.</li>
+                <li><strong>Solver time limit</strong>: Enter a positive integer (seconds) or leave blank to keep the saved limit.</li>
+                <li><strong>Groups &amp; teachers</strong>: Every group needs at least one subject and member. Each listed subject must be required by all members and have at least one unblocked teacher able to teach it.</li>
+                <li><strong>Teacher blocks</strong>: You cannot block a teacher if that would remove the only available teacher for a required group subject or if a fixed assignment already pairs them with the student.</li>
+                <li><strong>Deleting students</strong>: Remove the student from all groups and fixed assignments before deletion; the form will stop deletions that violate those rules.</li>
+            </ul>
         </div>
     </div>
     <!-- General settings -->
