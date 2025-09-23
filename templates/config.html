@@ -86,60 +86,76 @@
     </h2>
     <div id="body-help" class="hidden p-4 border border-b-0 border-emerald-200">
         <div class="prose max-w-none text-sm text-emerald-900">
-            <p class="mb-2"><strong>Weights and Toggles</strong> control solver priorities and feasibility rules. Weights are relative (larger means stronger preference). Values are internally scaled for the solver; keep using the same units.</p>
-            <ul class="list-disc ms-6 mb-4">
-                <li><strong>Min/Max lessons per student</strong>: Global defaults. Individual student overrides (Advanced) take precedence.</li>
-                <li><strong>Teacher min/max lessons</strong>: Global defaults used when a teacher’s own Min/Max is left blank.</li>
-                <li><strong>Allow repeated lessons</strong>: If off, each (student, teacher, subject) can occur at most once.</li>
-                <li><strong>Max repeats</strong>: Upper limit when repeats are allowed (applies per student–teacher–subject).</li>
-                <li><strong>Repeatable subjects</strong>: Advanced student setting that restricts which subjects may repeat. Leave blank to allow repeats for all of a student's subjects.</li>
-                <li><strong>Allow consecutive repeats</strong>: If off, repeated lessons for the same triple cannot be in adjacent slots.</li>
-                <li><strong>Prefer consecutive repeats</strong>: Adds a bonus to schedule back‑to‑back repeats (only takes effect when consecutive is allowed).</li>
-                <li><strong>Allow different teachers per subject</strong>: If off, a student can study a subject with at most one teacher; repeats with that same teacher are still allowed.</li>
-                <li><strong>Require all subjects</strong>: Ensures each active student receives at least one lesson for every listed subject.</li>
+            <h3 class="text-base font-semibold text-emerald-900">Weights &amp; Toggles</h3>
+            <p class="leading-6">Weights and toggles control solver priorities and feasibility rules. Weights are relative (larger means stronger preference), and values are internally scaled for the solver—keep using the same units.</p>
+            <ul class="list-disc ms-6 mb-6 space-y-1">
+                <li><strong>Min/Max lessons per student:</strong> Set global defaults. Student overrides in <em>Advanced</em> take precedence.</li>
+                <li><strong>Teacher min/max lessons:</strong> Provide defaults that are used when a teacher’s own limits are blank.</li>
+                <li><strong>Allow repeated lessons:</strong> If disabled, each student–teacher–subject combination can occur at most once.</li>
+                <li><strong>Max repeats:</strong> Cap repeats when they are allowed (applies per student–teacher–subject).</li>
+                <li><strong>Repeatable subjects:</strong> Limit which subjects may repeat for a student; leave blank to allow all of their subjects.</li>
+                <li><strong>Allow consecutive repeats:</strong> When off, repeated lessons for the same triple cannot be adjacent slots.</li>
+                <li><strong>Prefer consecutive repeats:</strong> Adds a bonus for back-to-back repeats (only effective when consecutive repeats are allowed).</li>
+                <li><strong>Allow different teachers per subject:</strong> If disabled, a student can study a subject with at most one teacher (repeats with that teacher remain allowed).</li>
+                <li><strong>Require all subjects:</strong> Guarantees each active student receives at least one lesson for every listed subject.</li>
+                <li><strong>Use attendance priority:</strong> Redirects lessons toward subjects that fall below their <em>Min&nbsp;%</em> target.</li>
+                <li><strong>Balance teacher load:</strong> When enabled, the solver discourages uneven totals between teachers.</li>
             </ul>
 
-            <p class="mb-2"><strong>Objective Weights</strong> influence what the solver prefers when multiple schedules are feasible:</p>
-            <ul class="list-disc ms-6 mb-4">
-                <li><strong>consecutive_weight</strong>: Reward for consecutive repeats (typical 0–10). 0 disables the preference.</li>
-                <li><strong>balance_weight</strong>: Penalty on the gap between most/least busy teachers (typical 0–10). 0 disables load balancing.</li>
-                <li><strong>attendance_weight</strong>: Maximum extra weight for subjects below a subject’s Min% target; the actual weight grows as the attendance percentage falls short (typical 0–20).</li>
-                <li><strong>well_attend_weight</strong>: Weight to use for subjects already meeting the Min% target (typical 0.5–2.0).</li>
-                <li><strong>group_weight</strong>: Multiplier for group lessons to bias scheduling toward groups (typical 1.0–3.0). Set to 0 to remove the bias.</li>
+            <h3 class="text-base font-semibold text-emerald-900">Weight controls</h3>
+            <ul class="list-disc ms-6 mb-6 space-y-1">
+                <li><strong>Consecutive preference weight:</strong> Sets the bonus for scheduling repeated lessons back-to-back when <em>Prefer consecutive repeats</em> is on (typical 1–3).</li>
+                <li><strong>Attendance weight:</strong> Bonus added when attendance is below the <em>Min&nbsp;%</em> target; higher values more strongly pull lessons toward low-attendance subjects (typical 5–25).</li>
+                <li><strong>Well-attended weight:</strong> Baseline weight applied to subjects already meeting their attendance target; lowering it reduces focus on subjects that are on track (typical 0.5–2.0).</li>
+                <li><strong>Group weight:</strong> Multiplier that biases the solver toward selecting group lessons (typical 1.0–3.0). Set to 0 to remove the bias.</li>
+                <li><strong>Balance weight:</strong> Controls how strongly uneven teacher workloads are penalised when <em>Balance teacher load</em> is enabled (typical 5–15).</li>
             </ul>
 
-            <p class="mb-2"><strong>Attendance Priority</strong> (optional):</p>
-            <ul class="list-disc ms-6 mb-4">
-                <li>Enable <em>Attendance Priority</em> to favor subjects where a student’s attendance % is below the <em>Subjects → Min %</em> threshold.</li>
-                <li>Weights for below-target subjects scale from <em>well_attend_weight</em> up to <em>well_attend_weight</em> + <em>attendance_weight</em> based on how far the attendance percentage is from the target.</li>
-                <li>For groups, the median attendance among members is used to decide the weight.</li>
-                <li>Note: Combining <em>Require All Subjects</em> and <em>Attendance Priority</em> can slow solving.</li>
+            <h3 class="text-base font-semibold text-emerald-900">Attendance Priority (optional)</h3>
+            <ul class="list-disc ms-6 mb-6 space-y-1">
+                <li>Enable <em>Attendance Priority</em> to favor subjects where a student’s attendance percentage is below the <em>Subjects → Min %</em> threshold.</li>
+                <li>Below-target subjects scale from <em>well_attend_weight</em> up to <em>well_attend_weight</em> + <em>attendance_weight</em> based on how far the attendance percentage is from the target.</li>
+                <li>Groups use the median attendance among members to decide the weight.</li>
+                <li>Using <em>Require All Subjects</em> together with <em>Attendance Priority</em> can increase solve time.</li>
             </ul>
 
-            <p class="mb-2"><strong>Locations</strong> (optional):</p>
-            <ul class="list-disc ms-6 mb-4">
-                <li>If no locations exist, lessons are scheduled without location constraints.</li>
-                <li>If locations exist, each lesson is assigned a location; at most one lesson per location per slot.</li>
-                <li>Use <em>Student/Group → Locations</em> to restrict which locations can be used for that entity.</li>
+            <h3 class="text-base font-semibold text-emerald-900">Locations (optional)</h3>
+            <ul class="list-disc ms-6 mb-6 space-y-1">
+                <li>Without locations, lessons are scheduled with no location constraints.</li>
+                <li>With locations, each lesson receives a location and each slot can host at most one lesson per location.</li>
+                <li>Use <em>Student/Group → Locations</em> to restrict which locations specific entities may use.</li>
             </ul>
 
-            <p class="mb-2"><strong>Unavailability & Blocking</strong>:</p>
-            <ul class="list-disc ms-6 mb-4">
+            <h3 class="text-base font-semibold text-emerald-900">Unavailability &amp; Blocking</h3>
+            <ul class="list-disc ms-6 mb-6 space-y-1">
                 <li><em>Teacher Unavailability</em> marks slots a teacher cannot teach.</li>
                 <li><em>Student Advanced → Blocked Slots</em> prevents any lesson for that student in the selected slots.</li>
-                <li><em>Student → Forbidden Teachers</em> blocks specific teachers for that student. Group pseudo‑students inherit the union of member blocks.</li>
+                <li><em>Student → Forbidden Teachers</em> blocks specific teachers for that student. Group pseudo-students inherit the union of member blocks.</li>
             </ul>
 
-            <p class="mb-2"><strong>Fixed Assignments</strong>:</p>
-            <ul class="list-disc ms-6 mb-4">
-                <li>Force specific teacher/student(or group)/subject/slot combinations.</li>
-                <li>When both a student and a group are provided on creation, the entry is saved for the <em>group</em> only if <em>group_weight &gt; 0</em> (or no student is chosen).</li>
+            <h3 class="text-base font-semibold text-emerald-900">Fixed Assignments</h3>
+            <ul class="list-disc ms-6 mb-6 space-y-1">
+                <li>Use to force specific teacher, student (or group), subject, and slot combinations.</li>
+                <li>If both a student and a group are selected, the entry is saved for the group only when <em>group_weight &gt; 0</em> (or no student is chosen).</li>
             </ul>
 
-            <p class="mb-2"><strong>Per‑Student Overrides</strong> (Advanced dialog):</p>
-            <ul class="list-disc ms-6">
-                <li>Min/Max lessons, Allow Repeats, Max Repeats, Allow/Prefer Consecutive, Allow Different Teachers per Subject, Blocked Slots.</li>
-                <li>These settings override the global defaults for that student only.</li>
+            <h3 class="text-base font-semibold text-emerald-900">Per-student Overrides</h3>
+            <ul class="list-disc ms-6 mb-6 space-y-1">
+                <li>Adjust Min/Max lessons, Allow Repeats, Max Repeats, Allow/Prefer Consecutive, Allow Different Teachers per Subject, and Blocked Slots.</li>
+                <li>Overrides apply only to the selected student and take priority over global defaults.</li>
+            </ul>
+
+            <h3 class="text-base font-semibold text-emerald-900">Validation reminders for a healthy configuration</h3>
+            <ul class="list-disc ms-6 space-y-1">
+                <li><strong>Slots per day &amp; slot duration:</strong> Use positive integers. Provide a start time for every slot, and make each start at least one <em>slot duration</em> after the previous start.</li>
+                <li><strong>Global lesson limits:</strong> Student and teacher minimums/maximums must be zero or greater, the minimum cannot exceed the maximum, and both must be no higher than the number of slots per day.</li>
+                <li><strong>Per-person overrides:</strong> Teacher and student overrides follow the same non-negative, min ≤ max, ≤ slots-per-day rules. Student minimums must fit within the remaining slots after marking unavailability.</li>
+                <li><strong>Repeat options:</strong> Repeat settings apply only when <em>Allow repeated lessons?</em> is enabled. With repeats on, <em>Max repeats</em> must be at least 2, <em>Prefer consecutive</em> requires <em>Allow consecutive</em>, and <em>consecutive_weight</em> must be an integer ≥ 1.</li>
+                <li><strong>Objective weights:</strong> <em>attendance_weight</em> and <em>balance_weight</em> must be positive integers. <em>well_attend_weight</em> and <em>group_weight</em> must be zero or greater—negative values are rejected.</li>
+                <li><strong>Solver time limit:</strong> Enter a positive integer (seconds) or leave blank to keep the saved limit.</li>
+                <li><strong>Groups &amp; teachers:</strong> Every group needs at least one subject and member. Each subject must be required by all members and have an available teacher who is not blocked.</li>
+                <li><strong>Teacher blocks:</strong> You cannot block a teacher if that removes the only available teacher for a required group subject or conflicts with a fixed assignment.</li>
+                <li><strong>Deleting students:</strong> Remove the student from all groups and fixed assignments before deletion; the form prevents deletions that violate those rules.</li>
             </ul>
         </div>
     </div>
