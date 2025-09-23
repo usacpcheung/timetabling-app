@@ -1299,6 +1299,19 @@ def config():
     c = conn.cursor()
     if request.method == 'POST':
         has_error = False
+        assign_ids_present = set()
+        for raw_id in request.form.getlist('assign_id'):
+            try:
+                assign_ids_present.add(int(raw_id))
+            except (TypeError, ValueError):
+                continue
+        assign_delete_ids = set()
+        for raw_id in request.form.getlist('assign_delete'):
+            try:
+                assign_delete_ids.add(int(raw_id))
+            except (TypeError, ValueError):
+                continue
+        assign_delete_ids &= assign_ids_present
         try:
             slots_per_day = int(request.form['slots_per_day'])
             slot_duration = int(request.form['slot_duration'])
@@ -1686,9 +1699,13 @@ def config():
         block_map_current = {}
         for r in br_rows:
             block_map_current.setdefault(r['student_id'], set()).add(r['teacher_id'])
-        c.execute('SELECT teacher_id, student_id FROM fixed_assignments WHERE student_id IS NOT NULL')
+        c.execute('SELECT id, teacher_id, student_id FROM fixed_assignments WHERE student_id IS NOT NULL')
         fr_rows = c.fetchall()
-        fixed_pairs = {(r['student_id'], r['teacher_id']) for r in fr_rows}
+        fixed_pairs = {
+            (r['student_id'], r['teacher_id'])
+            for r in fr_rows
+            if r['student_id'] is not None and r['id'] not in assign_delete_ids
+        }
         # update students
         student_ids = request.form.getlist('student_id')
         for sid in student_ids:
@@ -2141,11 +2158,8 @@ def config():
                 has_error = True
 
         # update fixed assignments
-        assign_ids = request.form.getlist('assign_id')
-        del_assign = set(request.form.getlist('assign_delete'))
-        for aid in assign_ids:
-            if aid in del_assign:
-                c.execute('DELETE FROM fixed_assignments WHERE id=?', (int(aid),))
+        for aid in assign_delete_ids:
+            c.execute('DELETE FROM fixed_assignments WHERE id=?', (int(aid),))
         na_student = request.form.get('new_assign_student')
         na_group = request.form.get('new_assign_group')
         na_teacher = request.form.get('new_assign_teacher')
