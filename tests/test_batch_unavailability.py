@@ -22,6 +22,7 @@ def test_batch_teacher_unavailability(tmp_path):
         ('slots_per_day', '8'), ('slot_duration', '30'),
         ('min_lessons', '1'), ('max_lessons', '4'),
         ('teacher_min_lessons', '1'), ('teacher_max_lessons', '8'),
+        ('allow_repeats', '1'),
         ('max_repeats', '2'), ('consecutive_weight', '3'),
         ('attendance_weight', '10'), ('well_attend_weight', '1'),
         ('group_weight', '2.0'), ('balance_weight', '1'),

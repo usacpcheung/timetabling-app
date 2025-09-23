@@ -38,6 +38,7 @@ def test_deleted_teachers_with_same_name_are_distinct(tmp_path):
         'max_lessons': '4',
         'teacher_min_lessons': '1',
         'teacher_max_lessons': '8',
+        'allow_repeats': '1',
         'max_repeats': '2',
         'consecutive_weight': '3',
         'attendance_weight': '10',
@@ -46,7 +47,14 @@ def test_deleted_teachers_with_same_name_are_distinct(tmp_path):
         'balance_weight': '1',
         **slot_starts,
     }
-    data = dict(base_data, **{'teacher_id': str(first_id), f'teacher_delete_{first_id}': 'on'})
+    data = dict(
+        base_data,
+        **{
+            'teacher_id': str(first_id),
+            f'teacher_delete_{first_id}': 'on',
+            f'teacher_need_lessons_{first_id}': '1',
+        },
+    )
     with app.app.test_request_context('/config', method='POST', data=data):
         app.config()
 
@@ -61,7 +69,14 @@ def test_deleted_teachers_with_same_name_are_distinct(tmp_path):
     conn.commit()
     conn.close()
 
-    data2 = dict(base_data, **{'teacher_id': str(second_id), f'teacher_delete_{second_id}': 'on'})
+    data2 = dict(
+        base_data,
+        **{
+            'teacher_id': str(second_id),
+            f'teacher_delete_{second_id}': 'on',
+            f'teacher_need_lessons_{second_id}': '1',
+        },
+    )
     with app.app.test_request_context('/config', method='POST', data=data2):
         app.config()
 

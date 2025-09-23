@@ -80,6 +80,38 @@ def get_db():
     return conn
 
 
+def _get_row_value(row, key, default=None):
+    """Return ``row[key]`` if available, otherwise ``default``.
+
+    ``sqlite3.Row`` objects expose a ``keys`` method, so we check for
+    membership before subscripting to avoid ``KeyError`` when migrating older
+    databases that may not yet have the requested column.
+    """
+
+    if row is None:
+        return default
+    if isinstance(row, dict):
+        return row.get(key, default)
+    if hasattr(row, 'keys') and key in row.keys():
+        try:
+            return row[key]
+        except (IndexError, KeyError):
+            return default
+    return default
+
+
+def _teacher_needs_lessons(row):
+    """Return ``True`` when a teacher row indicates lessons are required."""
+
+    value = _get_row_value(row, 'needs_lessons')
+    if value is None:
+        return True
+    try:
+        return bool(int(value))
+    except (TypeError, ValueError):
+        return True
+
+
 def init_db():
     """Create the SQLite tables and populate default rows.
 
@@ -155,8 +187,13 @@ def init_db():
             name TEXT UNIQUE,
             subjects TEXT,
             min_lessons INTEGER,
-            max_lessons INTEGER
+            max_lessons INTEGER,
+            needs_lessons INTEGER NOT NULL DEFAULT 1
         )''')
+    else:
+        if not column_exists('teachers', 'needs_lessons'):
+            c.execute('ALTER TABLE teachers ADD COLUMN needs_lessons INTEGER NOT NULL DEFAULT 1')
+        c.execute('UPDATE teachers SET needs_lessons = 1 WHERE needs_lessons IS NULL')
 
     if not table_exists('teachers_archive'):
         c.execute('''CREATE TABLE teachers_archive (
@@ -612,11 +649,14 @@ def init_db():
         c.execute('SELECT id, name FROM subjects')
         subj_map = {r['name']: r['id'] for r in c.fetchall()}
         teachers = [
-            ('Teacher A', json.dumps([subj_map['Math'], subj_map['English']]), None, None),
-            ('Teacher B', json.dumps([subj_map['Science']]), None, None),
-            ('Teacher C', json.dumps([subj_map['History']]), None, None),
+            ('Teacher A', json.dumps([subj_map['Math'], subj_map['English']]), None, None, 1),
+            ('Teacher B', json.dumps([subj_map['Science']]), None, None, 1),
+            ('Teacher C', json.dumps([subj_map['History']]), None, None, 1),
         ]
-        c.executemany('INSERT INTO teachers (name, subjects, min_lessons, max_lessons) VALUES (?, ?, ?, ?)', teachers)
+        c.executemany(
+            'INSERT INTO teachers (name, subjects, min_lessons, max_lessons, needs_lessons) VALUES (?, ?, ?, ?, ?)',
+            teachers,
+        )
         students = [
             ('Student 1', json.dumps([subj_map['Math'], subj_map['English']])),
             ('Student 2', json.dumps([subj_map['Math'], subj_map['Science']])),
@@ -912,7 +952,12 @@ def calculate_missing_and_counts(c, date):
             subjects = json.loads(row['subjects']) if row['subjects'] else []
         except (TypeError, ValueError, json.JSONDecodeError):
             subjects = []
-        teacher_data.append({'id': row['id'], 'name': row['name'], 'subjects': subjects})
+        teacher_data.append({
+            'id': row['id'],
+            'name': row['name'],
+            'subjects': subjects,
+            'needs_lessons': 1 if _teacher_needs_lessons(row) else 0,
+        })
         teacher_ids.add(row['id'])
 
     missing_teacher_ids = sorted(timetable_teachers - teacher_ids)
@@ -1565,8 +1610,11 @@ def config():
                     flash('Teacher min lessons greater than max for ' + name, 'error')
                     has_error = True
                     continue
-                c.execute('UPDATE teachers SET name=?, subjects=?, min_lessons=?, max_lessons=? WHERE id=?',
-                          (name, subj_json, min_val, max_val, int(tid)))
+                needs_lessons = 1 if request.form.get(f'teacher_need_lessons_{tid}') else 0
+                c.execute(
+                    'UPDATE teachers SET name=?, subjects=?, min_lessons=?, max_lessons=?, needs_lessons=? WHERE id=?',
+                    (name, subj_json, min_val, max_val, needs_lessons, int(tid)),
+                )
         new_tname = request.form.get('new_teacher_name')
         new_tsubs = [int(x) for x in request.form.getlist('new_teacher_subjects')]
         new_tmin = request.form.get('new_teacher_min')
@@ -1597,13 +1645,20 @@ def config():
                 has_error = True
                 invalid_teacher = True
             if not invalid_teacher:
-                c.execute('INSERT INTO teachers (name, subjects, min_lessons, max_lessons) VALUES (?, ?, ?, ?)',
-                          (new_tname, subj_json, min_val, max_val))
+                needs_lessons = 1 if request.form.get('new_teacher_need_lessons') else 0
+                c.execute(
+                    'INSERT INTO teachers (name, subjects, min_lessons, max_lessons, needs_lessons) VALUES (?, ?, ?, ?, ?)',
+                    (new_tname, subj_json, min_val, max_val, needs_lessons),
+                )
 
         # load current groups and fixed assignments for block validation
-        c.execute('SELECT id, subjects FROM teachers')
+        c.execute('SELECT id, subjects, needs_lessons FROM teachers')
         trows = c.fetchall()
-        teacher_map_block = {t['id']: json.loads(t['subjects']) for t in trows}
+        teacher_map_block = {
+            t['id']: json.loads(t['subjects'])
+            for t in trows
+            if _teacher_needs_lessons(t)
+        }
         c.execute('SELECT group_id, student_id FROM group_members')
         gm_rows = c.fetchall()
         group_members_block = {}
@@ -1802,9 +1857,13 @@ def config():
         # Build helper maps used when validating group changes. These maps
         # describe which teachers can teach each subject, what subjects every
         # student requires and any existing teacher blocks.
-        c.execute('SELECT id, subjects FROM teachers')
+        c.execute('SELECT id, subjects, needs_lessons FROM teachers')
         trows = c.fetchall()
-        teacher_map_validate = {t['id']: json.loads(t['subjects']) for t in trows}
+        teacher_map_validate = {
+            t['id']: json.loads(t['subjects'])
+            for t in trows
+            if _teacher_needs_lessons(t)
+        }
         c.execute('SELECT id, subjects FROM students')
         srows = c.fetchall()
         student_subj_map = {s['id']: set(json.loads(s['subjects'])) for s in srows}
@@ -2003,9 +2062,11 @@ def config():
         blocked_counts = {}
         for tid, slot in unav_set:
             blocked_counts[tid] = blocked_counts.get(tid, 0) + 1
-        c.execute('SELECT id, name, min_lessons FROM teachers')
+        c.execute('SELECT id, name, min_lessons, needs_lessons FROM teachers')
         teacher_rows = c.fetchall()
         for teacher in teacher_rows:
+            if not _teacher_needs_lessons(teacher):
+                continue
             tid = teacher['id']
             blocked = blocked_counts.get(tid, 0)
             effective_min = teacher['min_lessons'] if teacher['min_lessons'] is not None else t_min_lessons
@@ -2145,6 +2206,7 @@ def config():
     groups = [dict(g) for g in group_rows]
     # Convert stored subject ID lists to names for display
     for t in teachers:
+        t['needs_lessons'] = 1 if _teacher_needs_lessons(t) else 0
         t['subjects'] = json.dumps([subj_map.get(i, str(i)) for i in teacher_map.get(t['id'], [])])
     for s in students:
         s['subjects'] = json.dumps([subj_map.get(i, str(i)) for i in student_map.get(s['id'], [])])
@@ -2924,7 +2986,9 @@ def generate_schedule(target_date=None):
     solver_time_limit = cfg['solver_time_limit']
 
     c.execute('SELECT * FROM teachers')
-    teachers = c.fetchall()
+    teacher_rows = c.fetchall()
+    teachers = [t for t in teacher_rows if _teacher_needs_lessons(t)]
+    active_teacher_ids = {t['id'] for t in teachers}
 
     c.execute('SELECT * FROM students WHERE active=1')
     students = c.fetchall()
@@ -2955,11 +3019,13 @@ def generate_schedule(target_date=None):
         for sid in members:
             student_groups.setdefault(sid, []).append(gid)
     c.execute('SELECT * FROM teacher_unavailable')
-    unavailable = c.fetchall()
+    unavailable = [r for r in c.fetchall() if r['teacher_id'] in active_teacher_ids]
     c.execute('SELECT student_id, teacher_id FROM student_teacher_block')
     block_rows = c.fetchall()
     block_map_sched = {}
     for r in block_rows:
+        if r['teacher_id'] not in active_teacher_ids:
+            continue
         block_map_sched.setdefault(r['student_id'], set()).add(r['teacher_id'])
 
     for gid, members in group_members.items():
@@ -2977,6 +3043,8 @@ def generate_schedule(target_date=None):
     arows = c.fetchall()
     assignments_fixed = []
     for r in arows:
+        if r['teacher_id'] not in active_teacher_ids:
+            continue
         row = dict(r)
         if row.get('group_id'):
             row['student_id'] = offset + row['group_id']

@@ -73,6 +73,9 @@ def _teacher_edit_form(config_row, teacher_row):
     data.add(f'teacher_name_{tid}', teacher_row['name'])
     for subj_id in json.loads(teacher_row['subjects']):
         data.add(f'teacher_subjects_{tid}', str(subj_id))
+    needs_lessons = teacher_row['needs_lessons'] if 'needs_lessons' in teacher_row.keys() else 1
+    if needs_lessons:
+        data.add(f'teacher_need_lessons_{tid}', '1')
     return data
 
 
@@ -856,3 +859,55 @@ def test_reject_student_individual_min_greater_than_max(tmp_path):
 
     assert updated['min_lessons'] == student['min_lessons']
     assert updated['max_lessons'] == student['max_lessons']
+
+
+def test_teacher_without_lessons_flag_is_optional(tmp_path, monkeypatch):
+    import app
+    from ortools.sat.python import cp_model
+
+    conn = setup_db(tmp_path)
+    config_row = _config_row(app.DB_PATH)
+    teacher_row = conn.execute('SELECT * FROM teachers ORDER BY id LIMIT 1').fetchone()
+    tid = teacher_row['id']
+    slots = config_row['slots_per_day']
+
+    data = _teacher_edit_form(config_row, teacher_row)
+    data.add('allow_repeats', '1')
+    data.setlist('teacher_min_lessons', ['2'])
+    data.setlist(f'teacher_min_{tid}', ['2'])
+    data.pop(f'teacher_need_lessons_{tid}', None)
+    data.setlist('new_unavail_teacher', [str(tid)])
+    data.setlist('new_unavail_slot', [str(i) for i in range(1, slots + 1)])
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert not any(category == 'error' for category, _ in flashes)
+
+    conn.close()
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    stored = conn.execute('SELECT needs_lessons, min_lessons FROM teachers WHERE id=?', (tid,)).fetchone()
+    conn.close()
+    assert stored['needs_lessons'] == 0
+    assert stored['min_lessons'] == 2
+
+    captured = {}
+
+    def fake_build_model(full_students, teachers, *args, **kwargs):
+        captured['teachers'] = list(teachers)
+        return object(), {}, {}, None
+
+    def fake_solve_and_print(*args, **kwargs):
+        return cp_model.OPTIMAL, [], None, []
+
+    monkeypatch.setattr(app, 'build_model', fake_build_model)
+    monkeypatch.setattr(app, 'solve_and_print', fake_solve_and_print)
+
+    with app.app.test_request_context('/generate'):
+        app.generate_schedule(target_date='2024-01-02')
+
+    assert captured['teachers']
+    assert all(app._get_row_value(row, 'id') != tid for row in captured['teachers'])

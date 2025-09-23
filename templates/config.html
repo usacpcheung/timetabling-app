@@ -280,6 +280,9 @@
                       {% endfor %}
                   </select>
             </label>
+            <label class="flex items-center gap-2">Need lessons?
+                <input type="checkbox" name="teacher_need_lessons_{{ t['id'] }}" value="1" {% if t['needs_lessons']|default(1) %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
+            </label>
             <label class="block">Min:
                 <input type="number" name="teacher_min_{{ t['id'] }}" value="{{ t['min_lessons'] if t['min_lessons'] is not none else '' }}" class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
@@ -299,6 +302,9 @@
                       <option value="{{ sub['id'] }}">{{ sub['name'] }}</option>
                       {% endfor %}
                   </select>
+            </label>
+            <label class="flex items-center gap-2">Need lessons?
+                <input type="checkbox" name="new_teacher_need_lessons" value="1" checked class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
             </label>
             <label class="block">Min:
                 <input type="number" name="new_teacher_min" class="border border-emerald-300 rounded-lg p-2.5 w-full">
