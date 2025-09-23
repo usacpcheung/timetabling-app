@@ -1,20 +1,41 @@
 # Timetabling Optimization App
 
-A local-first, browser-based school timetabling application built with **Python (Flask)** and **SQLite**. Configure teachers, students, locations and constraints in the browser, then let OR-Tools CP-SAT build an optimized timetable for the selected day.
+A local-first, browser-based school timetabling application built with **Flask**, **SQLite** and **OR-Tools CP-SAT**. Manage teachers, students, groups, locations and solver preferences from a single interface, then generate and fine-tune optimized schedules without leaving the browser.
 
----
+## Table of contents
 
-## 💡 Key Features
+- [Overview](#overview)
+- [Key features](#key-features)
+- [Project structure](#project-structure)
+- [Quick start](#quick-start)
+- [Architecture at a glance](#architecture-at-a-glance)
+- [Data and persistence](#data-and-persistence)
+- [Configuration workflow](#configuration-workflow)
+  - [General settings](#general-settings)
+  - [Teachers and availability](#teachers-and-availability)
+  - [Students and groups](#students-and-groups)
+  - [Locations](#locations)
+  - [Presets](#presets)
+- [Managing timetables](#managing-timetables)
+- [Validation safeguards](#validation-safeguards)
+- [Testing and maintenance](#testing-and-maintenance)
+- [Troubleshooting tips](#troubleshooting-tips)
 
-- Manage teachers, students, subjects, groups and locations from a single configuration page, including availability, fixed lessons and per-student restrictions. 【F:app.py†L1233-L2268】【F:app.py†L288-L356】
-- Record nuanced student rules such as teacher blocks, repeat limits, slot unavailability and permitted locations. 【F:app.py†L1709-L1863】【F:app.py†L1968-L2033】
-- Generate timetables with OR-Tools CP-SAT, balancing teacher workloads, honoring attendance priorities, respecting location limits and applying a configurable solver time limit. 【F:app.py†L2899-L3159】
-- View timetables by teacher or location, highlight unmet subject requirements, and inspect lesson counts and group membership snapshots. 【F:app.py†L3238-L3412】
-- Edit saved timetables, assign worksheets, or remove lessons while attendance logs stay in sync. 【F:app.py†L3591-L3790】
-- Track attendance history for active and archived students with automatic updates from every timetable. 【F:app.py†L2899-L3099】【F:app.py†L3490-L3546】
-- Save, load and migrate configuration presets or export/import full database backups directly from the UI. 【F:app.py†L636-L2268】【F:app.py†L4118-L4208】
+## Overview
 
-## 📦 Project Structure
+The application focuses on a local, privacy-friendly workflow. All data lives in a writable `data/` directory beside the codebase, and the bundled SQLite database is created on first launch with a small demo scenario so you can immediately experiment with constraints and solver behaviour. The UI is built with Tailwind CSS and Flowbite components, while the solver logic lives in a dedicated module powered by Google OR-Tools.
+
+## Key features
+
+- Configure teachers, students, subjects, groups and locations from a single configuration page, including availability, fixed lessons and per-student restrictions.
+- Capture nuanced student rules such as teacher blocks, repeat limits, slot unavailability and permitted locations.
+- Generate timetables with OR-Tools CP-SAT, balancing teacher workloads, honoring attendance priorities, respecting location limits and applying a configurable solver time limit.
+- Switch between teacher and location views, highlight unmet subject requirements, and inspect lesson counts and group membership snapshots for each schedule.
+- Edit saved timetables, assign worksheets, or remove lessons while attendance logs stay in sync.
+- Track attendance history for active and archived students with automatic updates from every timetable.
+- Snapshot and migrate configuration presets or export/import complete database backups directly from the UI.
+
+## Project structure
 
 ```
 app.py                          # Flask routes, data access, presets and backup utilities
@@ -42,29 +63,37 @@ tests/                          # Unit tests covering validation helpers
 tools/                          # Maintenance scripts for snapshots, presets and worksheets
 ```
 
-## ▶️ Running
+## Quick start
 
-### Python dependencies
+### Python environment
 
-Create a virtual environment and install the required packages:
+1. Ensure Python 3.10+ is installed.
+2. Create and activate a virtual environment:
 
-```bash
-python -m venv .venv
-source .venv/bin/activate  # On Windows use .venv\Scripts\activate
-pip install -r requirements.txt
-```
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate  # On Windows use .venv\Scripts\activate
+   ```
 
-Start the development server:
+3. Install the required backend dependencies:
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+### Launch the development server
+
+Start Flask in development mode:
 
 ```bash
 python app.py
 ```
 
-The app will be available at `http://localhost:5000`. The SQLite database is stored in `data/timetable.db` relative to the project root. When deploying on Windows for all users, ensure the `data` directory is writable so the application can create and update the database. 【F:app.py†L31-L73】
+The app runs at `http://localhost:5000` by default. A SQLite database is stored at `data/timetable.db`; the folder must remain writable so the application can create, migrate and back up data. Windows users can double-click `run_app.bat` for a convenience launcher.
 
-### Front-end tooling
+### Front-end assets
 
-Tailwind CSS **4.1.11** and Flowbite **3.1.2** are bundled locally. Install the Node dependencies once:
+Tailwind CSS **4.1.11** and Flowbite **3.1.2** are bundled locally. Install Node dependencies once:
 
 ```bash
 npm install
@@ -76,55 +105,85 @@ Rebuild the stylesheet after changing any template or Tailwind source file:
 npm run build:css
 ```
 
-For rapid development you can also run `npm run watch:css` to keep the CSS in sync while editing. The generated CSS is written to `static/dist/app.css` and served by Flask. 【F:package.json†L1-L15】
+During active development, run `npm run watch:css` to keep the generated CSS (`static/dist/app.css`) in sync while editing.
 
-## ⚙️ Configuration Tour
+## Architecture at a glance
 
-Open `/config` to manage all scheduling inputs. Subjects are defined separately and then attached to teachers, students and groups. The default database contains a simple demo scenario to get you started. 【F:app.py†L1233-L2268】
+- `app.py` hosts the Flask application: route handlers, configuration forms, validation helpers, preset management and backup utilities live here.
+- `cp_sat_timetable.py` encapsulates the CP-SAT model construction. It exposes helpers for building the constraint model, tracking assumption literals for diagnostics, and extracting solutions.
+- Templates under `templates/` render the UI, with supporting JavaScript housed in `static/` for dynamic forms, timetable manipulation and Flowbite tweaks.
+- A lightweight test suite in `tests/` exercises critical validation logic used when configuring teachers, students and fixed assignments.
+
+Refer to `CODE_GUIDE.txt` for a guided walkthrough of how these pieces interact.
+
+## Data and persistence
+
+- On the first run the app seeds the database with a demo timetable configuration: core subjects, three example teachers and nine students. Feel free to replace or extend these records once you are familiar with the workflow.
+- Database schema migrations run automatically via `init_db()` whenever the application starts. Existing data is preserved, new columns are added when required, and subject references are normalised to integer identifiers.
+- Presets store configuration-only snapshots. Full database backups (including timetables, worksheets and attendance logs) can be created, downloaded or restored from the *Manage Timetables* interface.
+- The solver progress snapshot recorded in `timetable_snapshot` makes it easy to inspect missing subjects, lesson counts and per-location allocations for historic runs.
+
+## Configuration workflow
+
+Visit `/config` after launching the server to manage all scheduling inputs. The default data gives you a starting point for experimentation.
 
 ### General settings
 
-- **Slots per day**, **slot duration** and **slot start times** define the timetable grid. Start times must respect the duration so slots do not overlap. 【F:app.py†L1297-L1346】
-- Set global minimum/maximum lessons for students and teachers. Per-teacher or per-student overrides can relax these defaults. 【F:app.py†L1347-L1438】【F:app.py†L1678-L1763】
-- Toggle repeat lessons and control their behaviour (maximum count, whether consecutive slots are allowed or preferred, and the weight applied to consecutive runs). 【F:app.py†L1439-L1509】
-- Decide if the solver must schedule every subject for every student (**Require all subjects?**). 【F:app.py†L1510-L1534】
-- Attendance prioritisation boosts subjects that fall below a configurable attendance percentage and applies a separate weight once the target is met. Combine with **Well-attended weight** for nuanced control. 【F:app.py†L1535-L1568】
-- **Group weight** biases joint lessons, **Balance teacher load** minimises workload imbalance, and **Solver time limit** caps CP-SAT runtime in seconds. 【F:app.py†L1569-L1599】【F:app.py†L1420-L1445】
-- Allow or forbid a student taking a subject with multiple teachers globally or per student. 【F:app.py†L1500-L1518】【F:app.py†L1661-L1706】
+- Configure **slots per day**, **slot duration** and **slot start times** to define the timetable grid. Times must respect the duration so slots do not overlap.
+- Set global minimum and maximum lesson counts for students and teachers. Override values per person when needed.
+- Control repeat behaviour: allow/disallow repeats, cap occurrences, choose whether consecutive slots are permitted or preferred, and tune the weight applied to consecutive runs.
+- Decide whether the solver must place every required subject for every student and whether attendance-aware weighting should boost underscheduled subjects.
+- Adjust additional solver weights such as group biasing, teacher load balancing and the CP-SAT time limit (seconds).
+- Allow or forbid a student taking the same subject with multiple teachers globally or per student.
 
 ### Teachers and availability
 
-- Assign subjects, personal lesson limits and mark unavailable slots. The form prevents removing availability needed to satisfy minimum lessons or fixed assignments. 【F:app.py†L1600-L1759】【F:app.py†L2034-L2105】
-- Fixed assignments reserve a teacher/student (or group) for a specific slot and subject. Validation ensures the teacher teaches the subject, the student/group requires it and the slot is available. 【F:app.py†L2106-L2268】
+- Assign subjects to each teacher, set optional min/max lesson limits and mark unavailable slots.
+- Configure fixed assignments that reserve specific teacher/student (or group) combinations for a slot and subject. Validation prevents conflicts with availability or missing subject requirements.
 
 ### Students and groups
 
-- Maintain active students with subject lists, lesson limits, repeat preferences and per-subject repeat allow-lists. 【F:app.py†L1661-L1763】
-- Record student unavailability by slot, block specific teachers (while ensuring alternatives remain) and restrict allowable locations. 【F:app.py†L1764-L1863】【F:app.py†L1901-L2033】
-- Groups aggregate students for joint lessons. Every subject must be required by each member and at least one unblocked teacher must teach it. Locations can be limited per group as well. 【F:app.py†L1864-L2009】
+- Maintain active students, their required subjects, lesson limits and repeat preferences (including per-subject repeat allow-lists).
+- Record student unavailability, block individual teachers (while ensuring viable alternatives remain) and restrict allowable locations.
+- Group students for joint lessons. Each subject in the group must be taught by at least one unblocked teacher, and optional location limits can keep lessons in suitable rooms.
 
 ### Locations
 
-Define teaching locations, restrict which ones students or groups may use, and select locations on fixed assignments so the solver respects capacity preferences. 【F:app.py†L1934-L2033】【F:app.py†L2106-L2268】
+Define teaching locations, optionally limit which ones students or groups may use, and attach locations to fixed assignments so the solver respects capacity or equipment preferences.
 
 ### Presets
 
-Use the *Presets* modal to snapshot the current configuration, download previous versions or restore a preset later. Presets only include configuration tables so historical timetables and attendance remain untouched. 【F:app.py†L636-L2268】
+Use the *Presets* modal to snapshot the current configuration, download previous versions or restore presets later. Presets include configuration tables only, leaving historical timetables and attendance untouched.
 
-## 🗓️ Managing Timetables
+## Managing timetables
 
-- Generate a timetable from the home page or `/generate`. Existing records for that date are cleared before saving the new solution and attendance entries. 【F:app.py†L2899-L3099】【F:app.py†L3433-L3488】
-- Switch between teacher and location views when inspecting timetables. Missing subject summaries, lesson counts and group member snapshots help diagnose conflicts. 【F:app.py†L3238-L3412】【F:templates/index.html†L66-L116】
-- `/edit_timetable/<date>` allows adding, editing or deleting individual lessons and assigning worksheets. Attendance logs and unmet-subject snapshots refresh automatically. 【F:app.py†L3591-L3819】
-- `/manage_timetables` lists saved dates and backup archives. Delete selected timetables, clear everything, or download the solver progress snapshot. 【F:app.py†L3554-L3664】
-- Create verified database backups or restore previous snapshots (including uploaded zips) without leaving the browser. Integrity checks run before replacing the live database. 【F:app.py†L4118-L4208】
+- Generate a timetable from the home page or `/generate`. Existing records for that date are cleared before saving the new solution and associated attendance entries.
+- Switch between teacher and location views when inspecting timetables. Missing subject summaries, lesson counts and group membership snapshots help diagnose conflicts.
+- Visit `/edit_timetable/<date>` to add, edit or delete lessons and assign worksheets; attendance logs and unmet-subject snapshots refresh automatically.
+- `/manage_timetables` lists saved dates, solver snapshots and backup archives. Delete individual timetables, clear everything, or download solver progress snapshots when investigating issues.
+- Create verified database backups or restore previous snapshots (including uploaded ZIP archives) without leaving the browser. Integrity checks run before replacing the live database.
 
-## ✅ Validation Highlights
+## Validation safeguards
 
-- Fixed assignments must use subjects taught by the chosen teacher and required by the student or group. Slots cannot clash with teacher unavailability or duplicate assignments. 【F:app.py†L2106-L2268】
-- Students and groups cannot be deleted while referenced by fixed assignments. 【F:app.py†L1808-L1882】【F:app.py†L2239-L2258】
-- Lesson limits must stay within the number of available slots for both teachers and students, including the impact of unavailability rules. 【F:app.py†L1347-L1394】【F:app.py†L2034-L2105】
-- Blocks are rejected if they would leave a group without an eligible teacher. 【F:app.py†L1864-L1900】
-- The UI warns when **Require all subjects?** is combined with **Use attendance priority** because solving can take longer under both constraints. 【F:app.py†L1510-L1568】
+- Fixed assignments must use subjects taught by the chosen teacher and required by the student or group. Slots cannot clash with teacher unavailability or duplicate assignments.
+- Students and groups cannot be deleted while referenced by fixed assignments, ensuring configurations stay consistent.
+- Lesson limits must fit within the available slots for teachers and students, accounting for unavailability rules.
+- Teacher blocks are rejected if they would leave a group without an eligible instructor.
+- The UI warns when combining "Require all subjects" with attendance priority because solving can take longer under both constraints. Errors are flashed at the top of the configuration page and database-level constraints (for example unique teacher and student names) add extra safety nets.
 
-Errors are flashed at the top of the configuration page so the user can correct the input before changes are committed. Database-level constraints (for example unique teacher and student names) provide additional safety nets. 【F:app.py†L1233-L2268】
+## Testing and maintenance
+
+- Run the automated tests from the project root:
+
+  ```bash
+  pytest
+  ```
+
+- Utility scripts in `tools/` assist with migrations and diagnostics, including repairing worksheets, backfilling timetable snapshots and migrating legacy presets. Each script contains usage instructions in its docstring.
+- When adjusting CSS or templates remember to rebuild or watch the Tailwind assets as described above.
+
+## Troubleshooting tips
+
+- If the solver reports infeasibility, inspect the generated assumption diagnostics via the solver snapshot download, or temporarily relax constraints such as repeat limits or teacher blocks.
+- Clearing the database from the *Manage Timetables* page will recreate the default demo dataset, which is useful during demos or when testing new solver strategies.
+- Ensure the `data/` directory remains writable—permission issues are the most common cause of missing timetables or failed backups on shared machines.
