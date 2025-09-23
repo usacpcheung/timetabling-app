@@ -870,6 +870,90 @@ def test_group_validation_reports_subject_name_when_teacher_blocked(tmp_path):
     assert groups_after == groups_before
 
 
+def test_block_teacher_after_deleting_fixed_assignment(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    config_row = _config_row(app.DB_PATH)
+
+    teacher_row = conn.execute(
+        "SELECT id FROM teachers WHERE id=1",
+    ).fetchone()
+    assert teacher_row is not None
+
+    student_row = conn.execute(
+        "SELECT * FROM students WHERE id=1",
+    ).fetchone()
+    assert student_row is not None
+
+    student_subjects = json.loads(student_row["subjects"])
+    assert student_subjects, 'Student should require at least one subject'
+
+    conn.execute(
+        "INSERT INTO teachers (name, subjects, min_lessons, max_lessons, needs_lessons) VALUES (?, ?, ?, ?, ?)",
+        ("Backup Teacher", json.dumps(student_subjects), None, None, 1),
+    )
+
+    conn.execute(
+        "INSERT INTO fixed_assignments (teacher_id, student_id, group_id, subject_id, slot)"
+        " VALUES (?, ?, NULL, ?, 0)",
+        (teacher_row["id"], student_row["id"], student_subjects[0]),
+    )
+    conn.commit()
+
+    assignment_row = conn.execute(
+        "SELECT id FROM fixed_assignments WHERE teacher_id=? AND student_id=?",
+        (teacher_row["id"], student_row["id"]),
+    ).fetchone()
+    assert assignment_row is not None
+
+    data = _student_edit_form(config_row, student_row)
+    sid = student_row["id"]
+    if student_row["min_lessons"] is not None:
+        data.add(f"student_min_{sid}", str(student_row["min_lessons"]))
+    if student_row["max_lessons"] is not None:
+        data.add(f"student_max_{sid}", str(student_row["max_lessons"]))
+    if student_row["allow_repeats"]:
+        data.add(f"student_allow_repeats_{sid}", "1")
+    if student_row["max_repeats"] is not None:
+        data.add(f"student_max_repeats_{sid}", str(student_row["max_repeats"]))
+    if student_row["allow_consecutive"]:
+        data.add(f"student_allow_consecutive_{sid}", "1")
+    if student_row["prefer_consecutive"]:
+        data.add(f"student_prefer_consecutive_{sid}", "1")
+    if student_row["allow_multi_teacher"]:
+        data.add(f"student_multi_teacher_{sid}", "1")
+    repeat_subjects = student_row["repeat_subjects"]
+    if repeat_subjects:
+        for subj_id in json.loads(repeat_subjects):
+            data.add(f"student_repeat_subjects_{sid}", str(subj_id))
+
+    data.add('allow_repeats', '1')
+    data.add(f"student_block_{sid}", str(teacher_row["id"]))
+    data.add("assign_id", str(assignment_row["id"]))
+    data.add("assign_delete", str(assignment_row["id"]))
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert ('error', 'Cannot block selected teacher for student') not in flashes
+
+    remaining = conn.execute(
+        "SELECT COUNT(*) FROM fixed_assignments WHERE id=?",
+        (assignment_row["id"],),
+    ).fetchone()[0]
+    block_count = conn.execute(
+        "SELECT COUNT(*) FROM student_teacher_block WHERE student_id=? AND teacher_id=?",
+        (sid, teacher_row["id"]),
+    ).fetchone()[0]
+    conn.close()
+
+    assert remaining == 0
+    assert block_count == 1
+
+
 def test_reject_student_individual_min_exceeding_slots(tmp_path):
     import app
 
