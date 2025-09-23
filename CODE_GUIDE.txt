@@ -1,64 +1,173 @@
 Timetabling App Code Guide
 ==========================
 
-This guide walks through the most important parts of the project so you can navigate the codebase, understand how the solver is wired up and safely extend the application.
+Welcome! This guide is written for people who are completely new to Python development. It explains how to set up your computer, run the project, understand the major pieces of code, and safely make changes. Read it from top to bottom the first time you work on the app.
 
-Project layout
---------------
-Key directories and files:
+Before you start
+----------------
+1. **Install the required tools.**
+   - Python 3.10 or later from <https://www.python.org/downloads/>.
+   - Git from <https://git-scm.com/downloads> so you can save and share changes.
+   - Node.js 18+ from <https://nodejs.org/> (needed to rebuild the CSS).
+2. **Clone the project and open a terminal.**
+   ```bash
+   git clone <repository-url>
+   cd timetabling-app
+   ```
+3. **Create an isolated Python environment.** This keeps project libraries separate from the rest of your computer.
+   ```bash
+   python -m venv .venv
+   # Activate it (do this in every new terminal before you work on the project)
+   # macOS/Linux
+   source .venv/bin/activate
+   # Windows PowerShell
+   .venv\\Scripts\\Activate.ps1
+   ```
+4. **Install Python dependencies.**
+   ```bash
+   pip install --upgrade pip
+   pip install -r requirements.txt
+   ```
+5. **Install Node dependencies (only once, or whenever `package.json` changes).**
+   ```bash
+   npm install
+   ```
 
-* ``app.py`` – Flask application, database access, preset handling and backup utilities. 【F:app.py†L1-L4208】
-* ``cp_sat_timetable.py`` – OR-Tools model builder, diagnostics helpers and solver wrapper. 【F:cp_sat_timetable.py†L1-L760】
-* ``templates/`` – Jinja templates for the pages served by Flask (configuration, timetable views, attendance, editing and management). 【F:templates/index.html†L1-L160】【F:templates/manage_timetables.html†L1-L140】
-* ``static/`` – Client-side helpers such as ``config.js`` (dynamic forms), ``main.js`` (confirmations and edits), ``attendance.js`` (table enhancements) and ``ui.js`` (Flowbite initialisation). 【F:static/config.js†L1-L160】【F:static/main.js†L1-L200】【F:static/attendance.js†L1-L160】【F:static/ui.js†L1-L60】
-* ``tests/`` – Pytest suite currently covering validation helpers like student/teacher blocking. 【F:tests/test_block_rules.py†L1-L160】
-* ``tools/`` – Maintenance scripts for migrating presets, repairing worksheets and rebuilding snapshots. 【F:tools/cleanup_snapshots.py†L1-L120】
+First run checklist
+-------------------
+1. Activate the virtual environment (`source .venv/bin/activate` or `.venv\\Scripts\\Activate.ps1`).
+2. Start the Flask development server:
+   ```bash
+   python app.py
+   ```
+   The app becomes available at <http://localhost:5000>. Leave this command running while you use the site.
+3. Open the link in a browser. A demo database is created automatically inside the `data/` folder.
+4. When you change Tailwind CSS or templates, rebuild the stylesheet:
+   ```bash
+   npm run build:css
+   ```
+   During heavy UI work you can keep it in sync automatically:
+   ```bash
+   npm run watch:css
+   ```
+5. To stop the server press `Ctrl+C` in the terminal.
 
-app.py
-------
-``app.py`` hosts the Flask routes and every interaction with the SQLite database.
+Repository tour
+---------------
+- `app.py` – the heart of the application. It defines database helpers, route handlers, preset tools, scheduling helpers, and backup utilities.
+- `cp_sat_timetable.py` – the Google OR-Tools CP-SAT model builder plus solver diagnostics.
+- `templates/` – Jinja2 HTML templates rendered by Flask.
+- `static/` – JavaScript helpers and compiled CSS used by the templates.
+- `data/` – writable folder containing `timetable.db` (SQLite database) and generated backups.
+- `tests/` – pytest suite covering critical validation helpers.
+- `tools/` – one-off maintenance scripts (migrating presets, refreshing snapshots, etc.).
+- `CODE_GUIDE.txt` and `README.md` – documentation for orientation (this file goes deeper into the code).
 
-### Database helpers and schema management
+Backend fundamentals
+--------------------
+### Database lifecycle
+- `get_db()` opens the SQLite database and returns rows that behave like Python dictionaries so templates and helpers can use descriptive keys.
+- `init_db()` creates all tables the first time the app runs. It also applies migrations whenever the schema changes; that way older databases pick up new columns safely.
+- `CONFIG_TABLES` lists every table that belongs to a configuration preset (teachers, students, groups, blocks, etc.). If you add a new configuration table, update this list so presets include it.
+- Demo content (subjects, teachers, students and example rules) is inserted automatically so you can experiment immediately.
 
-``get_db`` centralises SQLite connections and configures rows to behave like dictionaries. ``init_db`` creates tables on first run and contains incremental migrations so existing databases pick up new columns like solver time limits, location support and worksheet tracking. ``CONFIG_TABLES`` lists every configuration table included in presets. 【F:app.py†L31-L356】【F:app.py†L43-L72】
-
-### Configuration dumps, presets and snapshots
-
-``dump_configuration`` serialises the tables listed in ``CONFIG_TABLES`` so presets exclude runtime data such as generated timetables. ``restore_configuration`` imports a preset, refreshing archive tables for teachers, groups, locations and subjects that no longer exist while keeping timetable history intact. Preset routes (``/presets`` and related POST handlers) use these helpers to save, load and delete stored configurations. ``get_missing_and_counts`` and ``calculate_missing_and_counts`` cache per-date summaries so timetable pages and editors can quickly show unmet subject requirements, lesson counts and location usage. 【F:app.py†L636-L1208】【F:app.py†L2208-L2268】【F:app.py†L2270-L3415】
+### Configuration snapshots, presets and backups
+- `dump_configuration()` and `restore_configuration()` export/import presets while excluding live timetable data.
+- Routes such as `/presets/save`, `/presets/load` and `/presets/delete` call these helpers. Always reuse them instead of writing direct SQL for presets.
+- Backup routes (`/backup_db`, `/download_backup/<name>`, `/restore_db_existing`, `/restore_db_upload`) create or restore zip archives. They rely on temporary files and checksum validation—mirror that behaviour if you extend backup logic.
 
 ### Scheduling pipeline
+1. `generate_schedule()` gathers configuration data from many tables (teachers, students, groups, locations, blocks, attendance stats, fixed assignments).
+2. It prepares Python structures expected by OR-Tools, then calls `build_model()` from `cp_sat_timetable.py`.
+3. `solve_and_print()` runs the CP-SAT solver with an optional time limit, collects log messages, and returns chosen assignments plus any conflicting assumptions.
+4. Successful results are saved to the `timetable` table. Attendance tables, worksheet trackers and cached “missing lesson” summaries are updated right after the solver finishes.
+5. `get_timetable_data()` assembles the grid displayed in the UI, supporting both teacher and location views while enriching rows with archive information.
 
-``generate_schedule`` loads all configuration data (teachers, students, groups, locations, blocks, fixed assignments, attendance stats) and converts them into the structures expected by OR-Tools. After calling ``build_model`` it runs the solver with a configurable time limit, records progress messages, writes assignments into the timetable table and synchronises attendance logs. Missing lessons and worksheet counts are recomputed at the end. ``get_timetable_data`` prepares the grid shown on the timetable page, supporting both teacher and location views and enriching rows with archive names. 【F:app.py†L2899-L3412】
+### Route overview (located in `app.py`)
+- **Landing and generation** – `index`, `check_timetable`, `timetable`, and `generate` handle viewing and triggering schedules.
+- **Configuration** – `config` renders the configuration form, performs extensive validation and commits changes to the database.
+- **Presets** – `/presets` plus POST endpoints for saving, loading and deleting presets.
+- **Attendance & management** – `attendance`, `manage_timetables`, `delete_timetables` and related helpers surface past schedules, attendance summaries and backups.
+- **Editing** – `edit_timetable` lets you fine-tune lessons, toggle worksheets and keep attendance in sync.
+- **Maintenance** – `reset_db` recreates demo data for a clean slate.
 
-### Route overview
+Front-end overview
+------------------
+- Templates live in `templates/`. Each template expects specific context variables defined in its matching route. If you rename context keys, update every template that uses them.
+- JavaScript lives in `static/`:
+  - `config.js` dynamically updates the configuration form (dropdowns, warnings, time inputs).
+  - `main.js` handles confirmation prompts and AJAX helpers for timetable edits.
+  - `attendance.js` enhances attendance tables with sorting and search.
+  - `ui.js` initialises Flowbite components across pages.
+- CSS is generated with Tailwind (`static/dist/app.css`). Edit `static/src/app.css` then rebuild using `npm run build:css`.
+- Static files are served directly by Flask. Avoid renaming files without updating `templates/` references and the Flask static paths.
 
-* Landing & timetable viewing: ``index`` renders the home page, ``check_timetable`` warns about existing schedules and ``timetable`` displays a read-only grid for a chosen date. ``generate`` triggers the solver and redirects back with status flashes. 【F:app.py†L1153-L3499】
-* Configuration: ``config`` renders and validates the entire configuration form. It manages subjects, students, groups, locations, blocks, unavailability, fixed assignments and worksheet counts with extensive validation before committing changes. 【F:app.py†L1233-L2268】
-* Presets: ``/presets`` lists stored snapshots while ``/presets/save``, ``/presets/load`` and ``/presets/delete`` invoke the preset helpers described above. 【F:app.py†L2208-L2268】
-* Attendance & management: ``attendance`` aggregates attendance logs for active and archived students. ``manage_timetables`` lists saved timetable dates and available backups, and ``delete_timetables`` removes selected records or clears everything. 【F:app.py†L3490-L3964】
-* Editing: ``edit_timetable`` allows manual adjustments, worksheet assignment toggles and snapshot refreshes while keeping attendance logs consistent. 【F:app.py†L3591-L3819】
-* Maintenance: ``reset_db`` rebuilds the demo data. Backup routes (``/backup_db``, ``/download_backup/<name>``, ``/restore_db_existing``, ``/restore_db_upload``) create integrity-checked zip archives and restore them safely using temporary copies. 【F:app.py†L3965-L4208】
+Working on the project
+----------------------
+### Suggested daily routine
+1. Open a terminal, change into the project folder, and activate the virtual environment.
+2. Pull the latest code (`git pull`) before you start working.
+3. Run `python app.py` in one terminal so you can interact with the app while developing.
+4. Make code edits in your editor of choice. Save often.
+5. After each logical change, run the automated tests (`pytest`).
+6. If you touched CSS or templates, rebuild assets (`npm run build:css`).
+7. Review the app in the browser to confirm everything still works.
+8. Use Git to stage and commit your work:
+   ```bash
+   git status           # See what changed
+   git add <files>      # Stage changes
+   git commit -m "Describe what you changed"
+   ```
+9. Push the commit when you are ready to share it (`git push`).
 
-cp_sat_timetable.py
--------------------
-This module isolates the CP-SAT model so optimisation logic stays separate from the web app.
+### Editing checklists for common tasks
+- **Adding a new configuration field**
+  1. Update the database schema in `init_db()` and create a migration path so existing tables gain the new column.
+  2. Include the field in form handling inside the `config` route (load, validate, save).
+  3. Update relevant templates (`templates/config.html` and friends).
+  4. If the field affects JavaScript-driven behaviour, update `static/config.js`.
+  5. Include the new column in `CONFIG_TABLES`, `dump_configuration()` and `restore_configuration()` so presets capture it.
+  6. Adjust summaries in `calculate_missing_and_counts()` if the new field changes how missing lessons are counted.
+  7. Add or update tests covering the new validation rules.
 
-* ``AssumptionInfo`` and ``AssumptionRegistry`` help annotate major constraint groups with assumption literals. When the model is infeasible ``solve_and_print`` can map the solver's unsat core back to human-readable labels. 【F:cp_sat_timetable.py†L1-L83】
-* ``build_model`` constructs the decision variables and constraints. It handles group lessons via pseudo student identifiers, applies student and teacher lesson limits, enforces repeat rules (including consecutive slot preferences), respects teacher/student availability, block lists and location restrictions, and adds objective terms for attendance weights, group emphasis and load balancing. Location assignment variables are included when rooms are configured. 【F:cp_sat_timetable.py†L84-L688】
-* ``solve_and_print`` runs the CP-SAT solver, optionally reporting intermediate solutions through a callback. It returns the status, chosen assignments, any conflicting assumptions and log messages that are later flashed in the UI. 【F:cp_sat_timetable.py†L690-L760】
+- **Changing solver behaviour**
+  1. Modify `build_model()` to add or adjust variables, constraints or objective terms.
+  2. Update `AssumptionRegistry` labels if you introduce new assumption literals—clear labels help diagnose infeasible models.
+  3. Ensure `generate_schedule()` passes any new data the solver requires.
+  4. Extend UI summaries or validation so the change is visible to users (for example new warnings or counts).
+  5. Add tests or create reproducible scenarios to confirm the solver change works as intended.
 
-Front-end assets and templates
-------------------------------
-The templates under ``templates/`` render the HTML pages and embed snippets of data passed from the routes. Examples include ``config.html`` for the configuration form, ``timetable.html`` for the read-only grid, ``edit_timetable.html`` for manual adjustments and ``manage_timetables.html`` for housekeeping tasks. 【F:templates/config.html†L1-L400】【F:templates/edit_timetable.html†L1-L360】
+- **Tweaking UI interactions**
+  1. Edit the relevant template and JavaScript helper.
+  2. Rebuild CSS (`npm run build:css`).
+  3. Manually test the flow in the browser on desktop and (if possible) tablet/mobile sizes.
 
-Client-side helpers in ``static/`` enhance these pages:
+Testing and quality checks
+--------------------------
+- Run unit tests frequently:
+  ```bash
+  pytest
+  ```
+- When you change database logic, try the workflow in the UI (configure data, generate a timetable, edit lessons, inspect attendance).
+- Review the server log in the terminal running `python app.py`. Tracebacks there help you pinpoint issues quickly.
+- For JavaScript changes, open the browser developer console to catch errors or warnings.
 
-* ``config.js`` updates dropdowns, slot time inputs and warning banners dynamically. 【F:static/config.js†L1-L200】
-* ``main.js`` provides confirmation prompts (for timetable overwrites or deletions) and AJAX checks when editing timetables. 【F:static/main.js†L1-L200】
-* ``attendance.js`` initialises searchable attendance tables. 【F:static/attendance.js†L1-L160】
-* ``ui.js`` bootstraps Flowbite components used across the templates. 【F:static/ui.js†L1-L60】
+Warnings and common pitfalls
+----------------------------
+- **Do not edit `data/timetable.db` with external tools while the app is running.** Use the app’s UI or helper functions so migrations and caches stay consistent.
+- **Always run `init_db()` migrations.** If you add columns, make sure the migration block updates existing databases—never delete or rename tables without a migration path.
+- **Preserve validation logic.** The configuration form rejects conflicting rules (for example, teacher blocks that leave no instructor). When you add new rules, extend the existing validation functions instead of bypassing them.
+- **Keep solver assumptions descriptive.** Removing assumption labels makes infeasible schedules difficult to debug.
+- **Regenerate CSS after template or Tailwind changes.** Forgetting this step can leave the UI unstyled or out-of-date.
+- **Avoid committing generated or sensitive files.** The `data/` folder may contain real timetables. Add `.gitignore` entries if you introduce new writable paths.
+- **Respect time limits.** Very tight constraints combined with high solver time limits can produce long-running solve attempts. Tune constraints first before increasing the limit drastically.
+- **Back up before risky edits.** Use `/backup_db` from the UI to create a restore point before experimenting with schema or solver changes.
 
-Tests and tools
----------------
-``tests/test_block_rules.py`` demonstrates how to exercise validation helpers such as ``block_allowed``. The ``tools/`` directory contains utility scripts for cleaning or migrating production data (for example refreshing snapshots or updating preset payloads) and can be used as references for one-off maintenance tasks. 【F:tests/test_block_rules.py†L1-L160】【F:tools/cleanup_snapshots.py†L1-L151】
+Additional resources
+--------------------
+- `README.md` gives a feature-focused overview and troubleshooting guide.
+- Google’s OR-Tools CP-SAT documentation explains solver concepts used in `cp_sat_timetable.py`: <https://developers.google.com/optimization>
+- Flask documentation covers routing, templates and debugging: <https://flask.palletsprojects.com/>
+- Pytest documentation shows how to write and run tests: <https://docs.pytest.org/>
 
+Keep this guide handy while you work. With patience and consistent testing you can confidently evolve the timetabling app even if this is your first Python project.
