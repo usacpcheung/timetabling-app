@@ -31,6 +31,7 @@ def test_deleting_teacher_archives_and_cleans(tmp_path):
     c.execute("INSERT INTO teacher_unavailable (teacher_id, slot) VALUES (1, 0)")
     c.execute("INSERT INTO student_teacher_block (student_id, teacher_id) VALUES (1, 1)")
     c.execute("INSERT INTO fixed_assignments (teacher_id, student_id, group_id, subject_id, slot) VALUES (1, NULL, NULL, ?, 0)", (math_id,))
+    c.execute('UPDATE students SET active=0')
     conn.commit()
     conn.close()
 
@@ -42,6 +43,7 @@ def test_deleting_teacher_archives_and_cleans(tmp_path):
         'max_lessons': '4',
         'teacher_min_lessons': '1',
         'teacher_max_lessons': '8',
+        'allow_repeats': '1',
         'max_repeats': '2',
         'consecutive_weight': '3',
         'attendance_weight': '10',
@@ -50,6 +52,7 @@ def test_deleting_teacher_archives_and_cleans(tmp_path):
         'balance_weight': '1',
         'teacher_id': '1',
         'teacher_delete_1': 'on',
+        'teacher_need_lessons_1': '1',
         **slot_starts,
     }
     with app.app.test_request_context('/config', method='POST', data=data):

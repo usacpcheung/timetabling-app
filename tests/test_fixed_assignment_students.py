@@ -37,6 +37,7 @@ def test_student_deletion_blocked_by_fixed_assignment(tmp_path):
         'max_lessons': '4',
         'teacher_min_lessons': '1',
         'teacher_max_lessons': '8',
+        'allow_repeats': '1',
         'max_repeats': '2',
         'consecutive_weight': '3',
         'attendance_weight': '10',
