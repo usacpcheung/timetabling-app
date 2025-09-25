@@ -149,7 +149,6 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     const modalOriginalValues = new Map();
-
     function captureModalState(modal) {
         return Array.from(modal.querySelectorAll('input, select, textarea')).map(field => {
             if (field.tagName === 'SELECT' && field.multiple) {

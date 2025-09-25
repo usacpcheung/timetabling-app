@@ -755,7 +755,7 @@ def test_reject_teacher_unavailability_that_breaks_minimum(tmp_path):
     assert updated_unavailability == original_unavailability
 
 
-def test_warn_when_disabling_last_teacher_for_subject(tmp_path):
+def test_disabling_last_teacher_for_subject_allowed(tmp_path):
     import app
 
     conn = setup_db(tmp_path)
@@ -789,6 +789,7 @@ def test_warn_when_disabling_last_teacher_for_subject(tmp_path):
     conn.close()
 
     data = _teacher_edit_form(config_row, teacher)
+    data.add('allow_repeats', '1')
     data.pop(f'teacher_need_lessons_{teacher["id"]}', None)
 
     with app.app.test_request_context('/config', method='POST', data=data):
@@ -796,8 +797,8 @@ def test_warn_when_disabling_last_teacher_for_subject(tmp_path):
         flashes = get_flashed_messages(with_categories=True)
 
     assert response.status_code == 302
-    expected = ('error', f'No teacher available for {subject_name} for student {student_name}')
-    assert expected in flashes
+    unexpected = ('error', f'No teacher available for {subject_name} for student {student_name}')
+    assert unexpected not in flashes
 
     conn = sqlite3.connect(app.DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -807,7 +808,7 @@ def test_warn_when_disabling_last_teacher_for_subject(tmp_path):
     ).fetchone()
     conn.close()
 
-    assert updated['needs_lessons'] == teacher['needs_lessons']
+    assert updated['needs_lessons'] == 0
 
 
 def test_group_validation_reports_subject_name_when_teacher_blocked(tmp_path):

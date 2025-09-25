@@ -1682,7 +1682,6 @@ def config():
         teacher_map_block = {
             t['id']: json.loads(t['subjects'])
             for t in trows
-            if _teacher_needs_lessons(t)
         }
         c.execute('SELECT group_id, student_id FROM group_members')
         gm_rows = c.fetchall()
@@ -1905,8 +1904,6 @@ def config():
         trows = c.fetchall()
         teacher_map_validate = {}
         for t in trows:
-            if not _teacher_needs_lessons(t):
-                continue
             teacher_map_validate[t['id']] = _normalize_subject_set(t['subjects'])
         c.execute('SELECT id, name, subjects, active FROM students')
         srows = c.fetchall()
