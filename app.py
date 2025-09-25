@@ -2205,7 +2205,21 @@ def config():
                         ok = True
                         break
                 if not ok:
+                    fallback_ok = False
+                    for tid, tsubs in teacher_map_all.items():
+                        if subj not in tsubs:
+                            continue
+                        if any(tid in block_map_validate.get(mid, set()) for mid in member_ids):
+                            continue
+                        fallback_ok = True
+                        break
                     subject_label = subject_name_map.get(subj) or str(subj)
+                    if fallback_ok:
+                        flash(
+                            f'No teacher scheduled for {subject_label} in group {name}; the solver will skip this subject.',
+                            'warning',
+                        )
+                        continue
                     flash(f'No teacher available for {subject_label} in group {name}', 'error')
                     has_error = True
                     valid = False
