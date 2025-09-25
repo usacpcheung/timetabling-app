@@ -152,6 +152,52 @@ def _tables_for_sections(sections):
     return [table for table in CONFIG_TABLES if table in allowed]
 
 
+def _column_exists(cursor, table, column):
+    cursor.execute(f'PRAGMA table_info({table})')
+    return any(row[1] == column for row in cursor.fetchall())
+
+
+def _prune_orphaned_config_rows(cursor):
+    """Delete dependent rows that reference missing configuration entities."""
+
+    def fetch_ids(table):
+        cursor.execute(f'SELECT id FROM {table}')
+        return {row['id'] for row in cursor.fetchall()}
+
+    def prune(table, column, valid_ids):
+        if not _column_exists(cursor, table, column):
+            return
+        query = f'DELETE FROM {table} WHERE {column} IS NOT NULL'
+        params = ()
+        if valid_ids:
+            placeholders = ','.join(['?'] * len(valid_ids))
+            query += f' AND {column} NOT IN ({placeholders})'
+            params = tuple(sorted(valid_ids))
+        cursor.execute(query, params)
+
+    teacher_ids = fetch_ids('teachers')
+    student_ids = fetch_ids('students')
+    group_ids = fetch_ids('groups')
+    location_ids = fetch_ids('locations')
+    subject_ids = fetch_ids('subjects')
+
+    prune('student_teacher_block', 'student_id', student_ids)
+    prune('student_teacher_block', 'teacher_id', teacher_ids)
+    prune('student_unavailable', 'student_id', student_ids)
+    prune('student_locations', 'student_id', student_ids)
+    prune('student_locations', 'location_id', location_ids)
+    prune('group_members', 'group_id', group_ids)
+    prune('group_members', 'student_id', student_ids)
+    prune('group_locations', 'group_id', group_ids)
+    prune('group_locations', 'location_id', location_ids)
+    prune('teacher_unavailable', 'teacher_id', teacher_ids)
+    prune('fixed_assignments', 'teacher_id', teacher_ids)
+    prune('fixed_assignments', 'student_id', student_ids)
+    prune('fixed_assignments', 'group_id', group_ids)
+    prune('fixed_assignments', 'subject_id', subject_ids)
+    prune('fixed_assignments', 'location_id', location_ids)
+
+
 def get_db():
     """Return a connection to the SQLite database.
 
@@ -894,6 +940,8 @@ def restore_configuration(preset, overwrite=False, preset_id=None, sections=None
                     f"INSERT INTO {table} ({','.join(cols)}) VALUES ({placeholders})",
                     [row[col] for col in cols],
                 )
+
+    _prune_orphaned_config_rows(c)
 
     # Reinsert archived teachers for any timetable references that no longer
     # resolve to an active teacher.
