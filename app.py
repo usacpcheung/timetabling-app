@@ -40,6 +40,43 @@ DB_PATH = os.path.join(DATA_DIR, "timetable.db")
 CURRENT_PRESET_VERSION = 2
 MAX_PRESETS = 10  # maximum number of configuration presets to keep
 
+CONFIG_SECTION_DEFINITIONS = [
+    ('general', 'General', ['config']),
+    ('subjects', 'Subjects', ['subjects', 'subjects_archive']),
+    ('teachers', 'Teachers', ['teachers', 'teachers_archive']),
+    (
+        'students',
+        'Students',
+        ['students', 'students_archive', 'student_teacher_block', 'student_unavailable', 'student_locations'],
+    ),
+    ('groups', 'Groups', ['groups', 'group_members', 'groups_archive', 'group_locations']),
+    ('locations', 'Locations', ['locations', 'locations_archive']),
+    ('unavailability', 'Teacher Unavailability', ['teacher_unavailable']),
+    ('assignments', 'Fixed Assignments', ['fixed_assignments']),
+]
+
+CONFIG_SECTION_LABELS = OrderedDict((key, label) for key, label, _ in CONFIG_SECTION_DEFINITIONS)
+CONFIG_SECTION_TABLES = {key: tables for key, _, tables in CONFIG_SECTION_DEFINITIONS}
+
+CONFIG_SECTION_DEPENDENCIES = {
+    'general': [],
+    'subjects': [],
+    'teachers': ['subjects'],
+    'students': ['general', 'subjects', 'teachers', 'locations'],
+    'groups': ['students', 'subjects', 'locations'],
+    'locations': [],
+    'unavailability': ['teachers'],
+    'assignments': ['teachers', 'students', 'groups', 'subjects', 'locations'],
+}
+
+CONFIG_SECTION_NOTES = {
+    'teachers': 'Teachers rely on {deps} so subject lists stay in sync.',
+    'students': 'Students rely on {deps} so advanced student dialogs (blocked slots, repeat options, locations and teacher blocks) remain accurate.',
+    'groups': 'Groups rely on {deps} for member lists, subjects and locations.',
+    'unavailability': 'Teacher unavailability relies on {deps} so every entry still references a teacher.',
+    'assignments': 'Fixed assignments rely on {deps} to keep their teacher, student, subject and location references valid.',
+}
+
 # Tables that represent configuration data. Presets only dump and restore
 # these tables so previously generated timetables, worksheets or logs remain
 # untouched when a preset is loaded.
@@ -63,6 +100,142 @@ CONFIG_TABLES = [
     'student_locations',
     'group_locations',
 ]
+
+
+def _normalize_sections(sections):
+    """Return sections plus any required dependencies in definition order."""
+
+    if not sections:
+        return []
+
+    order = [key for key, _, _ in CONFIG_SECTION_DEFINITIONS]
+    order_index = {key: idx for idx, key in enumerate(order)}
+
+    resolved = []
+    seen = set()
+
+    def add(section):
+        if section in seen:
+            return
+        if section not in CONFIG_SECTION_TABLES:
+            return
+        seen.add(section)
+        for dep in CONFIG_SECTION_DEPENDENCIES.get(section, []):
+            add(dep)
+        resolved.append(section)
+
+    for section in sections:
+        add(section)
+
+    resolved.sort(key=lambda key: order_index.get(key, len(order)))
+    return resolved
+
+
+def _tables_for_sections(sections):
+    """Return configuration tables associated with the requested sections."""
+
+    if not sections:
+        return list(CONFIG_TABLES)
+    normalized = _normalize_sections(sections)
+    if not normalized:
+        return list(CONFIG_TABLES)
+    allowed = set()
+    for section in normalized:
+        tables = CONFIG_SECTION_TABLES.get(section)
+        if not tables:
+            continue
+        for table in tables:
+            if table in CONFIG_TABLES:
+                allowed.add(table)
+    if not allowed:
+        return list(CONFIG_TABLES)
+    return [table for table in CONFIG_TABLES if table in allowed]
+
+
+def _column_exists(cursor, table, column):
+    cursor.execute(f'PRAGMA table_info({table})')
+    return any(row[1] == column for row in cursor.fetchall())
+
+
+def _prune_orphaned_config_rows(cursor):
+    """Delete dependent rows that reference missing configuration entities."""
+
+    def fetch_ids(table):
+        cursor.execute(f'SELECT id FROM {table}')
+        return {row['id'] for row in cursor.fetchall()}
+
+    def prune(table, column, valid_ids):
+        if not _column_exists(cursor, table, column):
+            return
+        query = f'DELETE FROM {table} WHERE {column} IS NOT NULL'
+        params = ()
+        if valid_ids:
+            placeholders = ','.join(['?'] * len(valid_ids))
+            query += f' AND {column} NOT IN ({placeholders})'
+            params = tuple(sorted(valid_ids))
+        cursor.execute(query, params)
+
+    def clean_subject_list(table, column, valid_subject_ids):
+        if not _column_exists(cursor, table, column):
+            return
+        cursor.execute(f'SELECT id, {column} FROM {table}')
+        rows = cursor.fetchall()
+        for row in rows:
+            raw_value = row[column]
+            if raw_value in (None, ''):
+                continue
+            try:
+                data = json.loads(raw_value)
+            except (TypeError, json.JSONDecodeError):
+                data = []
+            changed = False
+            cleaned = []
+            if isinstance(data, list):
+                for item in data:
+                    try:
+                        subj_id = int(item)
+                    except (TypeError, ValueError):
+                        changed = True
+                        continue
+                    if subj_id in valid_subject_ids:
+                        cleaned.append(subj_id)
+                    else:
+                        changed = True
+            else:
+                changed = True
+            if not cleaned and raw_value in ('[]', 'null'):
+                cleaned_json = '[]'
+            else:
+                cleaned_json = json.dumps(cleaned)
+            if changed or cleaned_json != raw_value:
+                cursor.execute(f'UPDATE {table} SET {column}=? WHERE id=?', (cleaned_json, row['id']))
+
+    teacher_ids = fetch_ids('teachers')
+    student_ids = fetch_ids('students')
+    group_ids = fetch_ids('groups')
+    location_ids = fetch_ids('locations')
+    subject_ids = fetch_ids('subjects')
+
+    prune('student_teacher_block', 'student_id', student_ids)
+    prune('student_teacher_block', 'teacher_id', teacher_ids)
+    prune('student_unavailable', 'student_id', student_ids)
+    prune('student_locations', 'student_id', student_ids)
+    prune('student_locations', 'location_id', location_ids)
+    prune('group_members', 'group_id', group_ids)
+    prune('group_members', 'student_id', student_ids)
+    prune('group_locations', 'group_id', group_ids)
+    prune('group_locations', 'location_id', location_ids)
+    prune('teacher_unavailable', 'teacher_id', teacher_ids)
+    prune('fixed_assignments', 'teacher_id', teacher_ids)
+    prune('fixed_assignments', 'student_id', student_ids)
+    prune('fixed_assignments', 'group_id', group_ids)
+    prune('fixed_assignments', 'subject_id', subject_ids)
+    prune('fixed_assignments', 'location_id', location_ids)
+
+    clean_subject_list('students', 'subjects', subject_ids)
+    clean_subject_list('students', 'repeat_subjects', subject_ids)
+    clean_subject_list('teachers', 'subjects', subject_ids)
+    clean_subject_list('groups', 'subjects', subject_ids)
 
 
 def get_db():
@@ -710,12 +883,14 @@ def migrate_preset(preset):
     return preset
 
 
-def restore_configuration(preset, overwrite=False, preset_id=None):
+def restore_configuration(preset, overwrite=False, preset_id=None, sections=None):
     """Restore configuration tables from a preset dump.
 
     Existing timetables and worksheet counts remain unchanged. When ``overwrite``
     is False and current configuration differs from the preset, ``False`` is
-    returned so the caller can prompt the user for confirmation.
+    returned so the caller can prompt the user for confirmation. ``sections``
+    limits the restore to specific accordion sections from the configuration
+    page.
     """
     version = preset.get('version', 0)
     if version > CURRENT_PRESET_VERSION:
@@ -723,6 +898,7 @@ def restore_configuration(preset, overwrite=False, preset_id=None):
     preset = migrate_preset(preset)
     conn = get_db()
     c = conn.cursor()
+    tables_to_restore = _tables_for_sections(sections)
     if preset_id is not None:
         c.execute(
             'UPDATE config_presets SET data=?, version=? WHERE id=?',
@@ -730,9 +906,17 @@ def restore_configuration(preset, overwrite=False, preset_id=None):
         )
         conn.commit()
     current = dump_configuration()['data']
-    if not overwrite and current != preset['data']:
+    if not overwrite:
+        differs = any(current.get(table, []) != preset['data'].get(table, []) for table in tables_to_restore)
+        if differs:
+            conn.close()
+            return False
         conn.close()
-        return False
+        return True
+
+    if not tables_to_restore:
+        conn.close()
+        return True
 
     # Capture teacher, group and student references before wiping tables so we
     # can preserve names for any existing timetable or attendance rows.
@@ -785,7 +969,7 @@ def restore_configuration(preset, overwrite=False, preset_id=None):
     c.execute('SELECT DISTINCT student_id, student_name FROM attendance_log')
     log_students = {r['student_id']: r['student_name'] for r in c.fetchall()}
 
-    for table in CONFIG_TABLES:
+    for table in tables_to_restore:
         rows = preset['data'].get(table, [])
         c.execute(f'DELETE FROM {table}')
         if rows:
@@ -796,6 +980,8 @@ def restore_configuration(preset, overwrite=False, preset_id=None):
                     f"INSERT INTO {table} ({','.join(cols)}) VALUES ({placeholders})",
                     [row[col] for col in cols],
                 )
+
+    _prune_orphaned_config_rows(c)
 
     # Reinsert archived teachers for any timetable references that no longer
     # resolve to an active teacher.
@@ -2338,7 +2524,10 @@ def config():
                            student_loc_map=student_loc_map,
                            subject_map=subj_map,
                            group_loc_map=group_loc_map,
-                           presets=presets)
+                           presets=presets,
+                           preset_sections=CONFIG_SECTION_LABELS,
+                           preset_section_dependencies=CONFIG_SECTION_DEPENDENCIES,
+                           preset_section_notes=CONFIG_SECTION_NOTES)
 
 
 @app.route('/presets', methods=['GET'])
@@ -2377,7 +2566,24 @@ def save_preset():
 @app.route('/presets/load', methods=['POST'])
 def load_preset():
     preset_id = request.form.get('preset_id')
-    overwrite = bool(request.form.get('overwrite'))
+    overwrite_raw = request.form.get('overwrite', '')
+    overwrite = str(overwrite_raw).lower() in {'1', 'true', 'yes', 'on'}
+    sections_raw = request.form.get('selected_sections')
+    sections = None
+    if sections_raw:
+        try:
+            parsed_sections = json.loads(sections_raw)
+        except json.JSONDecodeError:
+            parsed_sections = []
+        if isinstance(parsed_sections, list):
+            cleaned = []
+            for entry in parsed_sections:
+                if not isinstance(entry, str):
+                    continue
+                if entry in CONFIG_SECTION_TABLES and entry not in cleaned:
+                    cleaned.append(entry)
+            if cleaned:
+                sections = _normalize_sections(cleaned)
     conn = get_db()
     c = conn.cursor()
     c.execute('SELECT data, version FROM config_presets WHERE id=?', (preset_id,))
@@ -2387,7 +2593,7 @@ def load_preset():
         flash('Preset not found.', 'error')
         return redirect(url_for('config'))
     preset = {'version': row['version'], 'data': json.loads(row['data'])}
-    ok = restore_configuration(preset, overwrite=overwrite, preset_id=preset_id)
+    ok = restore_configuration(preset, overwrite=overwrite, preset_id=preset_id, sections=sections)
     if not ok:
         flash('Preset differs from current data. Confirm overwrite to load.', 'warning')
     else:

@@ -2,6 +2,246 @@
 // Populate drop-downs and handle dynamic slot time fields.
 
 document.addEventListener('DOMContentLoaded', function () {
+    const loadForm = document.getElementById('load-form');
+    const overwriteInput = document.getElementById('overwrite');
+    const presetSectionsInput = document.getElementById('selected-sections-input');
+    const loadPresetModal = document.getElementById('load-preset-modal');
+    const loadPresetButton = document.querySelector('[data-preset-load]');
+    const loadPresetCancel = loadPresetModal ? loadPresetModal.querySelector('[data-preset-load-cancel]') : null;
+    const loadPresetConfirm = document.getElementById('confirm-load-preset');
+
+    function getModalInstance(modalId) {
+        if (!modalId) {
+            return null;
+        }
+        if (!window.FlowbiteInstances || typeof window.FlowbiteInstances.getInstance !== 'function') {
+            return null;
+        }
+        try {
+            return window.FlowbiteInstances.getInstance('Modal', modalId);
+        } catch (err) {
+            return null;
+        }
+    }
+
+    function ensureModal(modal) {
+        if (!modal) {
+            return null;
+        }
+        const existing = getModalInstance(modal.id);
+        if (existing) {
+            return existing;
+        }
+        if (typeof window.Modal === 'function') {
+            try {
+                return new window.Modal(modal, { closable: false }, { id: modal.id, override: true });
+            } catch (err) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    function showModal(modal) {
+        if (!modal) {
+            return;
+        }
+        const instance = ensureModal(modal);
+        if (instance && typeof instance.show === 'function') {
+            instance.show();
+        } else {
+            modal.classList.remove('hidden');
+        }
+    }
+
+    function hideModal(modal) {
+        if (!modal) {
+            return;
+        }
+        const instance = getModalInstance(modal.id);
+        if (instance && typeof instance.hide === 'function') {
+            instance.hide();
+        } else {
+            modal.classList.add('hidden');
+        }
+    }
+
+    if (loadForm && overwriteInput && presetSectionsInput && loadPresetModal && loadPresetButton) {
+        const sectionCheckboxes = Array.from(loadPresetModal.querySelectorAll('[data-preset-section]'));
+        const sectionMeta = new Map();
+        const labelMap = new Map();
+        const evaluationBox = loadPresetModal.querySelector('[data-selection-evaluation]');
+        const evaluationList = evaluationBox ? evaluationBox.querySelector('[data-selection-evaluation-list]') : null;
+
+        sectionCheckboxes.forEach(cb => {
+            labelMap.set(cb.value, cb.dataset.sectionLabel || cb.value);
+            let deps = [];
+            if (cb.dataset.sectionDeps) {
+                try {
+                    const parsed = JSON.parse(cb.dataset.sectionDeps);
+                    if (Array.isArray(parsed)) {
+                        deps = parsed.filter(entry => typeof entry === 'string');
+                    }
+                } catch (err) {
+                    deps = [];
+                }
+            }
+            sectionMeta.set(cb.value, {
+                element: cb,
+                deps,
+                note: cb.dataset.sectionNote || ''
+            });
+        });
+
+        const formatDependencyList = items => {
+            if (!items.length) {
+                return '';
+            }
+            if (items.length === 1) {
+                return items[0];
+            }
+            const head = items.slice(0, -1);
+            const tail = items[items.length - 1];
+            return `${head.join(', ')} and ${tail}`;
+        };
+
+        const ensureDependencies = (value, visited = new Set()) => {
+            if (visited.has(value)) {
+                return;
+            }
+            visited.add(value);
+            const meta = sectionMeta.get(value);
+            if (!meta) {
+                return;
+            }
+            meta.deps.forEach(dep => {
+                const depMeta = sectionMeta.get(dep);
+                if (!depMeta) {
+                    return;
+                }
+                if (!depMeta.element.checked) {
+                    depMeta.element.checked = true;
+                }
+                ensureDependencies(dep, visited);
+            });
+        };
+
+        const updateLocksAndEvaluation = () => {
+            const selected = new Set();
+            sectionCheckboxes.forEach(cb => {
+                if (cb.checked) {
+                    selected.add(cb.value);
+                }
+            });
+
+            const locked = new Set();
+            selected.forEach(value => {
+                const meta = sectionMeta.get(value);
+                if (!meta) {
+                    return;
+                }
+                meta.deps.forEach(dep => locked.add(dep));
+            });
+
+            sectionCheckboxes.forEach(cb => {
+                const isLocked = locked.has(cb.value) && selected.has(cb.value);
+                cb.disabled = isLocked;
+                if (isLocked) {
+                    cb.dataset.locked = 'true';
+                } else {
+                    delete cb.dataset.locked;
+                }
+            });
+
+            if (!evaluationBox || !evaluationList) {
+                return;
+            }
+
+            evaluationList.innerHTML = '';
+            const messages = [];
+            selected.forEach(value => {
+                const meta = sectionMeta.get(value);
+                if (!meta || !meta.note || !meta.deps.length) {
+                    return;
+                }
+                const deps = meta.deps.map(dep => labelMap.get(dep) || dep);
+                const formattedDeps = formatDependencyList(deps);
+                const message = meta.note.replace('{deps}', formattedDeps);
+                if (!messages.includes(message)) {
+                    messages.push(message);
+                }
+            });
+
+            if (!messages.length) {
+                evaluationBox.classList.add('hidden');
+                return;
+            }
+
+            messages.forEach(msg => {
+                const li = document.createElement('li');
+                li.textContent = msg;
+                evaluationList.appendChild(li);
+            });
+            evaluationBox.classList.remove('hidden');
+        };
+
+        const refreshSelectionState = () => {
+            const visited = new Set();
+            sectionCheckboxes.forEach(cb => {
+                if (cb.checked) {
+                    ensureDependencies(cb.value, visited);
+                }
+            });
+            updateLocksAndEvaluation();
+        };
+
+        loadPresetButton.addEventListener('click', event => {
+            event.preventDefault();
+            sectionCheckboxes.forEach(cb => {
+                cb.checked = true;
+                cb.disabled = false;
+                delete cb.dataset.locked;
+            });
+            refreshSelectionState();
+            showModal(loadPresetModal);
+        });
+
+        sectionCheckboxes.forEach(cb => {
+            cb.addEventListener('change', () => {
+                if (cb.checked) {
+                    ensureDependencies(cb.value);
+                }
+                updateLocksAndEvaluation();
+            });
+        });
+
+        if (loadPresetCancel) {
+            loadPresetCancel.addEventListener('click', event => {
+                event.preventDefault();
+                hideModal(loadPresetModal);
+            });
+        }
+
+        if (loadPresetConfirm) {
+            loadPresetConfirm.addEventListener('click', () => {
+                refreshSelectionState();
+                const selected = sectionCheckboxes.filter(cb => cb.checked).map(cb => cb.value);
+                if (!selected.length) {
+                    alert('Select at least one section to load.');
+                    return;
+                }
+                presetSectionsInput.value = JSON.stringify(selected);
+                overwriteInput.value = '1';
+                hideModal(loadPresetModal);
+                if (typeof loadForm.requestSubmit === 'function') {
+                    loadForm.requestSubmit();
+                } else {
+                    loadForm.submit();
+                }
+            });
+        }
+    }
+
     const teacherSelect = document.getElementById('new_assign_teacher');
     const studentSelect = document.getElementById('new_assign_student');
     const groupSelect = document.getElementById('new_assign_group');
@@ -202,6 +442,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 : null);
             if (instance && typeof instance.show === 'function') {
                 instance.show();
+            } else {
+                modal.classList.remove('hidden');
             }
         });
     });
@@ -242,6 +484,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 : null;
             if (instance && typeof instance.hide === 'function') {
                 instance.hide();
+            } else {
+                modal.classList.add('hidden');
             }
         });
     });
@@ -260,6 +504,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     : null;
                 if (instance && typeof instance.hide === 'function') {
                     instance.hide();
+                } else {
+                    modal.classList.add('hidden');
                 }
             }
             triggerConfigSubmit();
