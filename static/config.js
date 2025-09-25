@@ -302,6 +302,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 : null);
             if (instance && typeof instance.show === 'function') {
                 instance.show();
+            } else {
+                modal.classList.remove('hidden');
             }
         });
     });
@@ -342,6 +344,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 : null;
             if (instance && typeof instance.hide === 'function') {
                 instance.hide();
+            } else {
+                modal.classList.add('hidden');
             }
         });
     });
@@ -360,6 +364,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     : null;
                 if (instance && typeof instance.hide === 'function') {
                     instance.hide();
+                } else {
+                    modal.classList.add('hidden');
                 }
             }
             triggerConfigSubmit();
