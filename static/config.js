@@ -2,6 +2,106 @@
 // Populate drop-downs and handle dynamic slot time fields.
 
 document.addEventListener('DOMContentLoaded', function () {
+    const loadForm = document.getElementById('load-form');
+    const overwriteInput = document.getElementById('overwrite');
+    const presetSectionsInput = document.getElementById('selected-sections-input');
+    const loadPresetModal = document.getElementById('load-preset-modal');
+    const loadPresetButton = document.querySelector('[data-preset-load]');
+    const loadPresetCancel = loadPresetModal ? loadPresetModal.querySelector('[data-preset-load-cancel]') : null;
+    const loadPresetConfirm = document.getElementById('confirm-load-preset');
+
+    function getModalInstance(modalId) {
+        if (!modalId) {
+            return null;
+        }
+        if (!window.FlowbiteInstances || typeof window.FlowbiteInstances.getInstance !== 'function') {
+            return null;
+        }
+        try {
+            return window.FlowbiteInstances.getInstance('Modal', modalId);
+        } catch (err) {
+            return null;
+        }
+    }
+
+    function ensureModal(modal) {
+        if (!modal) {
+            return null;
+        }
+        const existing = getModalInstance(modal.id);
+        if (existing) {
+            return existing;
+        }
+        if (typeof window.Modal === 'function') {
+            try {
+                return new window.Modal(modal, { closable: false }, { id: modal.id, override: true });
+            } catch (err) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    function showModal(modal) {
+        if (!modal) {
+            return;
+        }
+        const instance = ensureModal(modal);
+        if (instance && typeof instance.show === 'function') {
+            instance.show();
+        } else {
+            modal.classList.remove('hidden');
+        }
+    }
+
+    function hideModal(modal) {
+        if (!modal) {
+            return;
+        }
+        const instance = getModalInstance(modal.id);
+        if (instance && typeof instance.hide === 'function') {
+            instance.hide();
+        } else {
+            modal.classList.add('hidden');
+        }
+    }
+
+    if (loadForm && overwriteInput && presetSectionsInput && loadPresetModal && loadPresetButton) {
+        const sectionCheckboxes = Array.from(loadPresetModal.querySelectorAll('[data-preset-section]'));
+        loadPresetButton.addEventListener('click', event => {
+            event.preventDefault();
+            sectionCheckboxes.forEach(cb => {
+                cb.checked = true;
+            });
+            showModal(loadPresetModal);
+        });
+
+        if (loadPresetCancel) {
+            loadPresetCancel.addEventListener('click', event => {
+                event.preventDefault();
+                hideModal(loadPresetModal);
+            });
+        }
+
+        if (loadPresetConfirm) {
+            loadPresetConfirm.addEventListener('click', () => {
+                const selected = sectionCheckboxes.filter(cb => cb.checked).map(cb => cb.value);
+                if (!selected.length) {
+                    alert('Select at least one section to load.');
+                    return;
+                }
+                presetSectionsInput.value = JSON.stringify(selected);
+                overwriteInput.value = '1';
+                hideModal(loadPresetModal);
+                if (typeof loadForm.requestSubmit === 'function') {
+                    loadForm.requestSubmit();
+                } else {
+                    loadForm.submit();
+                }
+            });
+        }
+    }
+
     const teacherSelect = document.getElementById('new_assign_teacher');
     const studentSelect = document.getElementById('new_assign_student');
     const groupSelect = document.getElementById('new_assign_group');
