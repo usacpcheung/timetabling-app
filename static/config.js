@@ -68,12 +68,151 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (loadForm && overwriteInput && presetSectionsInput && loadPresetModal && loadPresetButton) {
         const sectionCheckboxes = Array.from(loadPresetModal.querySelectorAll('[data-preset-section]'));
+        const sectionMeta = new Map();
+        const labelMap = new Map();
+        const evaluationBox = loadPresetModal.querySelector('[data-selection-evaluation]');
+        const evaluationList = evaluationBox ? evaluationBox.querySelector('[data-selection-evaluation-list]') : null;
+
+        sectionCheckboxes.forEach(cb => {
+            labelMap.set(cb.value, cb.dataset.sectionLabel || cb.value);
+            let deps = [];
+            if (cb.dataset.sectionDeps) {
+                try {
+                    const parsed = JSON.parse(cb.dataset.sectionDeps);
+                    if (Array.isArray(parsed)) {
+                        deps = parsed.filter(entry => typeof entry === 'string');
+                    }
+                } catch (err) {
+                    deps = [];
+                }
+            }
+            sectionMeta.set(cb.value, {
+                element: cb,
+                deps,
+                note: cb.dataset.sectionNote || ''
+            });
+        });
+
+        const formatDependencyList = items => {
+            if (!items.length) {
+                return '';
+            }
+            if (items.length === 1) {
+                return items[0];
+            }
+            const head = items.slice(0, -1);
+            const tail = items[items.length - 1];
+            return `${head.join(', ')} and ${tail}`;
+        };
+
+        const ensureDependencies = (value, visited = new Set()) => {
+            if (visited.has(value)) {
+                return;
+            }
+            visited.add(value);
+            const meta = sectionMeta.get(value);
+            if (!meta) {
+                return;
+            }
+            meta.deps.forEach(dep => {
+                const depMeta = sectionMeta.get(dep);
+                if (!depMeta) {
+                    return;
+                }
+                if (!depMeta.element.checked) {
+                    depMeta.element.checked = true;
+                }
+                ensureDependencies(dep, visited);
+            });
+        };
+
+        const updateLocksAndEvaluation = () => {
+            const selected = new Set();
+            sectionCheckboxes.forEach(cb => {
+                if (cb.checked) {
+                    selected.add(cb.value);
+                }
+            });
+
+            const locked = new Set();
+            selected.forEach(value => {
+                const meta = sectionMeta.get(value);
+                if (!meta) {
+                    return;
+                }
+                meta.deps.forEach(dep => locked.add(dep));
+            });
+
+            sectionCheckboxes.forEach(cb => {
+                const isLocked = locked.has(cb.value) && selected.has(cb.value);
+                cb.disabled = isLocked;
+                if (isLocked) {
+                    cb.dataset.locked = 'true';
+                } else {
+                    delete cb.dataset.locked;
+                }
+            });
+
+            if (!evaluationBox || !evaluationList) {
+                return;
+            }
+
+            evaluationList.innerHTML = '';
+            const messages = [];
+            selected.forEach(value => {
+                const meta = sectionMeta.get(value);
+                if (!meta || !meta.note || !meta.deps.length) {
+                    return;
+                }
+                const deps = meta.deps.map(dep => labelMap.get(dep) || dep);
+                const formattedDeps = formatDependencyList(deps);
+                const message = meta.note.replace('{deps}', formattedDeps);
+                if (!messages.includes(message)) {
+                    messages.push(message);
+                }
+            });
+
+            if (!messages.length) {
+                evaluationBox.classList.add('hidden');
+                return;
+            }
+
+            messages.forEach(msg => {
+                const li = document.createElement('li');
+                li.textContent = msg;
+                evaluationList.appendChild(li);
+            });
+            evaluationBox.classList.remove('hidden');
+        };
+
+        const refreshSelectionState = () => {
+            const visited = new Set();
+            sectionCheckboxes.forEach(cb => {
+                if (cb.checked) {
+                    ensureDependencies(cb.value, visited);
+                }
+            });
+            updateLocksAndEvaluation();
+        };
+
         loadPresetButton.addEventListener('click', event => {
             event.preventDefault();
             sectionCheckboxes.forEach(cb => {
                 cb.checked = true;
+                cb.disabled = false;
+                delete cb.dataset.locked;
             });
+            refreshSelectionState();
             showModal(loadPresetModal);
+        });
+
+        sectionCheckboxes.forEach(cb => {
+            cb.addEventListener('change', () => {
+                if (cb.checked) {
+                    ensureDependencies(cb.value);
+                }
+                updateLocksAndEvaluation();
+            });
         });
 
         if (loadPresetCancel) {
@@ -85,6 +224,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         if (loadPresetConfirm) {
             loadPresetConfirm.addEventListener('click', () => {
+                refreshSelectionState();
                 const selected = sectionCheckboxes.filter(cb => cb.checked).map(cb => cb.value);
                 if (!selected.length) {
                     alert('Select at least one section to load.');

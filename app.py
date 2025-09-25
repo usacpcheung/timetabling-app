@@ -58,6 +58,25 @@ CONFIG_SECTION_DEFINITIONS = [
 CONFIG_SECTION_LABELS = OrderedDict((key, label) for key, label, _ in CONFIG_SECTION_DEFINITIONS)
 CONFIG_SECTION_TABLES = {key: tables for key, _, tables in CONFIG_SECTION_DEFINITIONS}
 
+CONFIG_SECTION_DEPENDENCIES = {
+    'general': [],
+    'subjects': [],
+    'teachers': ['subjects'],
+    'students': ['general', 'subjects', 'teachers', 'locations'],
+    'groups': ['students', 'subjects', 'locations'],
+    'locations': [],
+    'unavailability': ['teachers'],
+    'assignments': ['teachers', 'students', 'groups', 'subjects', 'locations'],
+}
+
+CONFIG_SECTION_NOTES = {
+    'teachers': 'Teachers rely on {deps} so subject lists stay in sync.',
+    'students': 'Students rely on {deps} so advanced student dialogs (blocked slots, repeat options, locations and teacher blocks) remain accurate.',
+    'groups': 'Groups rely on {deps} for member lists, subjects and locations.',
+    'unavailability': 'Teacher unavailability relies on {deps} so every entry still references a teacher.',
+    'assignments': 'Fixed assignments rely on {deps} to keep their teacher, student, subject and location references valid.',
+}
+
 # Tables that represent configuration data. Presets only dump and restore
 # these tables so previously generated timetables, worksheets or logs remain
 # untouched when a preset is loaded.
@@ -83,13 +102,45 @@ CONFIG_TABLES = [
 ]
 
 
+def _normalize_sections(sections):
+    """Return sections plus any required dependencies in definition order."""
+
+    if not sections:
+        return []
+
+    order = [key for key, _, _ in CONFIG_SECTION_DEFINITIONS]
+    order_index = {key: idx for idx, key in enumerate(order)}
+
+    resolved = []
+    seen = set()
+
+    def add(section):
+        if section in seen:
+            return
+        if section not in CONFIG_SECTION_TABLES:
+            return
+        seen.add(section)
+        for dep in CONFIG_SECTION_DEPENDENCIES.get(section, []):
+            add(dep)
+        resolved.append(section)
+
+    for section in sections:
+        add(section)
+
+    resolved.sort(key=lambda key: order_index.get(key, len(order)))
+    return resolved
+
+
 def _tables_for_sections(sections):
     """Return configuration tables associated with the requested sections."""
 
     if not sections:
         return list(CONFIG_TABLES)
+    normalized = _normalize_sections(sections)
+    if not normalized:
+        return list(CONFIG_TABLES)
     allowed = set()
-    for section in sections:
+    for section in normalized:
         tables = CONFIG_SECTION_TABLES.get(section)
         if not tables:
             continue
@@ -2386,7 +2437,9 @@ def config():
                            subject_map=subj_map,
                            group_loc_map=group_loc_map,
                            presets=presets,
-                           preset_sections=CONFIG_SECTION_LABELS)
+                           preset_sections=CONFIG_SECTION_LABELS,
+                           preset_section_dependencies=CONFIG_SECTION_DEPENDENCIES,
+                           preset_section_notes=CONFIG_SECTION_NOTES)
 
 
 @app.route('/presets', methods=['GET'])
@@ -2442,7 +2495,7 @@ def load_preset():
                 if entry in CONFIG_SECTION_TABLES and entry not in cleaned:
                     cleaned.append(entry)
             if cleaned:
-                sections = cleaned
+                sections = _normalize_sections(cleaned)
     conn = get_db()
     c = conn.cursor()
     c.execute('SELECT data, version FROM config_presets WHERE id=?', (preset_id,))
