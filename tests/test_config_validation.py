@@ -44,14 +44,18 @@ def _valid_config_form(row):
         ('max_lessons', str(row['max_lessons'])),
         ('teacher_min_lessons', str(row['teacher_min_lessons'])),
         ('teacher_max_lessons', str(row['teacher_max_lessons'])),
-        ('max_repeats', str(row['max_repeats'])),
-        ('consecutive_weight', str(row['consecutive_weight'])),
         ('attendance_weight', str(row['attendance_weight'])),
         ('group_weight', str(row['group_weight'])),
         ('well_attend_weight', str(row['well_attend_weight'])),
         ('balance_weight', str(row['balance_weight'])),
         ('solver_time_limit', str(row['solver_time_limit'])),
     ])
+    if row['allow_repeats']:
+        data.extend([
+            ('max_repeats', str(row['max_repeats'])),
+            ('consecutive_weight', str(row['consecutive_weight'])),
+        ])
+    repeat_flags = {'allow_consecutive', 'prefer_consecutive'}
     for flag in [
         'allow_repeats',
         'prefer_consecutive',
@@ -61,8 +65,11 @@ def _valid_config_form(row):
         'allow_multi_teacher',
         'balance_teacher_load',
     ]:
-        if row[flag]:
-            data.append((flag, '1'))
+        if not row[flag]:
+            continue
+        if flag in repeat_flags and not row['allow_repeats']:
+            continue
+        data.append((flag, '1'))
     return MultiDict(data)
 
 
@@ -796,7 +803,10 @@ def test_warn_when_disabling_last_teacher_for_subject(tmp_path):
         flashes = get_flashed_messages(with_categories=True)
 
     assert response.status_code == 302
-    expected = ('error', f'No teacher available for {subject_name} for student {student_name}')
+    expected = (
+        'warning',
+        f'No teacher scheduled for {subject_name} for student {student_name}; the solver will skip this subject.',
+    )
     assert expected in flashes
 
     conn = sqlite3.connect(app.DB_PATH)
@@ -807,7 +817,7 @@ def test_warn_when_disabling_last_teacher_for_subject(tmp_path):
     ).fetchone()
     conn.close()
 
-    assert updated['needs_lessons'] == teacher['needs_lessons']
+    assert updated['needs_lessons'] == 0
 
 
 def test_group_validation_reports_subject_name_when_teacher_blocked(tmp_path):

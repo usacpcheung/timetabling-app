@@ -2090,10 +2090,13 @@ def config():
         c.execute('SELECT id, subjects, needs_lessons FROM teachers')
         trows = c.fetchall()
         teacher_map_validate = {}
+        teacher_map_all = {}
         for t in trows:
+            normalized_subjects = _normalize_subject_set(t['subjects'])
+            teacher_map_all[t['id']] = normalized_subjects
             if not _teacher_needs_lessons(t):
                 continue
-            teacher_map_validate[t['id']] = _normalize_subject_set(t['subjects'])
+            teacher_map_validate[t['id']] = normalized_subjects
         c.execute('SELECT id, name, subjects, active FROM students')
         srows = c.fetchall()
         student_subj_map = {}
@@ -2125,14 +2128,31 @@ def config():
                     subj in tsubs and tid not in blocked_teachers
                     for tid, tsubs in teacher_map_validate.items()
                 )
-                if not available:
-                    subject_label = subject_name_map.get(subj) or str(subj)
+                if available:
+                    continue
+
+                # If a teacher exists for the subject but has been marked as not
+                # needing lessons, treat it as a warning so administrators can
+                # intentionally leave the subject uncovered. The solver will
+                # simply skip those pairs when building a timetable.
+                fallback_available = any(
+                    subj in tsubs and tid not in blocked_teachers
+                    for tid, tsubs in teacher_map_all.items()
+                )
+                subject_label = subject_name_map.get(subj) or str(subj)
+                if fallback_available:
                     flash(
-                        f'No teacher available for {subject_label} for student {meta["name"]}',
-                        'error',
+                        f'No teacher scheduled for {subject_label} for student {meta["name"]}; the solver will skip this subject.',
+                        'warning',
                     )
-                    has_error = True
-                    break
+                    continue
+
+                flash(
+                    f'No teacher available for {subject_label} for student {meta["name"]}',
+                    'error',
+                )
+                has_error = True
+                break
 
         # === Update group definitions ===
         # Every existing group is processed. We first handle deletions and then
