@@ -4,10 +4,11 @@ import sys
 import sqlite3
 
 
-def setup_db(tmp_path):
-    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-    import app
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+import app
 
+
+def setup_db(tmp_path):
     app.DB_PATH = str(tmp_path / 'test.db')
     app.init_db()
     conn = sqlite3.connect(app.DB_PATH)
@@ -16,8 +17,6 @@ def setup_db(tmp_path):
 
 
 def test_restore_selected_sections_only_updates_requested_tables(tmp_path):
-    import app
-
     conn = setup_db(tmp_path)
     cur = conn.cursor()
 
@@ -44,8 +43,6 @@ def test_restore_selected_sections_only_updates_requested_tables(tmp_path):
 
 
 def test_student_section_forces_related_dependencies(tmp_path):
-    import app
-
     conn = setup_db(tmp_path)
     cur = conn.cursor()
 
@@ -94,8 +91,6 @@ def test_student_section_forces_related_dependencies(tmp_path):
 
 
 def test_partial_teacher_restore_cleans_dependent_tables(tmp_path):
-    import app
-
     conn = setup_db(tmp_path)
     cur = conn.cursor()
 
@@ -136,8 +131,6 @@ def test_partial_teacher_restore_cleans_dependent_tables(tmp_path):
 
 
 def test_partial_student_restore_cleans_dependent_tables(tmp_path):
-    import app
-
     conn = setup_db(tmp_path)
     cur = conn.cursor()
 
@@ -200,9 +193,61 @@ def test_partial_student_restore_cleans_dependent_tables(tmp_path):
     conn.close()
 
 
-def test_partial_location_restore_cleans_dependent_tables(tmp_path):
-    import app
+def test_subject_restore_prunes_json_references(tmp_path):
+    conn = setup_db(tmp_path)
+    cur = conn.cursor()
 
+    preset = app.dump_configuration()
+
+    student_id = preset['data']['students'][0]['id']
+    teacher_id = preset['data']['teachers'][0]['id']
+
+    cur.execute("INSERT INTO subjects (id, name) VALUES (?, ?)", (9999, 'Temp Subject'))
+
+    cur.execute('SELECT subjects, repeat_subjects FROM students WHERE id=?', (student_id,))
+    student_row = cur.fetchone()
+    student_subjects = json.loads(student_row[0])
+    student_subjects.append(9999)
+    student_repeats = json.loads(student_row[1]) if student_row[1] else []
+    student_repeats.append(9999)
+    cur.execute(
+        'UPDATE students SET subjects=?, repeat_subjects=? WHERE id=?',
+        (json.dumps(student_subjects), json.dumps(student_repeats), student_id),
+    )
+
+    cur.execute('SELECT subjects FROM teachers WHERE id=?', (teacher_id,))
+    teacher_subjects = json.loads(cur.fetchone()[0])
+    teacher_subjects.append(9999)
+    cur.execute('UPDATE teachers SET subjects=? WHERE id=?', (json.dumps(teacher_subjects), teacher_id))
+
+    cur.execute(
+        'INSERT INTO groups (name, subjects) VALUES (?, ?)',
+        ('Temp Group', json.dumps([9999])),
+    )
+
+    conn.commit()
+    conn.close()
+
+    app.restore_configuration(preset, overwrite=True, sections=['subjects'])
+
+    conn = sqlite3.connect(app.DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute('SELECT subjects, repeat_subjects FROM students WHERE id=?', (student_id,))
+    s_subjects, s_repeats = cur.fetchone()
+    assert 9999 not in json.loads(s_subjects)
+    assert 9999 not in (json.loads(s_repeats) if s_repeats else [])
+
+    cur.execute('SELECT subjects FROM teachers WHERE id=?', (teacher_id,))
+    assert 9999 not in json.loads(cur.fetchone()[0])
+
+    cur.execute('SELECT subjects FROM groups WHERE name=?', ('Temp Group',))
+    assert json.loads(cur.fetchone()[0]) == []
+
+    conn.close()
+
+
+def test_partial_location_restore_cleans_dependent_tables(tmp_path):
     conn = setup_db(tmp_path)
     cur = conn.cursor()
 

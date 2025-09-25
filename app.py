@@ -175,6 +175,41 @@ def _prune_orphaned_config_rows(cursor):
             params = tuple(sorted(valid_ids))
         cursor.execute(query, params)
 
+    def clean_subject_list(table, column, valid_subject_ids):
+        if not _column_exists(cursor, table, column):
+            return
+        cursor.execute(f'SELECT id, {column} FROM {table}')
+        rows = cursor.fetchall()
+        for row in rows:
+            raw_value = row[column]
+            if raw_value in (None, ''):
+                continue
+            try:
+                data = json.loads(raw_value)
+            except (TypeError, json.JSONDecodeError):
+                data = []
+            changed = False
+            cleaned = []
+            if isinstance(data, list):
+                for item in data:
+                    try:
+                        subj_id = int(item)
+                    except (TypeError, ValueError):
+                        changed = True
+                        continue
+                    if subj_id in valid_subject_ids:
+                        cleaned.append(subj_id)
+                    else:
+                        changed = True
+            else:
+                changed = True
+            if not cleaned and raw_value in ('[]', 'null'):
+                cleaned_json = '[]'
+            else:
+                cleaned_json = json.dumps(cleaned)
+            if changed or cleaned_json != raw_value:
+                cursor.execute(f'UPDATE {table} SET {column}=? WHERE id=?', (cleaned_json, row['id']))
+
     teacher_ids = fetch_ids('teachers')
     student_ids = fetch_ids('students')
     group_ids = fetch_ids('groups')
@@ -196,6 +231,11 @@ def _prune_orphaned_config_rows(cursor):
     prune('fixed_assignments', 'group_id', group_ids)
     prune('fixed_assignments', 'subject_id', subject_ids)
     prune('fixed_assignments', 'location_id', location_ids)
+
+    clean_subject_list('students', 'subjects', subject_ids)
+    clean_subject_list('students', 'repeat_subjects', subject_ids)
+    clean_subject_list('teachers', 'subjects', subject_ids)
+    clean_subject_list('groups', 'subjects', subject_ids)
 
 
 def get_db():
