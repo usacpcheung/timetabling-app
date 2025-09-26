@@ -392,16 +392,13 @@
                 <fieldset class="space-y-2">
                     <legend class="font-medium">Blocked slots</legend>
                     <p class="text-sm text-emerald-700">Add or remove blocked slots for every selected student.</p>
-                    <div class="flex items-center gap-4">
-                        <label class="inline-flex items-center gap-1 text-sm text-emerald-800">
-                            <input type="radio" name="batch_block_action" value="add" class="text-emerald-600 border-emerald-300" checked>
-                            Add
-                        </label>
-                        <label class="inline-flex items-center gap-1 text-sm text-emerald-800">
-                            <input type="radio" name="batch_block_action" value="remove" class="text-emerald-600 border-emerald-300">
-                            Remove
-                        </label>
-                    </div>
+                    <label class="block">
+                        <span class="sr-only">Blocked slot action</span>
+                        <select name="batch_block_action" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                            <option value="add">Add selected slots</option>
+                            <option value="remove">Remove selected slots</option>
+                        </select>
+                    </label>
                     <select multiple name="batch_block_slots" class="border border-emerald-300 rounded-lg p-2.5 w-full" size="6">
                         {% for i in range(config['slots_per_day']) %}
                         <option value="{{ i + 1 }}">Slot {{ i + 1 }}</option>
@@ -428,13 +425,14 @@
             <fieldset class="space-y-2">
                 <legend class="font-medium">Teacher blocks</legend>
                 <p class="text-sm text-emerald-700">Block or unblock teachers for all selected students. Blocks prevent those teachers from being assigned during scheduling.</p>
-                <select multiple name="batch_teacher_blocks" class="border border-emerald-300 rounded-lg p-2.5 w-full" size="6">
-                    {% for t in teachers %}
-                    <option value="{{ t['id'] }}">{{ t['name'] }}</option>
-                    {% endfor %}
-                </select>
-                <select multiple name="batch_teacher_unblocks" class="border border-emerald-300 rounded-lg p-2.5 w-full" size="6">
-                    <option value="" disabled>Unblock teachers (optional)</option>
+                <label class="block">
+                    <span class="sr-only">Teacher action</span>
+                    <select name="batch_teacher_action" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                        <option value="add">Block selected teachers</option>
+                        <option value="remove">Unblock selected teachers</option>
+                    </select>
+                </label>
+                <select multiple name="batch_teacher_targets" class="border border-emerald-300 rounded-lg p-2.5 w-full" size="6">
                     {% for t in teachers %}
                     <option value="{{ t['id'] }}">{{ t['name'] }}</option>
                     {% endfor %}

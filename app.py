@@ -1970,8 +1970,8 @@ def config():
             batch_subject_action = request.form.get('batch_subject_action', 'add')
             batch_subject_ids = set(_parse_int_list(request.form.getlist('batch_subjects')))
 
-            batch_teacher_blocks = set(_parse_int_list(request.form.getlist('batch_teacher_blocks')))
-            batch_teacher_unblocks = set(_parse_int_list(request.form.getlist('batch_teacher_unblocks')))
+            batch_teacher_action = request.form.get('batch_teacher_action', 'add')
+            batch_teacher_targets = set(_parse_int_list(request.form.getlist('batch_teacher_targets')))
 
             for sid in batch_student_ids:
                 data = student_form_data.get(sid)
@@ -1988,10 +1988,11 @@ def config():
                         data['repeat_subjects'].intersection_update(data['subjects'])
                     else:
                         data['subjects'].update(batch_subject_ids)
-                if batch_teacher_blocks:
-                    data['blocks'].update(batch_teacher_blocks)
-                if batch_teacher_unblocks:
-                    data['blocks'].difference_update(batch_teacher_unblocks)
+                if batch_teacher_targets:
+                    if batch_teacher_action == 'remove':
+                        data['blocks'].difference_update(batch_teacher_targets)
+                    else:
+                        data['blocks'].update(batch_teacher_targets)
 
         # update students
         for sid in student_ids_form:

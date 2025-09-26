@@ -391,14 +391,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (configForm) {
         const batchStudents = configForm.querySelector('select[name="batch_students"]');
+        const batchBlockAction = configForm.querySelector('select[name="batch_block_action"]');
         const batchBlockSlots = configForm.querySelector('select[name="batch_block_slots"]');
         const batchSubjectAction = configForm.querySelector('select[name="batch_subject_action"]');
         const batchSubjects = configForm.querySelector('select[name="batch_subjects"]');
-        const batchTeacherBlocks = configForm.querySelector('select[name="batch_teacher_blocks"]');
-        const batchTeacherUnblocks = configForm.querySelector('select[name="batch_teacher_unblocks"]');
-        const batchBlockRadios = Array.from(configForm.querySelectorAll('input[name="batch_block_action"]'));
-        const dependentSelects = [batchBlockSlots, batchSubjectAction, batchSubjects, batchTeacherBlocks, batchTeacherUnblocks].filter(Boolean);
-        const validationSelects = [batchBlockSlots, batchSubjects, batchTeacherBlocks, batchTeacherUnblocks].filter(Boolean);
+        const batchTeacherAction = configForm.querySelector('select[name="batch_teacher_action"]');
+        const batchTeacherTargets = configForm.querySelector('select[name="batch_teacher_targets"]');
+        const dependentSelects = [batchBlockAction, batchBlockSlots, batchSubjectAction, batchSubjects, batchTeacherAction, batchTeacherTargets].filter(Boolean);
+        const validationSelects = [batchBlockSlots, batchSubjects, batchTeacherTargets].filter(Boolean);
         const defaultSelectValues = new Map();
         dependentSelects.forEach(select => {
             if (!select.multiple) {
@@ -440,8 +440,6 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         };
 
-        const defaultBlockRadio = batchBlockRadios.find(radio => radio.defaultChecked) || batchBlockRadios[0] || null;
-
         const updateBatchSummary = count => {
             if (!batchSummaryBadge) {
                 return;
@@ -469,14 +467,6 @@ document.addEventListener('DOMContentLoaded', function () {
                     clearSelections(select);
                 }
             });
-
-            batchBlockRadios.forEach(radio => {
-                radio.disabled = !hasStudents;
-            });
-
-            if (hasStudents && defaultBlockRadio && !batchBlockRadios.some(radio => radio.checked)) {
-                defaultBlockRadio.checked = true;
-            }
         };
 
         if (batchStudents) {
