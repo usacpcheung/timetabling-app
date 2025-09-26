@@ -377,6 +377,70 @@
         </button>
     </h2>
     <div id="body-students" class="hidden p-4 border border-b-0 border-emerald-200">
+        <fieldset class="space-y-4 mb-8 border border-emerald-200 rounded-lg p-4 bg-emerald-50/50" aria-labelledby="batch-student-actions-heading">
+            <legend id="batch-student-actions-heading" class="font-semibold text-emerald-900">Batch student actions</legend>
+            <p class="text-sm text-emerald-700">Select one or more students and apply shared changes. Batch updates merge with each student&rsquo;s existing values, and removals respect current group and timetable constraints.</p>
+            <label class="block">
+                <span class="font-medium">Students</span>
+                <select multiple name="batch_students" class="border border-emerald-300 rounded-lg p-2.5 w-full" size="6">
+                    {% for s in students %}
+                    <option value="{{ s['id'] }}">{{ s['name'] }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <div class="grid gap-4 md:grid-cols-2">
+                <fieldset class="space-y-2">
+                    <legend class="font-medium">Blocked slots</legend>
+                    <p class="text-sm text-emerald-700">Add or remove blocked slots for every selected student.</p>
+                    <div class="flex items-center gap-4">
+                        <label class="inline-flex items-center gap-1 text-sm text-emerald-800">
+                            <input type="radio" name="batch_block_action" value="add" class="text-emerald-600 border-emerald-300" checked>
+                            Add
+                        </label>
+                        <label class="inline-flex items-center gap-1 text-sm text-emerald-800">
+                            <input type="radio" name="batch_block_action" value="remove" class="text-emerald-600 border-emerald-300">
+                            Remove
+                        </label>
+                    </div>
+                    <select multiple name="batch_block_slots" class="border border-emerald-300 rounded-lg p-2.5 w-full" size="6">
+                        {% for i in range(config['slots_per_day']) %}
+                        <option value="{{ i + 1 }}">Slot {{ i + 1 }}</option>
+                        {% endfor %}
+                    </select>
+                </fieldset>
+                <fieldset class="space-y-2">
+                    <legend class="font-medium">Subjects</legend>
+                    <p class="text-sm text-emerald-700">Apply subject adds or removals. Removing a subject also removes repeats if the subject is no longer assigned.</p>
+                    <label class="block">
+                        <span class="sr-only">Subject action</span>
+                        <select name="batch_subject_action" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                            <option value="add">Add selected subjects</option>
+                            <option value="remove">Remove selected subjects</option>
+                        </select>
+                    </label>
+                    <select multiple name="batch_subjects" class="border border-emerald-300 rounded-lg p-2.5 w-full" size="6">
+                        {% for sub in subjects %}
+                        <option value="{{ sub['id'] }}">{{ sub['name'] }}</option>
+                        {% endfor %}
+                    </select>
+                </fieldset>
+            </div>
+            <fieldset class="space-y-2">
+                <legend class="font-medium">Teacher blocks</legend>
+                <p class="text-sm text-emerald-700">Block or unblock teachers for all selected students. Blocks prevent those teachers from being assigned during scheduling.</p>
+                <select multiple name="batch_teacher_blocks" class="border border-emerald-300 rounded-lg p-2.5 w-full" size="6">
+                    {% for t in teachers %}
+                    <option value="{{ t['id'] }}">{{ t['name'] }}</option>
+                    {% endfor %}
+                </select>
+                <select multiple name="batch_teacher_unblocks" class="border border-emerald-300 rounded-lg p-2.5 w-full" size="6">
+                    <option value="" disabled>Unblock teachers (optional)</option>
+                    {% for t in teachers %}
+                    <option value="{{ t['id'] }}">{{ t['name'] }}</option>
+                    {% endfor %}
+                </select>
+            </fieldset>
+        </fieldset>
         <fieldset class="space-y-4">
             {% for s in students %}
             <input type="hidden" name="student_id" value="{{ s['id'] }}">

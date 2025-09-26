@@ -1892,10 +1892,113 @@ def config():
             for r in fr_rows
             if r['student_id'] is not None and r['id'] not in assign_delete_ids
         }
+        # Helper used when parsing integer lists from the form. Invalid
+        # values are ignored so a single bad entry does not raise during
+        # iteration.
+        def _parse_int_list(values):
+            result = []
+            for item in values:
+                try:
+                    result.append(int(item))
+                except (TypeError, ValueError):
+                    continue
+            return result
+
+        def _parse_int_set(values):
+            return set(_parse_int_list(values))
+
+        # Collect per-student form payload so that batch operations can be
+        # merged before any validation or database writes occur.
+        student_form_data = {}
+        student_ids_form = []
+        for raw_sid in request.form.getlist('student_id'):
+            try:
+                sid = int(raw_sid)
+            except (TypeError, ValueError):
+                continue
+            subjects = set(_parse_int_list(request.form.getlist(f'student_subjects_{sid}')))
+            repeat_subjects = set(_parse_int_list(request.form.getlist(f'student_repeat_subjects_{sid}')))
+            repeat_subjects.intersection_update(subjects)
+            unavailable = _parse_int_set(request.form.getlist(f'student_unavail_{sid}'))
+            blocks = _parse_int_set(request.form.getlist(f'student_block_{sid}'))
+            student_ids_form.append(sid)
+            student_form_data[sid] = {
+                'delete': bool(request.form.get(f'student_delete_{sid}')),
+                'name': request.form.get(f'student_name_{sid}'),
+                'subjects': subjects,
+                'active': 1 if request.form.get(f'student_active_{sid}') else 0,
+                'min_raw': request.form.get(f'student_min_{sid}'),
+                'max_raw': request.form.get(f'student_max_{sid}'),
+                'allow_repeats': 1 if request.form.get(f'student_allow_repeats_{sid}') else 0,
+                'max_repeats_raw': request.form.get(f'student_max_repeats_{sid}'),
+                'allow_consecutive': 1 if request.form.get(f'student_allow_consecutive_{sid}') else 0,
+                'prefer_consecutive': 1 if request.form.get(f'student_prefer_consecutive_{sid}') else 0,
+                'allow_multi_teacher': 1 if request.form.get(f'student_multi_teacher_{sid}') else 0,
+                'repeat_subjects': repeat_subjects,
+                'unavailable': unavailable,
+                'blocks': blocks,
+            }
+
+        # Apply batch operations to the collected payload before any
+        # validation occurs. Unsupported or partial selections simply leave
+        # the data untouched so existing behaviour is preserved when the new
+        # controls are absent.
+        batch_student_ids = []
+        for raw_sid in request.form.getlist('batch_students'):
+            try:
+                sid = int(raw_sid)
+            except (TypeError, ValueError):
+                continue
+            if sid in student_form_data and not student_form_data[sid]['delete']:
+                batch_student_ids.append(sid)
+
+        if batch_student_ids:
+            batch_block_action = request.form.get('batch_block_action', 'add')
+            batch_block_slots = set()
+            for raw_slot in request.form.getlist('batch_block_slots'):
+                try:
+                    slot_val = int(raw_slot)
+                except (TypeError, ValueError):
+                    continue
+                # Batch controls display slots starting at 1; convert to
+                # zero-based indexes while ignoring invalid entries.
+                slot_index = slot_val - 1
+                if slot_index < 0 or slot_index >= slots_per_day:
+                    continue
+                batch_block_slots.add(slot_index)
+
+            batch_subject_action = request.form.get('batch_subject_action', 'add')
+            batch_subject_ids = set(_parse_int_list(request.form.getlist('batch_subjects')))
+
+            batch_teacher_blocks = set(_parse_int_list(request.form.getlist('batch_teacher_blocks')))
+            batch_teacher_unblocks = set(_parse_int_list(request.form.getlist('batch_teacher_unblocks')))
+
+            for sid in batch_student_ids:
+                data = student_form_data.get(sid)
+                if not data:
+                    continue
+                if batch_block_slots:
+                    if batch_block_action == 'remove':
+                        data['unavailable'].difference_update(batch_block_slots)
+                    else:
+                        data['unavailable'].update(batch_block_slots)
+                if batch_subject_ids:
+                    if batch_subject_action == 'remove':
+                        data['subjects'].difference_update(batch_subject_ids)
+                        data['repeat_subjects'].intersection_update(data['subjects'])
+                    else:
+                        data['subjects'].update(batch_subject_ids)
+                if batch_teacher_blocks:
+                    data['blocks'].update(batch_teacher_blocks)
+                if batch_teacher_unblocks:
+                    data['blocks'].difference_update(batch_teacher_unblocks)
+
         # update students
-        student_ids = request.form.getlist('student_id')
-        for sid in student_ids:
-            if request.form.get(f'student_delete_{sid}'):
+        for sid in student_ids_form:
+            data = student_form_data.get(sid)
+            if not data:
+                continue
+            if data['delete']:
                 # prevent deletion while student belongs to any group
                 c.execute('''SELECT g.name FROM group_members gm
                              JOIN groups g ON gm.group_id = g.id
@@ -1928,21 +2031,36 @@ def config():
                 c.execute('DELETE FROM students WHERE id=?', (int(sid),))
                 c.execute('DELETE FROM student_teacher_block WHERE student_id=?', (int(sid),))
             else:
-                name = request.form.get(f'student_name_{sid}')
-                subs = [int(x) for x in request.form.getlist(f'student_subjects_{sid}')]
-                active = 1 if request.form.get(f'student_active_{sid}') else 0
-                smin = request.form.get(f'student_min_{sid}')
-                smax = request.form.get(f'student_max_{sid}')
-                allow_rep = 1 if request.form.get(f'student_allow_repeats_{sid}') else 0
-                max_rep = request.form.get(f'student_max_repeats_{sid}')
-                allow_con = 1 if request.form.get(f'student_allow_consecutive_{sid}') else 0
-                prefer_con = 1 if request.form.get(f'student_prefer_consecutive_{sid}') else 0
-                allow_multi = 1 if request.form.get(f'student_multi_teacher_{sid}') else 0
-                rep_subs = [int(x) for x in request.form.getlist(f'student_repeat_subjects_{sid}')]
+                name = data['name']
+                subs = sorted(data['subjects'])
+                active = data['active']
+                smin = data['min_raw']
+                smax = data['max_raw']
+                allow_rep = data['allow_repeats']
+                max_rep = data['max_repeats_raw']
+                allow_con = data['allow_consecutive']
+                prefer_con = data['prefer_consecutive']
+                allow_multi = data['allow_multi_teacher']
+                rep_subs = sorted(data['repeat_subjects'])
                 subj_json = json.dumps(subs)
-                min_val = int(smin) if smin else None
-                max_val = int(smax) if smax else None
-                max_rep_val = int(max_rep) if max_rep else None
+                try:
+                    min_val = int(smin) if smin else None
+                except (TypeError, ValueError):
+                    flash('Student minimum lessons must be an integer for ' + (name or f'Student {sid}') + '.', 'error')
+                    has_error = True
+                    continue
+                try:
+                    max_val = int(smax) if smax else None
+                except (TypeError, ValueError):
+                    flash('Student maximum lessons must be an integer for ' + (name or f'Student {sid}') + '.', 'error')
+                    has_error = True
+                    continue
+                try:
+                    max_rep_val = int(max_rep) if max_rep else None
+                except (TypeError, ValueError):
+                    flash('Student max repeats must be an integer for ' + (name or f'Student {sid}') + '.', 'error')
+                    has_error = True
+                    continue
                 rep_sub_json = json.dumps(rep_subs) if rep_subs else None
                 if min_val is not None and min_val < 0:
                     flash('Student minimum lessons must be zero or greater for ' + name + '.', 'error')
@@ -1964,8 +2082,7 @@ def config():
                     flash('Student min lessons greater than max for ' + name, 'error')
                     has_error = True
                     continue
-                unavail_values = request.form.getlist(f'student_unavail_{sid}')
-                unavail_slots = {int(sl) for sl in unavail_values if sl != ''}
+                unavail_slots = {sl for sl in data['unavailable'] if sl >= 0}
                 effective_min = min_val if min_val is not None else min_lessons
                 remaining_slots = slots_per_day - len(unavail_slots)
                 if effective_min is not None and effective_min > remaining_slots:
@@ -1983,11 +2100,9 @@ def config():
                 for sl in sorted(unavail_slots):
                     c.execute('INSERT INTO student_unavailable (student_id, slot) VALUES (?, ?)',
                               (int(sid), sl))
-                blocks = request.form.getlist(f'student_block_{sid}')
                 c.execute('DELETE FROM student_teacher_block WHERE student_id=?', (int(sid),))
                 block_map_current[int(sid)] = set()
-                for tid in blocks:
-                    tval = int(tid)
+                for tval in sorted(data['blocks']):
                     if not block_allowed(int(sid), tval, teacher_map_block, student_groups_block,
                                            group_members_block, group_subj_map_block,
                                            block_map_current, fixed_pairs):
