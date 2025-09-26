@@ -397,8 +397,19 @@ document.addEventListener('DOMContentLoaded', function () {
         const batchSubjects = configForm.querySelector('select[name="batch_subjects"]');
         const batchTeacherAction = configForm.querySelector('select[name="batch_teacher_action"]');
         const batchTeacherTargets = configForm.querySelector('select[name="batch_teacher_targets"]');
-        const dependentSelects = [batchBlockAction, batchBlockSlots, batchSubjectAction, batchSubjects, batchTeacherAction, batchTeacherTargets].filter(Boolean);
-        const validationSelects = [batchBlockSlots, batchSubjects, batchTeacherTargets].filter(Boolean);
+        const batchLocationAction = configForm.querySelector('select[name="batch_location_action"]');
+        const batchLocations = configForm.querySelector('select[name="batch_locations"]');
+        const dependentSelects = [
+            batchBlockAction,
+            batchBlockSlots,
+            batchSubjectAction,
+            batchSubjects,
+            batchTeacherAction,
+            batchTeacherTargets,
+            batchLocationAction,
+            batchLocations
+        ].filter(Boolean);
+        const validationSelects = [batchBlockSlots, batchSubjects, batchTeacherTargets, batchLocations].filter(Boolean);
         const defaultSelectValues = new Map();
         dependentSelects.forEach(select => {
             if (!select.multiple) {

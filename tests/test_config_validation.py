@@ -1125,6 +1125,118 @@ def test_batch_subject_removal_clears_group_fixed_assignments(tmp_path):
     assert remaining_fixed is None
 
 
+def test_batch_location_add_and_remove(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    config_row = _config_row(app.DB_PATH)
+
+    cursor = conn.cursor()
+    cursor.execute('INSERT INTO locations (name) VALUES (?)', ('Room A',))
+    room_a_id = cursor.lastrowid
+    cursor.execute('INSERT INTO locations (name) VALUES (?)', ('Room B',))
+    room_b_id = cursor.lastrowid
+
+    student_rows = [
+        dict(row)
+        for row in conn.execute(
+            'SELECT * FROM students WHERE name IN (?, ?)',
+            ('Student 1', 'Student 2'),
+        ).fetchall()
+    ]
+    assert len(student_rows) == 2
+    student_lookup = {row['name']: row for row in student_rows}
+    cursor.execute(
+        'INSERT INTO student_locations (student_id, location_id) VALUES (?, ?)',
+        (student_lookup['Student 1']['id'], room_a_id),
+    )
+    conn.commit()
+    conn.close()
+
+    data = _valid_config_form(config_row)
+    for row in student_rows:
+        sid = row['id']
+        data.add('student_id', str(sid))
+        data.add(f'student_name_{sid}', row['name'])
+        for subj_id in json.loads(row['subjects']):
+            data.add(f'student_subjects_{sid}', str(subj_id))
+        if row['active']:
+            data.add(f'student_active_{sid}', '1')
+    data.setlist(f"student_locs_{student_lookup['Student 1']['id']}", [str(room_a_id)])
+    batch_ids = [str(row['id']) for row in student_rows]
+    data.setlist('batch_students', batch_ids)
+    data.add('batch_location_action', 'add')
+    data.setlist('batch_locations', [str(room_b_id)])
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert all(category != 'error' for category, _ in flashes)
+    added_notice = [
+        message
+        for category, message in flashes
+        if category == 'info' and 'Added' in message and 'Room B' in message
+    ]
+    assert added_notice, f'Expected added location notice, saw: {flashes}'
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    location_rows = conn.execute(
+        'SELECT student_id, location_id FROM student_locations WHERE student_id IN (?, ?)',
+        (student_lookup['Student 1']['id'], student_lookup['Student 2']['id']),
+    ).fetchall()
+    location_by_student = {}
+    for row in location_rows:
+        location_by_student.setdefault(row['student_id'], set()).add(row['location_id'])
+    assert location_by_student.get(student_lookup['Student 1']['id'], set()) == {room_a_id, room_b_id}
+    assert location_by_student.get(student_lookup['Student 2']['id'], set()) == {room_b_id}
+
+    data_remove = _valid_config_form(config_row)
+    for row in student_rows:
+        sid = row['id']
+        data_remove.add('student_id', str(sid))
+        data_remove.add(f'student_name_{sid}', row['name'])
+        for subj_id in json.loads(row['subjects']):
+            data_remove.add(f'student_subjects_{sid}', str(subj_id))
+        if row['active']:
+            data_remove.add(f'student_active_{sid}', '1')
+        current_locations = sorted(location_by_student.get(sid, set()))
+        if current_locations:
+            data_remove.setlist(
+                f'student_locs_{sid}',
+                [str(loc_id) for loc_id in current_locations],
+            )
+    data_remove.setlist('batch_students', [str(student_lookup['Student 1']['id'])])
+    data_remove.add('batch_location_action', 'remove')
+    data_remove.setlist('batch_locations', [str(room_b_id)])
+
+    with app.app.test_request_context('/config', method='POST', data=data_remove):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert all(category != 'error' for category, _ in flashes)
+    removed_notice = [
+        message
+        for category, message in flashes
+        if category == 'info' and 'Removed' in message and 'Room B' in message
+    ]
+    assert removed_notice, f'Expected removed location notice, saw: {flashes}'
+
+    updated_rows = conn.execute(
+        'SELECT student_id, location_id FROM student_locations WHERE student_id IN (?, ?)',
+        (student_lookup['Student 1']['id'], student_lookup['Student 2']['id']),
+    ).fetchall()
+    updated_locations = {}
+    for row in updated_rows:
+        updated_locations.setdefault(row['student_id'], set()).add(row['location_id'])
+    assert updated_locations.get(student_lookup['Student 1']['id'], set()) == {room_a_id}
+    assert updated_locations.get(student_lookup['Student 2']['id'], set()) == {room_b_id}
+    conn.close()
+
+
 def test_followup_config_auto_removes_empty_group(tmp_path):
     import app
 

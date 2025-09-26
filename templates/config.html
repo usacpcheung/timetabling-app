@@ -421,23 +421,39 @@
                         {% endfor %}
                     </select>
                 </fieldset>
-            </div>
-            <fieldset class="space-y-2">
-                <legend class="font-medium">Teacher blocks</legend>
-                <p class="text-sm text-emerald-700">Block or unblock teachers for all selected students. Blocks prevent those teachers from being assigned during scheduling.</p>
-                <label class="block">
-                    <span class="sr-only">Teacher action</span>
-                    <select name="batch_teacher_action" class="border border-emerald-300 rounded-lg p-2.5 w-full">
-                        <option value="add">Block selected teachers</option>
-                        <option value="remove">Unblock selected teachers</option>
+                <fieldset class="space-y-2">
+                    <legend class="font-medium">Teacher blocks</legend>
+                    <p class="text-sm text-emerald-700">Block or unblock teachers for all selected students. Blocks prevent those teachers from being assigned during scheduling.</p>
+                    <label class="block">
+                        <span class="sr-only">Teacher action</span>
+                        <select name="batch_teacher_action" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                            <option value="add">Block selected teachers</option>
+                            <option value="remove">Unblock selected teachers</option>
+                        </select>
+                    </label>
+                    <select multiple name="batch_teacher_targets" class="border border-emerald-300 rounded-lg p-2.5 w-full" size="6">
+                        {% for t in teachers %}
+                        <option value="{{ t['id'] }}">{{ t['name'] }}</option>
+                        {% endfor %}
                     </select>
-                </label>
-                <select multiple name="batch_teacher_targets" class="border border-emerald-300 rounded-lg p-2.5 w-full" size="6">
-                    {% for t in teachers %}
-                    <option value="{{ t['id'] }}">{{ t['name'] }}</option>
-                    {% endfor %}
-                </select>
-            </fieldset>
+                </fieldset>
+                <fieldset class="space-y-2">
+                    <legend class="font-medium">Allowed locations</legend>
+                    <p class="text-sm text-emerald-700">Add or remove allowed locations for all selected students. Locations limit where lessons may be scheduled.</p>
+                    <label class="block">
+                        <span class="sr-only">Location action</span>
+                        <select name="batch_location_action" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                            <option value="add">Add selected locations</option>
+                            <option value="remove">Remove selected locations</option>
+                        </select>
+                    </label>
+                    <select multiple name="batch_locations" class="border border-emerald-300 rounded-lg p-2.5 w-full" size="6">
+                        {% for loc in locations %}
+                        <option value="{{ loc['id'] }}">{{ loc['name'] }}</option>
+                        {% endfor %}
+                    </select>
+                </fieldset>
+            </div>
         </fieldset>
         <fieldset class="space-y-4">
             {% for s in students %}

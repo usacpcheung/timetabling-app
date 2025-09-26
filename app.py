@@ -1885,6 +1885,8 @@ def config():
         block_map_current = {}
         for r in br_rows:
             block_map_current.setdefault(r['student_id'], set()).add(r['teacher_id'])
+        c.execute('SELECT id, name FROM locations')
+        location_name_map = {row['id']: row['name'] for row in c.fetchall()}
         c.execute('SELECT id, teacher_id, student_id FROM fixed_assignments WHERE student_id IS NOT NULL')
         fr_rows = c.fetchall()
         fixed_pairs = {
@@ -1921,6 +1923,7 @@ def config():
             repeat_subjects.intersection_update(subjects)
             unavailable = _parse_int_set(request.form.getlist(f'student_unavail_{sid}'))
             blocks = _parse_int_set(request.form.getlist(f'student_block_{sid}'))
+            locations = _parse_int_set(request.form.getlist(f'student_locs_{sid}'))
             student_ids_form.append(sid)
             student_form_data[sid] = {
                 'delete': bool(request.form.get(f'student_delete_{sid}')),
@@ -1937,6 +1940,7 @@ def config():
                 'repeat_subjects': repeat_subjects,
                 'unavailable': unavailable,
                 'blocks': blocks,
+                'locations': locations,
             }
 
         # Apply batch operations to the collected payload before any
@@ -1973,6 +1977,10 @@ def config():
             batch_teacher_action = request.form.get('batch_teacher_action', 'add')
             batch_teacher_targets = set(_parse_int_list(request.form.getlist('batch_teacher_targets')))
 
+            batch_location_action = request.form.get('batch_location_action', 'add')
+            batch_location_ids = set(_parse_int_list(request.form.getlist('batch_locations')))
+            location_changes = []
+
             for sid in batch_student_ids:
                 data = student_form_data.get(sid)
                 if not data:
@@ -1993,6 +2001,39 @@ def config():
                         data['blocks'].difference_update(batch_teacher_targets)
                     else:
                         data['blocks'].update(batch_teacher_targets)
+                if batch_location_ids:
+                    current_locations = set(data.get('locations', set()))
+                    if batch_location_action == 'remove':
+                        updated_locations = current_locations.difference(batch_location_ids)
+                    else:
+                        updated_locations = current_locations.union(batch_location_ids)
+                    if updated_locations != current_locations:
+                        data['locations'] = updated_locations
+                        display_name = data.get('name') or f'Student {sid}'
+                        location_changes.append(display_name)
+
+            if batch_location_ids and location_changes:
+                unique_names = []
+                seen = set()
+                for name in location_changes:
+                    label = name or ''
+                    if label in seen:
+                        continue
+                    seen.add(label)
+                    unique_names.append(label)
+                location_labels = ', '.join(
+                    location_name_map.get(lid, str(lid))
+                    for lid in sorted(
+                        batch_location_ids,
+                        key=lambda value: location_name_map.get(value, str(value))
+                    )
+                )
+                student_labels = ', '.join(unique_names)
+                action_label = 'Removed' if batch_location_action == 'remove' else 'Added'
+                flash(
+                    f"{action_label} {location_labels} for {student_labels} via batch update.",
+                    'info',
+                )
 
         # update students
         for sid in student_ids_form:
@@ -2031,6 +2072,7 @@ def config():
                               (int(sid), archive_name))
                 c.execute('DELETE FROM students WHERE id=?', (int(sid),))
                 c.execute('DELETE FROM student_teacher_block WHERE student_id=?', (int(sid),))
+                c.execute('DELETE FROM student_locations WHERE student_id=?', (int(sid),))
             else:
                 name = data['name']
                 subs = sorted(data['subjects'])
@@ -2113,6 +2155,10 @@ def config():
                     c.execute('INSERT INTO student_teacher_block (student_id, teacher_id) VALUES (?, ?)',
                               (int(sid), tval))
                     block_map_current.setdefault(int(sid), set()).add(tval)
+                c.execute('DELETE FROM student_locations WHERE student_id=?', (int(sid),))
+                for lid in sorted(data.get('locations', set())):
+                    c.execute('INSERT INTO student_locations (student_id, location_id) VALUES (?, ?)',
+                              (int(sid), int(lid)))
         new_sname = request.form.get('new_student_name')
         new_ssubs = [int(x) for x in request.form.getlist('new_student_subjects')]
         new_blocks = request.form.getlist('new_student_block')
@@ -2513,16 +2559,6 @@ def config():
         new_loc = request.form.get('new_location_name')
         if new_loc:
             c.execute('INSERT INTO locations (name) VALUES (?)', (new_loc,))
-
-        c.execute('SELECT id FROM students')
-        student_ids = [r['id'] for r in c.fetchall()]
-        for sid in student_ids:
-            key = f'student_locs_{sid}'
-            if key in request.form:
-                sel = [int(x) for x in request.form.getlist(key)]
-                c.execute('DELETE FROM student_locations WHERE student_id=?', (sid,))
-                for lid in sel:
-                    c.execute('INSERT INTO student_locations (student_id, location_id) VALUES (?, ?)', (sid, lid))
 
         c.execute('SELECT id FROM groups')
         group_ids = [r['id'] for r in c.fetchall()]
