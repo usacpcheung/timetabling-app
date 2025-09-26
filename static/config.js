@@ -324,6 +324,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const slotDurationInput = document.querySelector('input[name="slot_duration"]');
     const configForm = document.getElementById('config-form');
     const saveButton = configForm ? configForm.querySelector('[data-config-save]') : null;
+    let validateBatchActions = () => true;
     let allowSubmit = false;
 
     const allowNextSubmit = () => {
@@ -347,7 +348,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (configForm) {
         configForm.addEventListener('submit', event => {
-            if (!allowSubmit) {
+            if (!allowSubmit || !validateBatchActions()) {
                 event.preventDefault();
             }
         });
@@ -386,6 +387,117 @@ document.addEventListener('DOMContentLoaded', function () {
                 allowNextSubmit();
             }
         });
+    }
+
+    if (configForm) {
+        const batchStudents = configForm.querySelector('select[name="batch_students"]');
+        const batchBlockAction = configForm.querySelector('select[name="batch_block_action"]');
+        const batchBlockSlots = configForm.querySelector('select[name="batch_block_slots"]');
+        const batchSubjectAction = configForm.querySelector('select[name="batch_subject_action"]');
+        const batchSubjects = configForm.querySelector('select[name="batch_subjects"]');
+        const batchTeacherAction = configForm.querySelector('select[name="batch_teacher_action"]');
+        const batchTeacherTargets = configForm.querySelector('select[name="batch_teacher_targets"]');
+        const batchLocationAction = configForm.querySelector('select[name="batch_location_action"]');
+        const batchLocations = configForm.querySelector('select[name="batch_locations"]');
+        const dependentSelects = [
+            batchBlockAction,
+            batchBlockSlots,
+            batchSubjectAction,
+            batchSubjects,
+            batchTeacherAction,
+            batchTeacherTargets,
+            batchLocationAction,
+            batchLocations
+        ].filter(Boolean);
+        const validationSelects = [batchBlockSlots, batchSubjects, batchTeacherTargets, batchLocations].filter(Boolean);
+        const defaultSelectValues = new Map();
+        dependentSelects.forEach(select => {
+            if (!select.multiple) {
+                defaultSelectValues.set(select, select.value);
+            }
+        });
+
+        const batchLegend = document.getElementById('batch-student-actions-heading');
+        let batchSummaryBadge = null;
+        if (batchLegend) {
+            batchSummaryBadge = document.createElement('span');
+            batchSummaryBadge.className = 'ml-2 inline-flex items-center rounded-full bg-emerald-200 px-2 py-0.5 text-xs font-medium text-emerald-900';
+            batchLegend.appendChild(batchSummaryBadge);
+        }
+
+        const getSelectedValues = element => {
+            if (!element) {
+                return [];
+            }
+            if (element.multiple) {
+                return Array.from(element.selectedOptions)
+                    .map(opt => opt.value)
+                    .filter(value => value !== '');
+            }
+            return element.value ? [element.value] : [];
+        };
+
+        const clearSelections = element => {
+            if (!element) {
+                return;
+            }
+            if (element.multiple) {
+                Array.from(element.options).forEach(opt => {
+                    opt.selected = false;
+                });
+            } else if (element.tagName === 'SELECT') {
+                const fallback = defaultSelectValues.has(element) ? defaultSelectValues.get(element) : '';
+                element.value = fallback;
+            }
+        };
+
+        const updateBatchSummary = count => {
+            if (!batchSummaryBadge) {
+                return;
+            }
+            if (count === 0) {
+                batchSummaryBadge.textContent = 'No students selected';
+            } else if (count === 1) {
+                batchSummaryBadge.textContent = '1 student selected';
+            } else {
+                batchSummaryBadge.textContent = `${count} students selected`;
+            }
+        };
+
+        const refreshBatchControls = () => {
+            if (!batchStudents) {
+                return;
+            }
+            const selectedCount = getSelectedValues(batchStudents).length;
+            const hasStudents = selectedCount > 0;
+            updateBatchSummary(selectedCount);
+
+            dependentSelects.forEach(select => {
+                select.disabled = !hasStudents;
+                if (!hasStudents) {
+                    clearSelections(select);
+                }
+            });
+        };
+
+        if (batchStudents) {
+            batchStudents.addEventListener('change', refreshBatchControls);
+            batchStudents.addEventListener('input', refreshBatchControls);
+            refreshBatchControls();
+
+            validateBatchActions = () => {
+                const hasStudents = getSelectedValues(batchStudents).length > 0;
+                if (hasStudents) {
+                    return true;
+                }
+                const hasDependentSelections = validationSelects.some(select => getSelectedValues(select).length > 0);
+                if (hasDependentSelections) {
+                    alert('Select at least one student before applying batch changes.');
+                    return false;
+                }
+                return true;
+            };
+        }
     }
 
     const modalOriginalValues = new Map();
