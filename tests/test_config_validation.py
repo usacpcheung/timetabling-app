@@ -899,7 +899,7 @@ def test_warn_when_disabling_last_teacher_for_group_subject(tmp_path):
     conn.close()
 
 
-def test_batch_subject_removal_updates_group_subjects(tmp_path):
+def test_batch_subject_removal_auto_deletes_group(tmp_path):
     import app
 
     conn = setup_db(tmp_path)
@@ -952,7 +952,7 @@ def test_batch_subject_removal_updates_group_subjects(tmp_path):
 
     # Remove Math from Student 2 via the batch subject controls.
     student_ids = sorted(row['id'] for row in student_rows)
-    data.setlist('batch_students', [str(student_ids[1])])
+    data.setlist('batch_students', [str(sid) for sid in student_ids])
     data.add('batch_subject_action', 'remove')
     data.add('batch_subjects', str(math_row['id']))
 
@@ -965,18 +965,37 @@ def test_batch_subject_removal_updates_group_subjects(tmp_path):
     removal_notice = [
         message
         for category, message in flashes
-        if category == 'info' and 'Math' in message and group_name in message
+        if category == 'info'
+        and 'Removed Math' in message
+        and group_name in message
     ]
     assert removal_notice, f'Expected removal notice in flashes, saw: {flashes}'
+    auto_delete_notice = [
+        message
+        for category, message in flashes
+        if category == 'info'
+        and 'Auto-removed' in message
+        and group_name in message
+    ]
+    assert auto_delete_notice, f'Expected auto-removal notice, saw: {flashes}'
 
     conn = sqlite3.connect(app.DB_PATH)
     conn.row_factory = sqlite3.Row
     updated_group = conn.execute(
-        'SELECT subjects FROM groups WHERE id=?',
+        'SELECT 1 FROM groups WHERE id=?',
         (group_id,),
     ).fetchone()
-    assert updated_group is not None
-    assert json.loads(updated_group['subjects']) == []
+    assert updated_group is None
+    remaining_members = conn.execute(
+        'SELECT 1 FROM group_members WHERE group_id=?',
+        (group_id,),
+    ).fetchone()
+    assert remaining_members is None
+    remaining_locations = conn.execute(
+        'SELECT 1 FROM group_locations WHERE group_id=?',
+        (group_id,),
+    ).fetchone()
+    assert remaining_locations is None
     updated_students = conn.execute(
         'SELECT id, subjects FROM students WHERE id IN (?, ?)',
         tuple(student_ids),
@@ -984,8 +1003,75 @@ def test_batch_subject_removal_updates_group_subjects(tmp_path):
     conn.close()
 
     subjects_by_id = {row['id']: json.loads(row['subjects']) for row in updated_students}
-    assert math_row['id'] in subjects_by_id[student_ids[0]]
+    assert math_row['id'] not in subjects_by_id[student_ids[0]]
     assert math_row['id'] not in subjects_by_id[student_ids[1]]
+
+
+def test_followup_config_auto_removes_empty_group(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    config_row = _config_row(app.DB_PATH)
+
+    student_rows = conn.execute(
+        'SELECT id, name FROM students WHERE name IN (?, ?)',
+        ('Student 1', 'Student 2'),
+    ).fetchall()
+    assert len(student_rows) == 2
+
+    group_name = 'History Club'
+    cursor = conn.cursor()
+    cursor.execute(
+        'INSERT INTO groups (name, subjects) VALUES (?, ?)',
+        (group_name, json.dumps([])),
+    )
+    group_id = cursor.lastrowid
+    for row in student_rows:
+        cursor.execute(
+            'INSERT INTO group_members (group_id, student_id) VALUES (?, ?)',
+            (group_id, row['id']),
+        )
+    conn.commit()
+    conn.close()
+
+    data = _valid_config_form(config_row)
+    data.add('group_id', str(group_id))
+    data.add(f'group_name_{group_id}', group_name)
+    data.setlist(
+        f'group_members_{group_id}',
+        [str(row['id']) for row in student_rows],
+    )
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert all(category != 'error' for category, _ in flashes)
+    auto_delete_notice = [
+        message
+        for category, message in flashes
+        if category == 'info'
+        and 'Auto-removed' in message
+        and group_name in message
+    ]
+    assert auto_delete_notice, f'Expected auto-removal notice, saw: {flashes}'
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    assert (
+        conn.execute('SELECT 1 FROM groups WHERE id=?', (group_id,)).fetchone()
+        is None
+    )
+    assert (
+        conn.execute('SELECT 1 FROM group_members WHERE group_id=?', (group_id,)).fetchone()
+        is None
+    )
+    assert (
+        conn.execute('SELECT 1 FROM group_locations WHERE group_id=?', (group_id,)).fetchone()
+        is None
+    )
+    conn.close()
 
 
 def test_warn_when_creating_group_with_needs_lessons_disabled_teacher(tmp_path):

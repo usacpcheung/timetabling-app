@@ -2251,6 +2251,25 @@ def config():
                 )
             return filtered
 
+        def _group_has_fixed_assignments(group_id):
+            c.execute(
+                'SELECT 1 FROM fixed_assignments WHERE group_id=? LIMIT 1',
+                (int(group_id),),
+            )
+            return c.fetchone() is not None
+
+        def _archive_and_delete_group(group_id):
+            c.execute('SELECT name FROM groups WHERE id=?', (int(group_id),))
+            row = c.fetchone()
+            if row:
+                c.execute(
+                    'INSERT OR IGNORE INTO groups_archive (id, name) VALUES (?, ?)',
+                    (int(group_id), row['name']),
+                )
+            c.execute('DELETE FROM groups WHERE id=?', (int(group_id),))
+            c.execute('DELETE FROM group_members WHERE group_id=?', (int(group_id),))
+            c.execute('DELETE FROM group_locations WHERE group_id=?', (int(group_id),))
+
         for sid, meta in student_meta.items():
             if not meta['active']:
                 continue
@@ -2297,31 +2316,35 @@ def config():
         group_ids = request.form.getlist('group_id')
         deletes_grp = set(request.form.getlist('group_delete'))
         for gid in group_ids:
+            gid_int = int(gid)
             if gid in deletes_grp:
                 # prevent deletion if fixed assignments exist
-                c.execute('SELECT 1 FROM fixed_assignments WHERE group_id=? LIMIT 1', (int(gid),))
-                if c.fetchone():
+                if _group_has_fixed_assignments(gid_int):
                     flash('Remove fixed assignments involving this group before deleting', 'error')
                     has_error = True
                     continue
-                c.execute('SELECT name FROM groups WHERE id=?', (int(gid),))
-                row = c.fetchone()
-                if row:
-                    c.execute('INSERT OR IGNORE INTO groups_archive (id, name) VALUES (?, ?)',
-                              (int(gid), row['name']))
-                c.execute('DELETE FROM groups WHERE id=?', (int(gid),))
-                c.execute('DELETE FROM group_members WHERE group_id=?', (int(gid),))
-                c.execute('DELETE FROM group_locations WHERE group_id=?', (int(gid),))
+                _archive_and_delete_group(gid_int)
                 continue
             name = request.form.get(f'group_name_{gid}')
             group_label = name or f'group {gid}'
             raw_subs = _parse_int_list(request.form.getlist(f'group_subjects_{gid}'))
             member_ids = _parse_int_list(request.form.getlist(f'group_members_{gid}'))
-            if not raw_subs or not member_ids:
+            if not member_ids:
                 flash(f'Group {group_label} must have at least one subject and member', 'error')
                 has_error = True
                 continue
             subs = _filter_group_subjects(raw_subs, member_ids, name, f'group {gid}')
+            if not subs:
+                if _group_has_fixed_assignments(gid_int):
+                    flash('Remove fixed assignments involving this group before deleting', 'error')
+                    has_error = True
+                    continue
+                _archive_and_delete_group(gid_int)
+                flash(
+                    f'Auto-removed {group_label} because no subjects remain after student updates.',
+                    'info',
+                )
+                continue
             # ``member_ids`` holds the numeric ids of all group members. We
             # verify that each subject is required by every student and that at
             # least one teacher can deliver it without violating any blocks.
