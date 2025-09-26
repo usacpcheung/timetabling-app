@@ -899,6 +899,95 @@ def test_warn_when_disabling_last_teacher_for_group_subject(tmp_path):
     conn.close()
 
 
+def test_batch_subject_removal_updates_group_subjects(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    config_row = _config_row(app.DB_PATH)
+
+    math_row = conn.execute(
+        'SELECT id, name FROM subjects WHERE name=?',
+        ('Math',),
+    ).fetchone()
+    assert math_row is not None
+
+    student_rows = conn.execute(
+        'SELECT * FROM students WHERE name IN (?, ?)',
+        ('Student 1', 'Student 2'),
+    ).fetchall()
+    assert len(student_rows) == 2
+
+    group_name = 'Math Club'
+    cursor = conn.cursor()
+    cursor.execute(
+        'INSERT INTO groups (name, subjects) VALUES (?, ?)',
+        (group_name, json.dumps([math_row['id']])),
+    )
+    group_id = cursor.lastrowid
+    for row in student_rows:
+        cursor.execute(
+            'INSERT INTO group_members (group_id, student_id) VALUES (?, ?)',
+            (group_id, row['id']),
+        )
+    conn.commit()
+    conn.close()
+
+    data = _valid_config_form(config_row)
+    for row in student_rows:
+        sid = row['id']
+        data.add('student_id', str(sid))
+        data.add(f'student_name_{sid}', row['name'])
+        for subj_id in json.loads(row['subjects']):
+            data.add(f'student_subjects_{sid}', str(subj_id))
+        if row['active']:
+            data.add(f'student_active_{sid}', '1')
+
+    data.add('group_id', str(group_id))
+    data.add(f'group_name_{group_id}', group_name)
+    data.setlist(f'group_subjects_{group_id}', [str(math_row['id'])])
+    data.setlist(
+        f'group_members_{group_id}',
+        [str(row['id']) for row in student_rows],
+    )
+
+    # Remove Math from Student 2 via the batch subject controls.
+    student_ids = sorted(row['id'] for row in student_rows)
+    data.setlist('batch_students', [str(student_ids[1])])
+    data.add('batch_subject_action', 'remove')
+    data.add('batch_subjects', str(math_row['id']))
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert all(category != 'error' for category, _ in flashes)
+    removal_notice = [
+        message
+        for category, message in flashes
+        if category == 'info' and 'Math' in message and group_name in message
+    ]
+    assert removal_notice, f'Expected removal notice in flashes, saw: {flashes}'
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    updated_group = conn.execute(
+        'SELECT subjects FROM groups WHERE id=?',
+        (group_id,),
+    ).fetchone()
+    assert updated_group is not None
+    assert json.loads(updated_group['subjects']) == []
+    updated_students = conn.execute(
+        'SELECT id, subjects FROM students WHERE id IN (?, ?)',
+        tuple(student_ids),
+    ).fetchall()
+    conn.close()
+
+    subjects_by_id = {row['id']: json.loads(row['subjects']) for row in updated_students}
+    assert math_row['id'] in subjects_by_id[student_ids[0]]
+    assert math_row['id'] not in subjects_by_id[student_ids[1]]
+
+
 def test_warn_when_creating_group_with_needs_lessons_disabled_teacher(tmp_path):
     import app
 

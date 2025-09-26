@@ -2232,6 +2232,25 @@ def config():
         c.execute('SELECT id, name FROM subjects')
         subject_name_map = {row['id']: row['name'] for row in c.fetchall()}
 
+        def _filter_group_subjects(subject_ids, member_ids, group_label, fallback_label):
+            """Drop subjects that no longer appear in every member's subject set."""
+
+            removed = []
+            filtered = []
+            for subj in subject_ids:
+                if all(subj in student_subj_map.get(mid, set()) for mid in member_ids):
+                    filtered.append(subj)
+                else:
+                    removed.append(subj)
+            if removed:
+                labels = ', '.join(subject_name_map.get(subj) or str(subj) for subj in removed)
+                group_name = group_label or fallback_label
+                flash(
+                    f'Removed {labels} from {group_name} because not required by all members.',
+                    'info',
+                )
+            return filtered
+
         for sid, meta in student_meta.items():
             if not meta['active']:
                 continue
@@ -2295,21 +2314,26 @@ def config():
                 c.execute('DELETE FROM group_locations WHERE group_id=?', (int(gid),))
                 continue
             name = request.form.get(f'group_name_{gid}')
-            subs = [int(x) for x in request.form.getlist(f'group_subjects_{gid}')]
-            members = request.form.getlist(f'group_members_{gid}')
-            if not subs or not members:
-                flash(f'Group {name} must have at least one subject and member', 'error')
+            group_label = name or f'group {gid}'
+            raw_subs = _parse_int_list(request.form.getlist(f'group_subjects_{gid}'))
+            member_ids = _parse_int_list(request.form.getlist(f'group_members_{gid}'))
+            if not raw_subs or not member_ids:
+                flash(f'Group {group_label} must have at least one subject and member', 'error')
                 has_error = True
                 continue
+            subs = _filter_group_subjects(raw_subs, member_ids, name, f'group {gid}')
             # ``member_ids`` holds the numeric ids of all group members. We
             # verify that each subject is required by every student and that at
             # least one teacher can deliver it without violating any blocks.
             valid = True
-            member_ids = [int(s) for s in members]
             for subj in subs:
                 for sid in member_ids:
                     if subj not in student_subj_map.get(sid, set()):
-                        flash(f'Student does not require {subj} in group {name}', 'error')
+                        subject_label = subject_name_map.get(subj) or str(subj)
+                        flash(
+                            f'Student does not require {subject_label} in group {group_label}',
+                            'error',
+                        )
                         has_error = True
                         valid = False
                         break
@@ -2353,45 +2377,55 @@ def config():
         # check that at least one suitable teacher remains unblocked for each
         # subject.
         ng_name = request.form.get('new_group_name')
-        ng_subs = [int(x) for x in request.form.getlist('new_group_subjects')]
-        ng_members = request.form.getlist('new_group_members')
+        ng_subs = _parse_int_list(request.form.getlist('new_group_subjects'))
+        ng_members = _parse_int_list(request.form.getlist('new_group_members'))
         if ng_name and ng_subs and ng_members:
-            member_ids = [int(s) for s in ng_members]
+            ng_subs = _filter_group_subjects(ng_subs, ng_members, ng_name, 'new group')
+            member_ids = ng_members
             valid = True
-            for subj in ng_subs:
-                for sid in member_ids:
-                    if subj not in student_subj_map.get(sid, set()):
-                        flash(f'Student does not require {subj} in group {ng_name}', 'error')
+            if not ng_subs:
+                flash(f'Group {ng_name} must have at least one subject and member', 'error')
+                has_error = True
+                valid = False
+            if valid:
+                for subj in ng_subs:
+                    for sid in member_ids:
+                        if subj not in student_subj_map.get(sid, set()):
+                            subject_label = subject_name_map.get(subj) or str(subj)
+                            flash(
+                                f'Student does not require {subject_label} in group {ng_name}',
+                                'error',
+                            )
+                            has_error = True
+                            valid = False
+                            break
+                    if not valid:
+                        break
+                    ok = False
+                    for tid, tsubs in teacher_map_validate.items():
+                        if subj in tsubs and all(tid not in block_map_validate.get(mid, set()) for mid in member_ids):
+                            ok = True
+                            break
+                    if not ok:
+                        fallback_ok = False
+                        for tid, tsubs in teacher_map_all.items():
+                            if subj not in tsubs:
+                                continue
+                            if any(tid in block_map_validate.get(mid, set()) for mid in member_ids):
+                                continue
+                            fallback_ok = True
+                            break
+                        subject_label = subject_name_map.get(subj) or str(subj)
+                        if fallback_ok:
+                            flash(
+                                f'No teacher scheduled for {subject_label} in group {ng_name}; the solver will skip this subject.',
+                                'warning',
+                            )
+                            continue
+                        flash(f'No teacher available for {subject_label} in group {ng_name}', 'error')
                         has_error = True
                         valid = False
                         break
-                if not valid:
-                    break
-                ok = False
-                for tid, tsubs in teacher_map_validate.items():
-                    if subj in tsubs and all(tid not in block_map_validate.get(mid, set()) for mid in member_ids):
-                        ok = True
-                        break
-                if not ok:
-                    fallback_ok = False
-                    for tid, tsubs in teacher_map_all.items():
-                        if subj not in tsubs:
-                            continue
-                        if any(tid in block_map_validate.get(mid, set()) for mid in member_ids):
-                            continue
-                        fallback_ok = True
-                        break
-                    subject_label = subject_name_map.get(subj) or str(subj)
-                    if fallback_ok:
-                        flash(
-                            f'No teacher scheduled for {subject_label} in group {ng_name}; the solver will skip this subject.',
-                            'warning',
-                        )
-                        continue
-                    flash(f'No teacher available for {subject_label} in group {ng_name}', 'error')
-                    has_error = True
-                    valid = False
-                    break
             if valid:
                 c.execute('INSERT INTO groups (name, subjects) VALUES (?, ?)',
                           (ng_name, json.dumps(ng_subs)))
