@@ -44,14 +44,18 @@ def _valid_config_form(row):
         ('max_lessons', str(row['max_lessons'])),
         ('teacher_min_lessons', str(row['teacher_min_lessons'])),
         ('teacher_max_lessons', str(row['teacher_max_lessons'])),
-        ('max_repeats', str(row['max_repeats'])),
-        ('consecutive_weight', str(row['consecutive_weight'])),
         ('attendance_weight', str(row['attendance_weight'])),
         ('group_weight', str(row['group_weight'])),
         ('well_attend_weight', str(row['well_attend_weight'])),
         ('balance_weight', str(row['balance_weight'])),
         ('solver_time_limit', str(row['solver_time_limit'])),
     ])
+    if row['allow_repeats']:
+        data.extend([
+            ('max_repeats', str(row['max_repeats'])),
+            ('consecutive_weight', str(row['consecutive_weight'])),
+        ])
+    repeat_flags = {'allow_consecutive', 'prefer_consecutive'}
     for flag in [
         'allow_repeats',
         'prefer_consecutive',
@@ -61,8 +65,11 @@ def _valid_config_form(row):
         'allow_multi_teacher',
         'balance_teacher_load',
     ]:
-        if row[flag]:
-            data.append((flag, '1'))
+        if not row[flag]:
+            continue
+        if flag in repeat_flags and not row['allow_repeats']:
+            continue
+        data.append((flag, '1'))
     return MultiDict(data)
 
 
@@ -796,7 +803,10 @@ def test_warn_when_disabling_last_teacher_for_subject(tmp_path):
         flashes = get_flashed_messages(with_categories=True)
 
     assert response.status_code == 302
-    expected = ('error', f'No teacher available for {subject_name} for student {student_name}')
+    expected = (
+        'warning',
+        f'No teacher scheduled for {subject_name} for student {student_name}; the solver will skip this subject.',
+    )
     assert expected in flashes
 
     conn = sqlite3.connect(app.DB_PATH)
@@ -807,7 +817,158 @@ def test_warn_when_disabling_last_teacher_for_subject(tmp_path):
     ).fetchone()
     conn.close()
 
-    assert updated['needs_lessons'] == teacher['needs_lessons']
+    assert updated['needs_lessons'] == 0
+
+
+def test_warn_when_disabling_last_teacher_for_group_subject(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    config_row = _config_row(app.DB_PATH)
+
+    subject_row = conn.execute(
+        'SELECT id, name FROM subjects WHERE name=?',
+        ('Science',),
+    ).fetchone()
+    assert subject_row is not None
+
+    teacher_row = conn.execute(
+        'SELECT * FROM teachers WHERE name=?',
+        ('Teacher B',),
+    ).fetchone()
+    assert teacher_row is not None
+
+    member_rows = conn.execute(
+        'SELECT id, name FROM students WHERE name IN (?, ?)',
+        ('Student 2', 'Student 4'),
+    ).fetchall()
+    member_ids = [row['id'] for row in member_rows]
+    assert member_ids, 'Expected at least one student requiring Science'
+
+    group_name = 'Science Group'
+    cursor = conn.cursor()
+    cursor.execute(
+        'INSERT INTO groups (name, subjects) VALUES (?, ?)',
+        (group_name, json.dumps([subject_row['id']])),
+    )
+    group_id = cursor.lastrowid
+    for sid in member_ids:
+        cursor.execute(
+            'INSERT INTO group_members (group_id, student_id) VALUES (?, ?)',
+            (group_id, sid),
+        )
+    conn.commit()
+    conn.close()
+
+    data = _teacher_edit_form(config_row, teacher_row)
+    data.pop(f'teacher_need_lessons_{teacher_row["id"]}', None)
+    data.add('group_id', str(group_id))
+    data.add(f'group_name_{group_id}', group_name)
+    data.setlist(f'group_subjects_{group_id}', [str(subject_row['id'])])
+    data.setlist(f'group_members_{group_id}', [str(sid) for sid in member_ids])
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    expected_student_warning = (
+        'warning',
+        f'No teacher scheduled for {subject_row["name"]} for student Student 2; the solver will skip this subject.',
+    )
+    assert expected_student_warning in flashes
+    expected_group_warning = (
+        'warning',
+        f'No teacher scheduled for {subject_row["name"]} in group {group_name}; the solver will skip this subject.',
+    )
+    assert expected_group_warning in flashes
+    assert all(category != 'error' for category, _ in flashes)
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    updated_teacher = conn.execute(
+        'SELECT needs_lessons FROM teachers WHERE id=?',
+        (teacher_row['id'],),
+    ).fetchone()
+    assert updated_teacher['needs_lessons'] == 0
+    persisted_group = conn.execute(
+        'SELECT name FROM groups WHERE id=?',
+        (group_id,),
+    ).fetchone()
+    assert persisted_group is not None
+    conn.close()
+
+
+def test_warn_when_creating_group_with_needs_lessons_disabled_teacher(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    config_row = _config_row(app.DB_PATH)
+
+    subject_row = conn.execute(
+        'SELECT id, name FROM subjects WHERE name=?',
+        ('Science',),
+    ).fetchone()
+    assert subject_row is not None
+
+    teacher_row = conn.execute(
+        'SELECT * FROM teachers WHERE name=?',
+        ('Teacher B',),
+    ).fetchone()
+    assert teacher_row is not None
+
+    member_rows = conn.execute(
+        'SELECT id, name FROM students WHERE name IN (?, ?)',
+        ('Student 2', 'Student 4'),
+    ).fetchall()
+    member_ids = [row['id'] for row in member_rows]
+    assert member_ids, 'Expected at least one student requiring Science'
+
+    conn.close()
+
+    disable_data = _teacher_edit_form(config_row, teacher_row)
+    disable_data.pop(f'teacher_need_lessons_{teacher_row["id"]}', None)
+
+    with app.app.test_request_context('/config', method='POST', data=disable_data):
+        disable_response = app.config()
+        disable_flashes = get_flashed_messages(with_categories=True)
+
+    assert disable_response.status_code == 302
+    student_warning = (
+        'warning',
+        f'No teacher scheduled for {subject_row["name"]} for student Student 2; the solver will skip this subject.',
+    )
+    assert student_warning in disable_flashes
+
+    updated_config = _config_row(app.DB_PATH)
+
+    create_data = _valid_config_form(updated_config)
+    group_name = 'Science Warning Group'
+    create_data.add('new_group_name', group_name)
+    create_data.setlist('new_group_subjects', [str(subject_row['id'])])
+    create_data.setlist('new_group_members', [str(sid) for sid in member_ids])
+
+    with app.app.test_request_context('/config', method='POST', data=create_data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    expected_group_warning = (
+        'warning',
+        f'No teacher scheduled for {subject_row["name"]} in group {group_name}; the solver will skip this subject.',
+    )
+    assert expected_group_warning in flashes
+    assert all(category != 'error' for category, _ in flashes)
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    persisted_group = conn.execute(
+        'SELECT name FROM groups WHERE name=?',
+        (group_name,),
+    ).fetchone()
+    conn.close()
+
+    assert persisted_group is not None
 
 
 def test_group_validation_reports_subject_name_when_teacher_blocked(tmp_path):
