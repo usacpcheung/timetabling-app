@@ -1007,6 +1007,124 @@ def test_batch_subject_removal_auto_deletes_group(tmp_path):
     assert math_row['id'] not in subjects_by_id[student_ids[1]]
 
 
+def test_batch_subject_removal_clears_group_fixed_assignments(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    config_row = _config_row(app.DB_PATH)
+
+    math_row = conn.execute(
+        'SELECT id, name FROM subjects WHERE name=?',
+        ('Math',),
+    ).fetchone()
+    science_row = conn.execute(
+        'SELECT id, name FROM subjects WHERE name=?',
+        ('Science',),
+    ).fetchone()
+    assert math_row is not None and science_row is not None
+
+    student_rows = conn.execute(
+        'SELECT * FROM students WHERE name IN (?, ?)',
+        ('Student 2', 'Student 4'),
+    ).fetchall()
+    assert len(student_rows) == 2
+
+    group_name = 'STEM Club'
+    cursor = conn.cursor()
+    cursor.execute(
+        'INSERT INTO groups (name, subjects) VALUES (?, ?)',
+        (group_name, json.dumps([math_row['id'], science_row['id']])),
+    )
+    group_id = cursor.lastrowid
+    for row in student_rows:
+        cursor.execute(
+            'INSERT INTO group_members (group_id, student_id) VALUES (?, ?)',
+            (group_id, row['id']),
+        )
+
+    teacher_row = conn.execute(
+        'SELECT id FROM teachers WHERE name=?',
+        ('Teacher B',),
+    ).fetchone()
+    assert teacher_row is not None
+
+    cursor.execute(
+        'INSERT INTO fixed_assignments (teacher_id, student_id, group_id, subject_id, slot) '
+        'VALUES (?, NULL, ?, ?, 0)',
+        (teacher_row['id'], group_id, science_row['id']),
+    )
+    conn.commit()
+    conn.close()
+
+    data = _valid_config_form(config_row)
+    for row in student_rows:
+        sid = row['id']
+        data.add('student_id', str(sid))
+        data.add(f'student_name_{sid}', row['name'])
+        for subj_id in json.loads(row['subjects']):
+            data.add(f'student_subjects_{sid}', str(subj_id))
+        if row['active']:
+            data.add(f'student_active_{sid}', '1')
+
+    data.add('group_id', str(group_id))
+    data.add(f'group_name_{group_id}', group_name)
+    data.setlist(
+        f'group_subjects_{group_id}',
+        [str(math_row['id']), str(science_row['id'])],
+    )
+    data.setlist(
+        f'group_members_{group_id}',
+        [str(row['id']) for row in student_rows],
+    )
+
+    student_two = next(row for row in student_rows if row['name'] == 'Student 2')
+    data.setlist('batch_students', [str(student_two['id'])])
+    data.add('batch_subject_action', 'remove')
+    data.add('batch_subjects', str(science_row['id']))
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert all(category != 'error' for category, _ in flashes)
+
+    removal_notice = [
+        message
+        for category, message in flashes
+        if category == 'info'
+        and f'Removed {science_row["name"]}' in message
+        and group_name in message
+    ]
+    assert removal_notice, f'Expected subject removal notice, saw: {flashes}'
+
+    fixed_notice = [
+        message
+        for category, message in flashes
+        if category == 'info'
+        and 'Removed fixed assignments' in message
+        and science_row['name'] in message
+        and group_name in message
+    ]
+    assert fixed_notice, f'Expected fixed-assignment removal notice, saw: {flashes}'
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    updated_subjects = conn.execute(
+        'SELECT subjects FROM groups WHERE id=?',
+        (group_id,),
+    ).fetchone()
+    assert updated_subjects is not None
+    assert json.loads(updated_subjects['subjects']) == [math_row['id']]
+    remaining_fixed = conn.execute(
+        'SELECT 1 FROM fixed_assignments WHERE group_id=? AND subject_id=?',
+        (group_id, science_row['id']),
+    ).fetchone()
+    conn.close()
+
+    assert remaining_fixed is None
+
+
 def test_followup_config_auto_removes_empty_group(tmp_path):
     import app
 

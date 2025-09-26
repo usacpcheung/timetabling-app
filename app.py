@@ -2232,11 +2232,12 @@ def config():
         c.execute('SELECT id, name FROM subjects')
         subject_name_map = {row['id']: row['name'] for row in c.fetchall()}
 
-        def _filter_group_subjects(subject_ids, member_ids, group_label, fallback_label):
+        def _filter_group_subjects(subject_ids, member_ids, group_id, group_label, fallback_label):
             """Drop subjects that no longer appear in every member's subject set."""
 
             removed = []
             filtered = []
+            group_name = group_label or fallback_label
             for subj in subject_ids:
                 if all(subj in student_subj_map.get(mid, set()) for mid in member_ids):
                     filtered.append(subj)
@@ -2244,11 +2245,32 @@ def config():
                     removed.append(subj)
             if removed:
                 labels = ', '.join(subject_name_map.get(subj) or str(subj) for subj in removed)
-                group_name = group_label or fallback_label
                 flash(
                     f'Removed {labels} from {group_name} because not required by all members.',
                     'info',
                 )
+                if group_id is not None:
+                    gid_int = int(group_id)
+                    cleaned_labels = []
+                    for subj in removed:
+                        subj_int = int(subj)
+                        c.execute(
+                            'SELECT 1 FROM fixed_assignments WHERE group_id=? AND subject_id=? LIMIT 1',
+                            (gid_int, subj_int),
+                        )
+                        if not c.fetchone():
+                            continue
+                        c.execute(
+                            'DELETE FROM fixed_assignments WHERE group_id=? AND subject_id=?',
+                            (gid_int, subj_int),
+                        )
+                        cleaned_labels.append(subject_name_map.get(subj) or str(subj))
+                    if cleaned_labels:
+                        cleaned = ', '.join(cleaned_labels)
+                        flash(
+                            f'Removed fixed assignments for {cleaned} in {group_name} because the subject is no longer required.',
+                            'info',
+                        )
             return filtered
 
         def _group_has_fixed_assignments(group_id):
@@ -2333,7 +2355,7 @@ def config():
                 flash(f'Group {group_label} must have at least one subject and member', 'error')
                 has_error = True
                 continue
-            subs = _filter_group_subjects(raw_subs, member_ids, name, f'group {gid}')
+            subs = _filter_group_subjects(raw_subs, member_ids, gid_int, name, f'group {gid}')
             if not subs:
                 if _group_has_fixed_assignments(gid_int):
                     flash('Remove fixed assignments involving this group before deleting', 'error')
@@ -2403,7 +2425,7 @@ def config():
         ng_subs = _parse_int_list(request.form.getlist('new_group_subjects'))
         ng_members = _parse_int_list(request.form.getlist('new_group_members'))
         if ng_name and ng_subs and ng_members:
-            ng_subs = _filter_group_subjects(ng_subs, ng_members, ng_name, 'new group')
+            ng_subs = _filter_group_subjects(ng_subs, ng_members, None, ng_name, 'new group')
             member_ids = ng_members
             valid = True
             if not ng_subs:
