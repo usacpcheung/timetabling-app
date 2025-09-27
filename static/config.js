@@ -440,20 +440,11 @@ document.addEventListener('DOMContentLoaded', function () {
         }, 0);
     };
 
-    const triggerConfigSubmit = () => {
-        if (!configForm) {
-            return;
-        }
-        allowNextSubmit();
+    const persistScrollForSubmit = () => {
         try {
             sessionStorage.setItem(SCROLL_STORAGE_KEY, String(window.scrollY || 0));
         } catch (err) {
             /* noop */
-        }
-        if (typeof configForm.requestSubmit === 'function') {
-            configForm.requestSubmit();
-        } else {
-            configForm.submit();
         }
         setTimeout(() => {
             try {
@@ -464,11 +455,26 @@ document.addEventListener('DOMContentLoaded', function () {
         }, 0);
     };
 
+    const triggerConfigSubmit = () => {
+        if (!configForm) {
+            return;
+        }
+        allowNextSubmit();
+        persistScrollForSubmit();
+        if (typeof configForm.requestSubmit === 'function') {
+            configForm.requestSubmit();
+        } else {
+            configForm.submit();
+        }
+    };
+
     if (configForm) {
         configForm.addEventListener('submit', event => {
             if (!allowSubmit || !validateBatchActions()) {
                 event.preventDefault();
+                return;
             }
+            persistScrollForSubmit();
         });
 
         configForm.addEventListener('keydown', event => {
