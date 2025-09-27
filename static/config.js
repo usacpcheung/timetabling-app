@@ -446,13 +446,6 @@ document.addEventListener('DOMContentLoaded', function () {
         } catch (err) {
             /* noop */
         }
-        setTimeout(() => {
-            try {
-                sessionStorage.removeItem(SCROLL_STORAGE_KEY);
-            } catch (err) {
-                /* noop */
-            }
-        }, 0);
     };
 
     const triggerConfigSubmit = () => {
