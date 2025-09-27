@@ -390,16 +390,16 @@ document.addEventListener('DOMContentLoaded', function () {
         messages.forEach(({ category, text }) => {
             const toast = document.createElement('div');
             const style = categoryStyles[category] || categoryStyles.info;
-            toast.className = `relative overflow-hidden rounded-lg border shadow-lg backdrop-blur ${style}`;
+            toast.className = `flex items-start justify-between gap-3 overflow-hidden rounded-lg border shadow-lg backdrop-blur ${style}`;
 
             const textWrapper = document.createElement('div');
-            textWrapper.className = 'px-4 py-3 pr-12 text-sm font-medium';
+            textWrapper.className = 'flex-1 px-4 py-3 text-sm font-medium break-words';
             textWrapper.textContent = text;
             toast.appendChild(textWrapper);
 
             const dismissButton = document.createElement('button');
             dismissButton.type = 'button';
-            dismissButton.className = 'absolute top-2 right-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/80 text-gray-600 transition hover:bg-white hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:bg-slate-800/80 dark:text-slate-200';
+            dismissButton.className = 'mr-3 mt-3 inline-flex h-8 w-8 flex-none items-center justify-center rounded-full bg-white/80 text-gray-600 transition hover:bg-white hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 dark:bg-slate-800/80 dark:text-slate-200';
             dismissButton.setAttribute('aria-label', 'Dismiss notification');
             dismissButton.innerHTML = '<span aria-hidden="true" class="text-base font-bold">&times;</span>';
             dismissButton.addEventListener('click', () => removeToast(toast));
