@@ -44,10 +44,12 @@ const renderFlashToasts = () => {
     }
 
     const toastContainer = document.createElement('div');
-    toastContainer.className = 'fixed top-4 left-4 right-4 z-50 flex max-w-full flex-col gap-3 sm:right-auto sm:max-w-sm';
+    toastContainer.className = 'fixed top-4 left-4 right-4 z-50 flex max-w-full flex-col gap-3 overflow-y-auto sm:right-auto sm:max-w-sm';
     toastContainer.setAttribute('role', 'alert');
     toastContainer.setAttribute('aria-live', 'assertive');
     toastContainer.setAttribute('data-flash-toast-container', '');
+
+    toastContainer.style.maxHeight = 'calc(100vh - 2rem)';
 
     const removeToast = toast => {
         if (!toast) {
@@ -60,30 +62,55 @@ const renderFlashToasts = () => {
     };
 
     collected.forEach(({ messages }) => {
-        messages.forEach(({ category, text }) => {
-            const toast = document.createElement('div');
-            const style = categoryStyles[category] || categoryStyles.info;
-            toast.className = `flex w-full items-start justify-between gap-3 overflow-hidden rounded-lg border shadow-lg backdrop-blur ${style}`;
+        const primaryCategory = messages[0]?.category || 'info';
+        const style = categoryStyles[primaryCategory] || categoryStyles.info;
 
-            const textWrapper = document.createElement('div');
-            textWrapper.className = 'flex-1 px-4 py-3 text-sm font-medium break-words';
-            textWrapper.textContent = text;
-            toast.appendChild(textWrapper);
+        const toast = document.createElement('div');
+        toast.className = `flex w-full items-start justify-between gap-3 overflow-hidden rounded-lg border shadow-lg backdrop-blur ${style}`;
 
-            const dismissButton = document.createElement('button');
-            dismissButton.type = 'button';
-            dismissButton.className = 'mr-3 mt-3 inline-flex h-8 w-8 flex-none items-center justify-center rounded-full bg-white/80 text-gray-600 transition hover:bg-white hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 dark:bg-slate-800/80 dark:text-slate-200';
-            dismissButton.setAttribute('aria-label', 'Dismiss notification');
-            dismissButton.innerHTML = '<span aria-hidden="true" class="text-base font-bold">&times;</span>';
-            dismissButton.addEventListener('click', () => removeToast(toast));
-            toast.appendChild(dismissButton);
+        const contentWrapper = document.createElement('div');
+        contentWrapper.className = 'flex-1 px-4 py-3 text-sm';
 
-            toastContainer.appendChild(toast);
+        const heading = document.createElement('div');
+        heading.className = 'flex items-baseline justify-between gap-2 text-sm font-semibold';
+        const readableCategory = primaryCategory.charAt(0).toUpperCase() + primaryCategory.slice(1);
+        heading.textContent = readableCategory;
 
+        const countBadge = document.createElement('span');
+        countBadge.className = 'rounded-full bg-black/10 px-2 py-0.5 text-xs font-medium uppercase tracking-wide dark:bg-white/20';
+        countBadge.textContent = `${messages.length} ${messages.length === 1 ? 'message' : 'messages'}`;
+        heading.appendChild(countBadge);
+
+        const messageList = document.createElement('ul');
+        messageList.className = 'mt-2 flex max-h-60 flex-col gap-1 overflow-y-auto pr-1 text-left text-sm font-medium';
+
+        messages.forEach(({ text }) => {
+            const listItem = document.createElement('li');
+            listItem.className = 'break-words';
+            listItem.textContent = text;
+            messageList.appendChild(listItem);
+        });
+
+        contentWrapper.appendChild(heading);
+        contentWrapper.appendChild(messageList);
+        toast.appendChild(contentWrapper);
+
+        const dismissButton = document.createElement('button');
+        dismissButton.type = 'button';
+        dismissButton.className = 'mr-3 mt-3 inline-flex h-8 w-8 flex-none items-center justify-center rounded-full bg-white/80 text-gray-600 transition hover:bg-white hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 dark:bg-slate-800/80 dark:text-slate-200';
+        dismissButton.setAttribute('aria-label', 'Dismiss notification');
+        dismissButton.innerHTML = '<span aria-hidden="true" class="text-base font-bold">&times;</span>';
+        dismissButton.addEventListener('click', () => removeToast(toast));
+        toast.appendChild(dismissButton);
+
+        toastContainer.appendChild(toast);
+
+        const shouldAutoDismiss = !['warning', 'error'].includes(primaryCategory);
+        if (shouldAutoDismiss) {
             setTimeout(() => {
                 removeToast(toast);
             }, 8000);
-        });
+        }
     });
 
     if (!toastContainer.childElementCount) {
