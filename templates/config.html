@@ -47,13 +47,9 @@
     </ul>
     {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
-    <ul id="flash-messages" class="flashes mb-4 text-center" data-flash-messages>
-        {% for category, msg in messages %}
-        <li class="{{ category }}">{{ msg }}</li>
-        {% endfor %}
-    </ul>
+    <script type="application/json" data-flash-payload>{{ messages|tojson }}</script>
     {% endif %}
-{% endwith %}
+    {% endwith %}
     <div class="mb-6">
         <h2 class="text-xl text-emerald-900 font-semibold mb-2">Presets</h2>
         <form method="post" action="{{ url_for('save_preset') }}" class="flex gap-2 mb-2">

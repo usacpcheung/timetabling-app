@@ -1,33 +1,104 @@
 // Initialise Flowbite components used by the templates
 
 const renderFlashToasts = () => {
-    const flashLists = Array.from(document.querySelectorAll('[data-flash-messages]'));
-    if (!flashLists.length) {
+    const payloadNodes = Array.from(document.querySelectorAll('[data-flash-payload]'));
+    if (!payloadNodes.length) {
         return;
     }
 
-    const collected = [];
-
-    flashLists.forEach(list => {
-        const items = Array.from(list.querySelectorAll('li'));
-        const messages = items
-            .map(item => {
-                const text = item.textContent ? item.textContent.trim() : '';
-                if (!text) {
-                    return null;
+    const normaliseEntry = entry => {
+        const normaliseCategory = value => {
+            if (typeof value === 'string') {
+                const trimmed = value.trim();
+                if (trimmed) {
+                    return trimmed;
                 }
-                const classNames = (item.className || '').split(/\s+/).filter(Boolean);
-                const category = classNames[0] || 'info';
-                return { category, text };
-            })
+            }
+            return 'info';
+        };
+
+        const normaliseText = value => {
+            if (typeof value === 'string') {
+                const trimmed = value.trim();
+                if (trimmed) {
+                    return trimmed;
+                }
+            }
+            return '';
+        };
+
+        if (Array.isArray(entry)) {
+            const [category, message] = entry;
+            const text = normaliseText(message);
+            if (!text) {
+                return null;
+            }
+            return {
+                category: normaliseCategory(category),
+                text
+            };
+        }
+
+        if (entry && typeof entry === 'object') {
+            const text = normaliseText(entry.message ?? entry.text ?? '');
+            if (!text) {
+                return null;
+            }
+            return {
+                category: normaliseCategory(entry.category ?? entry.type ?? entry.level),
+                text
+            };
+        }
+
+        if (typeof entry === 'string') {
+            const text = normaliseText(entry);
+            if (!text) {
+                return null;
+            }
+            return {
+                category: 'info',
+                text
+            };
+        }
+
+        return null;
+    };
+
+    const messageGroups = [];
+
+    payloadNodes.forEach(node => {
+        const raw = node.textContent ? node.textContent.trim() : '';
+        if (!raw) {
+            node.remove();
+            return;
+        }
+
+        let parsed;
+        try {
+            parsed = JSON.parse(raw);
+        } catch (error) {
+            console.error('Failed to parse flash payload', error);
+            node.remove();
+            return;
+        }
+
+        const entries = Array.isArray(parsed)
+            ? parsed
+            : Array.isArray(parsed?.messages)
+                ? parsed.messages
+                : [];
+        const messages = entries
+            .map(normaliseEntry)
             .filter(Boolean);
 
         if (messages.length) {
-            collected.push({ list, messages });
+            messageGroups.push(messages);
         }
+
+        node.remove();
     });
 
-    if (!collected.length) {
+    if (!messageGroups.length) {
         return;
     }
 
@@ -61,7 +132,7 @@ const renderFlashToasts = () => {
         }
     };
 
-    collected.forEach(({ messages }) => {
+    messageGroups.forEach(messages => {
         const primaryCategory = messages[0]?.category || 'info';
         const style = categoryStyles[primaryCategory] || categoryStyles.info;
 
@@ -118,11 +189,6 @@ const renderFlashToasts = () => {
     }
 
     document.body.appendChild(toastContainer);
-
-    collected.forEach(({ list }) => {
-        list.setAttribute('data-flash-enhanced', 'true');
-        list.setAttribute('aria-hidden', 'true');
-    });
 };
 
 if (typeof window !== 'undefined') {
