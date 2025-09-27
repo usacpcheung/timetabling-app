@@ -373,7 +373,7 @@ document.addEventListener('DOMContentLoaded', function () {
         };
 
         const toastContainer = document.createElement('div');
-        toastContainer.className = 'fixed bottom-4 right-4 z-50 flex w-full max-w-sm flex-col gap-3';
+        toastContainer.className = 'fixed top-4 left-4 right-4 z-50 flex max-w-full flex-col gap-3 sm:right-auto sm:max-w-sm';
         toastContainer.setAttribute('role', 'alert');
         toastContainer.setAttribute('aria-live', 'assertive');
 
@@ -390,7 +390,7 @@ document.addEventListener('DOMContentLoaded', function () {
         messages.forEach(({ category, text }) => {
             const toast = document.createElement('div');
             const style = categoryStyles[category] || categoryStyles.info;
-            toast.className = `flex items-start justify-between gap-3 overflow-hidden rounded-lg border shadow-lg backdrop-blur ${style}`;
+            toast.className = `flex w-full items-start justify-between gap-3 overflow-hidden rounded-lg border shadow-lg backdrop-blur ${style}`;
 
             const textWrapper = document.createElement('div');
             textWrapper.className = 'flex-1 px-4 py-3 text-sm font-medium break-words';
