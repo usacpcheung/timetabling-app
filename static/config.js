@@ -344,79 +344,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     };
 
-    const renderFlashToasts = () => {
-        const flashList = document.getElementById('flash-messages');
-        if (!flashList) {
-            return;
-        }
-        const items = Array.from(flashList.querySelectorAll('li'));
-        const messages = items
-            .map(item => {
-                const text = item.textContent ? item.textContent.trim() : '';
-                if (!text) {
-                    return null;
-                }
-                const classNames = (item.className || '').split(/\s+/).filter(Boolean);
-                const category = classNames[0] || 'info';
-                return { category, text };
-            })
-            .filter(Boolean);
-        if (!messages.length) {
-            return;
-        }
-
-        const categoryStyles = {
-            error: 'border-red-500 bg-red-50 text-red-900 dark:border-red-400 dark:bg-red-900 dark:text-red-100',
-            warning: 'border-amber-500 bg-amber-50 text-amber-900 dark:border-amber-400 dark:bg-amber-900 dark:text-amber-100',
-            success: 'border-emerald-500 bg-emerald-50 text-emerald-900 dark:border-emerald-400 dark:bg-emerald-900 dark:text-emerald-100',
-            info: 'border-blue-500 bg-blue-50 text-blue-900 dark:border-blue-400 dark:bg-blue-900 dark:text-blue-100'
-        };
-
-        const toastContainer = document.createElement('div');
-        toastContainer.className = 'fixed top-4 left-4 right-4 z-50 flex max-w-full flex-col gap-3 sm:right-auto sm:max-w-sm';
-        toastContainer.setAttribute('role', 'alert');
-        toastContainer.setAttribute('aria-live', 'assertive');
-
-        const removeToast = toast => {
-            if (!toast) {
-                return;
-            }
-            toast.remove();
-            if (!toastContainer.childElementCount) {
-                toastContainer.remove();
-            }
-        };
-
-        messages.forEach(({ category, text }) => {
-            const toast = document.createElement('div');
-            const style = categoryStyles[category] || categoryStyles.info;
-            toast.className = `flex w-full items-start justify-between gap-3 overflow-hidden rounded-lg border shadow-lg backdrop-blur ${style}`;
-
-            const textWrapper = document.createElement('div');
-            textWrapper.className = 'flex-1 px-4 py-3 text-sm font-medium break-words';
-            textWrapper.textContent = text;
-            toast.appendChild(textWrapper);
-
-            const dismissButton = document.createElement('button');
-            dismissButton.type = 'button';
-            dismissButton.className = 'mr-3 mt-3 inline-flex h-8 w-8 flex-none items-center justify-center rounded-full bg-white/80 text-gray-600 transition hover:bg-white hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 dark:bg-slate-800/80 dark:text-slate-200';
-            dismissButton.setAttribute('aria-label', 'Dismiss notification');
-            dismissButton.innerHTML = '<span aria-hidden="true" class="text-base font-bold">&times;</span>';
-            dismissButton.addEventListener('click', () => removeToast(toast));
-            toast.appendChild(dismissButton);
-
-            toastContainer.appendChild(toast);
-
-            setTimeout(() => {
-                removeToast(toast);
-            }, 8000);
-        });
-
-        document.body.appendChild(toastContainer);
-    };
-
     restoreScrollPosition();
-    renderFlashToasts();
 
     accordionButtons.forEach(btn => {
         btn.addEventListener('click', () => {
@@ -852,6 +780,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!tids.length || !slots.length) return;
         const flashes = document.getElementById('flash-messages');
         if (!flashes) return;
+        let added = 0;
         tids.forEach(tid => {
             const fixed = assignData[tid] || [];
             const unav = unavailData[tid] || [];
@@ -867,9 +796,13 @@ document.addEventListener('DOMContentLoaded', function () {
                     li.className = 'error';
                     li.textContent = msg;
                     flashes.appendChild(li);
+                    added += 1;
                 }
             });
         });
+        if (added && typeof window.renderFlashToasts === 'function') {
+            window.renderFlashToasts();
+        }
     }
     if (unavailTeacher && unavailSlot) {
         unavailTeacher.addEventListener('change', warnUnavail);
