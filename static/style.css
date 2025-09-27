@@ -21,6 +21,11 @@ td, th {
     color: red;
 }
 
+.flashes[data-flash-enhanced="true"],
+[data-flash-messages][data-flash-enhanced="true"] {
+    display: none !important;
+}
+
 /* Highlight subjects with worksheets on the selected date */
 .worksheet-assigned {
     background-color: #A7F3D0; /* emerald-200 */

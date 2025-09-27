@@ -10,7 +10,7 @@
     <h1>Timetable for {{ date }}</h1>
     {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
-    <ul class="flashes">
+    <ul class="flashes" data-flash-messages>
         {% for category, msg in messages %}
         <li class="{{ category }}">{{ msg }}</li>
         {% endfor %}
