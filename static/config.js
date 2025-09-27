@@ -2,6 +2,7 @@
 // Populate drop-downs and handle dynamic slot time fields.
 
 document.addEventListener('DOMContentLoaded', function () {
+    const SCROLL_STORAGE_KEY = 'config_scroll';
     const loadForm = document.getElementById('load-form');
     const overwriteInput = document.getElementById('overwrite');
     const presetSectionsInput = document.getElementById('selected-sections-input');
@@ -312,6 +313,111 @@ document.addEventListener('DOMContentLoaded', function () {
 
     restoreAccordionState();
 
+    const restoreScrollPosition = () => {
+        let savedScroll = null;
+        try {
+            savedScroll = sessionStorage.getItem(SCROLL_STORAGE_KEY);
+        } catch (err) {
+            savedScroll = null;
+        }
+        if (savedScroll === null) {
+            return;
+        }
+        const offset = Number(savedScroll);
+        if (!Number.isFinite(offset)) {
+            try {
+                sessionStorage.removeItem(SCROLL_STORAGE_KEY);
+            } catch (err) {
+                /* noop */
+            }
+            return;
+        }
+        try {
+            window.scrollTo({ top: offset, behavior: 'instant' });
+        } catch (err) {
+            window.scrollTo(0, offset);
+        }
+        try {
+            sessionStorage.removeItem(SCROLL_STORAGE_KEY);
+        } catch (err) {
+            /* noop */
+        }
+    };
+
+    const renderFlashToasts = () => {
+        const flashList = document.getElementById('flash-messages');
+        if (!flashList) {
+            return;
+        }
+        const items = Array.from(flashList.querySelectorAll('li'));
+        const messages = items
+            .map(item => {
+                const text = item.textContent ? item.textContent.trim() : '';
+                if (!text) {
+                    return null;
+                }
+                const classNames = (item.className || '').split(/\s+/).filter(Boolean);
+                const category = classNames[0] || 'info';
+                return { category, text };
+            })
+            .filter(Boolean);
+        if (!messages.length) {
+            return;
+        }
+
+        const categoryStyles = {
+            error: 'border-red-500 bg-red-50 text-red-900 dark:border-red-400 dark:bg-red-900 dark:text-red-100',
+            warning: 'border-amber-500 bg-amber-50 text-amber-900 dark:border-amber-400 dark:bg-amber-900 dark:text-amber-100',
+            success: 'border-emerald-500 bg-emerald-50 text-emerald-900 dark:border-emerald-400 dark:bg-emerald-900 dark:text-emerald-100',
+            info: 'border-blue-500 bg-blue-50 text-blue-900 dark:border-blue-400 dark:bg-blue-900 dark:text-blue-100'
+        };
+
+        const toastContainer = document.createElement('div');
+        toastContainer.className = 'fixed bottom-4 right-4 z-50 flex w-full max-w-sm flex-col gap-3';
+        toastContainer.setAttribute('role', 'alert');
+        toastContainer.setAttribute('aria-live', 'assertive');
+
+        const removeToast = toast => {
+            if (!toast) {
+                return;
+            }
+            toast.remove();
+            if (!toastContainer.childElementCount) {
+                toastContainer.remove();
+            }
+        };
+
+        messages.forEach(({ category, text }) => {
+            const toast = document.createElement('div');
+            const style = categoryStyles[category] || categoryStyles.info;
+            toast.className = `relative overflow-hidden rounded-lg border shadow-lg backdrop-blur ${style}`;
+
+            const textWrapper = document.createElement('div');
+            textWrapper.className = 'px-4 py-3 pr-12 text-sm font-medium';
+            textWrapper.textContent = text;
+            toast.appendChild(textWrapper);
+
+            const dismissButton = document.createElement('button');
+            dismissButton.type = 'button';
+            dismissButton.className = 'absolute top-2 right-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/80 text-gray-600 transition hover:bg-white hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:bg-slate-800/80 dark:text-slate-200';
+            dismissButton.setAttribute('aria-label', 'Dismiss notification');
+            dismissButton.innerHTML = '<span aria-hidden="true" class="text-base font-bold">&times;</span>';
+            dismissButton.addEventListener('click', () => removeToast(toast));
+            toast.appendChild(dismissButton);
+
+            toastContainer.appendChild(toast);
+
+            setTimeout(() => {
+                removeToast(toast);
+            }, 8000);
+        });
+
+        document.body.appendChild(toastContainer);
+    };
+
+    restoreScrollPosition();
+    renderFlashToasts();
+
     accordionButtons.forEach(btn => {
         btn.addEventListener('click', () => {
             setTimeout(saveAccordionState, 0);
@@ -339,11 +445,23 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
         allowNextSubmit();
+        try {
+            sessionStorage.setItem(SCROLL_STORAGE_KEY, String(window.scrollY || 0));
+        } catch (err) {
+            /* noop */
+        }
         if (typeof configForm.requestSubmit === 'function') {
             configForm.requestSubmit();
         } else {
             configForm.submit();
         }
+        setTimeout(() => {
+            try {
+                sessionStorage.removeItem(SCROLL_STORAGE_KEY);
+            } catch (err) {
+                /* noop */
+            }
+        }, 0);
     };
 
     if (configForm) {
