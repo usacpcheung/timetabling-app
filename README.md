@@ -147,7 +147,7 @@ Visit `/config` after launching the server to manage all scheduling inputs. The 
 - Maintain active students, their required subjects, lesson limits and repeat preferences (including per-subject repeat allow-lists). Use the _Needs lessons?_ toggle to temporarily exclude a student from scheduling without deleting their data.
 - Record student unavailability, block individual teachers (while ensuring viable alternatives remain) and restrict allowable locations.
 - Group students for joint lessons. Each subject in the group must be taught by at least one unblocked teacher, and optional location limits can keep lessons in suitable rooms.
-- Use the batch student actions panel to add or remove blocked slots, subjects, teacher blocks and allowed locations for multiple students at once.
+- Use the batch student actions panel to add or remove blocked slots, subjects, teacher blocks, allowed locations and toggle the _Needs lessons?_ status for multiple students at once.
 
 ### Locations
 
