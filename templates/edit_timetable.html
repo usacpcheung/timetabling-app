@@ -11,11 +11,7 @@
         <h1 class="text-2xl text-emerald-900 font-semibold mb-4 text-center">Edit Timetable for {{ date }}</h1>
         {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
-        <ul class="flashes mb-4 text-center" data-flash-messages>
-            {% for category, msg in messages %}
-            <li class="{{ category }}">{{ msg }}</li>
-            {% endfor %}
-        </ul>
+        <script type="application/json" data-flash-payload>{{ messages|tojson }}</script>
         {% endif %}
         {% endwith %}
 

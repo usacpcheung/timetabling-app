@@ -14,18 +14,6 @@ td, th {
 }
 /* Simple styling for error messages */
 
-.flashes {
-    list-style: none;
-    padding: 0;
-    margin: 1em 0;
-    color: red;
-}
-
-.flashes[data-flash-enhanced="true"],
-[data-flash-messages][data-flash-enhanced="true"] {
-    display: none !important;
-}
-
 /* Highlight subjects with worksheets on the selected date */
 .worksheet-assigned {
     background-color: #A7F3D0; /* emerald-200 */

@@ -1,33 +1,111 @@
 // Initialise Flowbite components used by the templates
 
 const renderFlashToasts = () => {
-    const flashLists = Array.from(document.querySelectorAll('[data-flash-messages]'));
-    if (!flashLists.length) {
+    const payloadNodes = Array.from(document.querySelectorAll('[data-flash-payload]'));
+    if (!payloadNodes.length) {
         return;
     }
 
-    const collected = [];
-
-    flashLists.forEach(list => {
-        const items = Array.from(list.querySelectorAll('li'));
-        const messages = items
-            .map(item => {
-                const text = item.textContent ? item.textContent.trim() : '';
-                if (!text) {
-                    return null;
+    const severityRank = { error: 3, warning: 2, success: 1, info: 0 };
+    const readableLabels = {
+        error: 'Error',
+        warning: 'Warning',
+        success: 'Success',
+        info: 'Info'
+    };
+    const normaliseEntry = entry => {
+        const normaliseCategory = value => {
+            if (typeof value === 'string') {
+                const trimmed = value.trim().toLowerCase();
+                if (trimmed) {
+                    return Object.prototype.hasOwnProperty.call(severityRank, trimmed) ? trimmed : 'info';
                 }
-                const classNames = (item.className || '').split(/\s+/).filter(Boolean);
-                const category = classNames[0] || 'info';
-                return { category, text };
-            })
+            }
+            return 'info';
+        };
+
+        const normaliseText = value => {
+            if (typeof value === 'string') {
+                const trimmed = value.trim();
+                if (trimmed) {
+                    return trimmed;
+                }
+            }
+            return '';
+        };
+
+        if (Array.isArray(entry)) {
+            const [category, message] = entry;
+            const text = normaliseText(message);
+            if (!text) {
+                return null;
+            }
+            return {
+                category: normaliseCategory(category),
+                text
+            };
+        }
+
+        if (entry && typeof entry === 'object') {
+            const text = normaliseText(entry.message ?? entry.text ?? '');
+            if (!text) {
+                return null;
+            }
+            return {
+                category: normaliseCategory(entry.category ?? entry.type ?? entry.level),
+                text
+            };
+        }
+
+        if (typeof entry === 'string') {
+            const text = normaliseText(entry);
+            if (!text) {
+                return null;
+            }
+            return {
+                category: 'info',
+                text
+            };
+        }
+
+        return null;
+    };
+
+    const messageGroups = [];
+
+    payloadNodes.forEach(node => {
+        const raw = node.textContent ? node.textContent.trim() : '';
+        if (!raw) {
+            node.remove();
+            return;
+        }
+
+        let parsed;
+        try {
+            parsed = JSON.parse(raw);
+        } catch (error) {
+            console.error('Failed to parse flash payload', error);
+            node.remove();
+            return;
+        }
+
+        const entries = Array.isArray(parsed)
+            ? parsed
+            : Array.isArray(parsed?.messages)
+                ? parsed.messages
+                : [];
+        const messages = entries
+            .map(normaliseEntry)
             .filter(Boolean);
 
         if (messages.length) {
-            collected.push({ list, messages });
+            messageGroups.push(messages);
         }
+
+        node.remove();
     });
 
-    if (!collected.length) {
+    if (!messageGroups.length) {
         return;
     }
 
@@ -38,16 +116,16 @@ const renderFlashToasts = () => {
         info: 'border-blue-500 bg-blue-50 text-blue-900 dark:border-blue-400 dark:bg-blue-900 dark:text-blue-100'
     };
 
-    const existingContainer = document.querySelector('[data-flash-toast-container]');
-    if (existingContainer) {
-        existingContainer.remove();
+    let toastContainer = document.querySelector('[data-flash-toast-container]');
+    if (!toastContainer) {
+        toastContainer = document.createElement('div');
+        toastContainer.className = 'fixed top-4 left-4 right-4 z-50 flex max-w-full flex-col gap-3 overflow-y-auto sm:right-auto sm:max-w-sm';
+        toastContainer.setAttribute('role', 'alert');
+        toastContainer.setAttribute('aria-live', 'assertive');
+        toastContainer.setAttribute('data-flash-toast-container', '');
+        toastContainer.style.maxHeight = 'calc(100vh - 2rem)';
+        document.body.appendChild(toastContainer);
     }
-
-    const toastContainer = document.createElement('div');
-    toastContainer.className = 'fixed top-4 left-4 right-4 z-50 flex max-w-full flex-col gap-3 sm:right-auto sm:max-w-sm';
-    toastContainer.setAttribute('role', 'alert');
-    toastContainer.setAttribute('aria-live', 'assertive');
-    toastContainer.setAttribute('data-flash-toast-container', '');
 
     const removeToast = toast => {
         if (!toast) {
@@ -59,47 +137,142 @@ const renderFlashToasts = () => {
         }
     };
 
-    collected.forEach(({ messages }) => {
+    const badgeStyles = {
+        error: 'whitespace-nowrap rounded bg-red-500/15 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-red-900 dark:bg-red-400/20 dark:text-red-100',
+        warning: 'whitespace-nowrap rounded bg-amber-500/15 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-amber-900 dark:bg-amber-400/20 dark:text-amber-100',
+        success: 'whitespace-nowrap rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-emerald-900 dark:bg-emerald-400/20 dark:text-emerald-100',
+        info: 'whitespace-nowrap rounded bg-blue-500/15 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-blue-900 dark:bg-blue-400/20 dark:text-blue-100'
+    };
+
+    const getCategoryKey = category => (Object.prototype.hasOwnProperty.call(severityRank, category) ? category : 'info');
+
+    messageGroups.forEach(messages => {
+        const dominantCategory = messages.reduce((current, message) => {
+            const candidate = getCategoryKey(message.category);
+            if (!current) {
+                return candidate;
+            }
+            return severityRank[candidate] > severityRank[current] ? candidate : current;
+        }, 'info');
+
+        const style = categoryStyles[dominantCategory] || categoryStyles.info;
+
+        const toast = document.createElement('div');
+        toast.className = `flex w-full items-start justify-between gap-3 overflow-hidden rounded-lg border shadow-lg backdrop-blur ${style}`;
+
+        const contentWrapper = document.createElement('div');
+        contentWrapper.className = 'flex-1 px-4 py-3 text-sm';
+
+        const heading = document.createElement('div');
+        heading.className = 'flex items-baseline justify-between gap-2 text-sm font-semibold';
+        heading.textContent = readableLabels[dominantCategory] || readableLabels.info;
+
+        const countBadge = document.createElement('span');
+        countBadge.className = 'rounded-full bg-black/10 px-2 py-0.5 text-xs font-medium uppercase tracking-wide dark:bg-white/20';
+        countBadge.textContent = `${messages.length} ${messages.length === 1 ? 'message' : 'messages'}`;
+        heading.appendChild(countBadge);
+
+        const messageList = document.createElement('ul');
+        messageList.className = 'mt-2 flex max-h-60 flex-col gap-1 overflow-y-auto pr-1 text-left text-sm font-medium';
+
         messages.forEach(({ category, text }) => {
-            const toast = document.createElement('div');
-            const style = categoryStyles[category] || categoryStyles.info;
-            toast.className = `flex w-full items-start justify-between gap-3 overflow-hidden rounded-lg border shadow-lg backdrop-blur ${style}`;
+            const listItem = document.createElement('li');
+            listItem.className = 'flex items-start gap-2';
 
-            const textWrapper = document.createElement('div');
-            textWrapper.className = 'flex-1 px-4 py-3 text-sm font-medium break-words';
-            textWrapper.textContent = text;
-            toast.appendChild(textWrapper);
+            const categoryKey = getCategoryKey(category);
+            const badge = document.createElement('span');
+            badge.className = badgeStyles[categoryKey] || badgeStyles.info;
+            badge.textContent = readableLabels[categoryKey] || readableLabels.info;
 
-            const dismissButton = document.createElement('button');
-            dismissButton.type = 'button';
-            dismissButton.className = 'mr-3 mt-3 inline-flex h-8 w-8 flex-none items-center justify-center rounded-full bg-white/80 text-gray-600 transition hover:bg-white hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 dark:bg-slate-800/80 dark:text-slate-200';
-            dismissButton.setAttribute('aria-label', 'Dismiss notification');
-            dismissButton.innerHTML = '<span aria-hidden="true" class="text-base font-bold">&times;</span>';
-            dismissButton.addEventListener('click', () => removeToast(toast));
-            toast.appendChild(dismissButton);
+            const textSpan = document.createElement('span');
+            textSpan.className = 'flex-1 break-words text-left';
+            textSpan.textContent = text;
 
-            toastContainer.appendChild(toast);
+            listItem.appendChild(badge);
+            listItem.appendChild(textSpan);
+            messageList.appendChild(listItem);
+        });
 
+        contentWrapper.appendChild(heading);
+        contentWrapper.appendChild(messageList);
+        toast.appendChild(contentWrapper);
+
+        const dismissButton = document.createElement('button');
+        dismissButton.type = 'button';
+        dismissButton.className = 'mr-3 mt-3 inline-flex h-8 w-8 flex-none items-center justify-center rounded-full bg-white/80 text-gray-600 transition hover:bg-white hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 dark:bg-slate-800/80 dark:text-slate-200';
+        dismissButton.setAttribute('aria-label', 'Dismiss notification');
+        dismissButton.innerHTML = '<span aria-hidden="true" class="text-base font-bold">&times;</span>';
+        dismissButton.addEventListener('click', () => removeToast(toast));
+        toast.appendChild(dismissButton);
+
+        toastContainer.appendChild(toast);
+
+        const shouldAutoDismiss = severityRank[dominantCategory] < severityRank.warning;
+        if (shouldAutoDismiss) {
             setTimeout(() => {
                 removeToast(toast);
             }, 8000);
-        });
+        }
     });
 
-    if (!toastContainer.childElementCount) {
+};
+
+const enqueueFlashMessages = (entries, options = {}) => {
+    const ensureArray = value => (Array.isArray(value) ? value : [value]);
+    const normalised = ensureArray(entries)
+        .map(entry => {
+            if (!entry) {
+                return null;
+            }
+            if (typeof entry === 'string') {
+                const trimmed = entry.trim();
+                if (!trimmed) {
+                    return null;
+                }
+                return {
+                    category: options.category || 'info',
+                    text: trimmed
+                };
+            }
+            if (typeof entry === 'object') {
+                const category = typeof entry.category === 'string' && entry.category.trim()
+                    ? entry.category.trim()
+                    : (typeof options.category === 'string' && options.category.trim())
+                        ? options.category.trim()
+                        : 'info';
+                const textSource = entry.text ?? entry.message;
+                if (typeof textSource !== 'string') {
+                    return null;
+                }
+                const trimmed = textSource.trim();
+                if (!trimmed) {
+                    return null;
+                }
+                return {
+                    category,
+                    text: trimmed
+                };
+            }
+            return null;
+        })
+        .filter(Boolean);
+
+    if (!normalised.length) {
         return;
     }
 
-    document.body.appendChild(toastContainer);
+    const script = document.createElement('script');
+    script.type = 'application/json';
+    script.setAttribute('data-flash-payload', '');
+    script.textContent = JSON.stringify(normalised);
+    document.body.appendChild(script);
 
-    collected.forEach(({ list }) => {
-        list.setAttribute('data-flash-enhanced', 'true');
-        list.setAttribute('aria-hidden', 'true');
-    });
+    renderFlashToasts();
 };
 
 if (typeof window !== 'undefined') {
     window.renderFlashToasts = renderFlashToasts;
+    window.enqueueFlashMessages = enqueueFlashMessages;
 }
 
 document.addEventListener('DOMContentLoaded', function () {
