@@ -778,9 +778,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const tids = Array.from(unavailTeacher.selectedOptions).map(o => o.value);
         const slots = Array.from(unavailSlot.selectedOptions).map(o => parseInt(o.value, 10) - 1);
         if (!tids.length || !slots.length) return;
-        const flashes = document.getElementById('flash-messages');
-        if (!flashes) return;
-        let added = 0;
+        const messages = [];
         tids.forEach(tid => {
             const fixed = assignData[tid] || [];
             const unav = unavailData[tid] || [];
@@ -792,16 +790,15 @@ document.addEventListener('DOMContentLoaded', function () {
                     msg = 'Slot already marked unavailable.';
                 }
                 if (msg) {
-                    const li = document.createElement('li');
-                    li.className = 'error';
-                    li.textContent = msg;
-                    flashes.appendChild(li);
-                    added += 1;
+                    messages.push({
+                        category: 'error',
+                        text: msg
+                    });
                 }
             });
         });
-        if (added && typeof window.renderFlashToasts === 'function') {
-            window.renderFlashToasts();
+        if (messages.length && typeof window.enqueueFlashMessages === 'function') {
+            window.enqueueFlashMessages(messages, { category: 'error' });
         }
     }
     if (unavailTeacher && unavailSlot) {
