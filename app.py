@@ -1990,10 +1990,16 @@ def config():
             batch_location_ids = set(_parse_int_list(request.form.getlist('batch_locations')))
             location_changes = []
 
+            batch_active_action = request.form.get('batch_active_action', '').strip().lower()
+
             for sid in batch_student_ids:
                 data = student_form_data.get(sid)
                 if not data:
                     continue
+                if batch_active_action == 'activate':
+                    data['active'] = 1
+                elif batch_active_action == 'deactivate':
+                    data['active'] = 0
                 if batch_block_slots:
                     if batch_block_action == 'remove':
                         data['unavailable'].difference_update(batch_block_slots)

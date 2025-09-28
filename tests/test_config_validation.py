@@ -1360,6 +1360,86 @@ def test_batch_location_add_and_remove(tmp_path):
     conn.close()
 
 
+def test_batch_active_toggle(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    config_row = _config_row(app.DB_PATH)
+
+    cursor = conn.cursor()
+    student_rows = [
+        dict(row)
+        for row in cursor.execute(
+            'SELECT * FROM students WHERE name IN (?, ?)',
+            ('Student 1', 'Student 2'),
+        ).fetchall()
+    ]
+    assert len(student_rows) == 2
+    conn.close()
+
+    def _build_student_payload(students):
+        data = _valid_config_form(config_row)
+        for row in students:
+            sid = row['id']
+            data.add('student_id', str(sid))
+            data.add(f'student_name_{sid}', row['name'])
+            for subj_id in json.loads(row['subjects']):
+                data.add(f'student_subjects_{sid}', str(subj_id))
+            if row['active']:
+                data.add(f'student_active_{sid}', '1')
+        return data
+
+    student_ids = [row['id'] for row in student_rows]
+    deactivate_data = _build_student_payload(student_rows)
+    deactivate_data.setlist('batch_students', [str(sid) for sid in student_ids])
+    deactivate_data.add('batch_active_action', 'deactivate')
+
+    with app.app.test_request_context('/config', method='POST', data=deactivate_data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert all(category != 'error' for category, _ in flashes)
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    inactive_rows = conn.execute(
+        'SELECT id, active FROM students WHERE id IN (?, ?)',
+        (student_ids[0], student_ids[1]),
+    ).fetchall()
+    assert all(row['active'] == 0 for row in inactive_rows)
+
+    refreshed_rows = [
+        dict(row)
+        for row in conn.execute(
+            'SELECT * FROM students WHERE id IN (?, ?)',
+            (student_ids[0], student_ids[1]),
+        ).fetchall()
+    ]
+    conn.close()
+
+    activate_data = _build_student_payload(refreshed_rows)
+    activate_data.setlist('batch_students', [str(sid) for sid in student_ids])
+    activate_data.add('batch_active_action', 'activate')
+
+    with app.app.test_request_context('/config', method='POST', data=activate_data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert all(category != 'error' for category, _ in flashes)
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    active_rows = conn.execute(
+        'SELECT id, active FROM students WHERE id IN (?, ?)',
+        (student_ids[0], student_ids[1]),
+    ).fetchall()
+    conn.close()
+
+    assert all(row['active'] == 1 for row in active_rows)
+
+
 def test_followup_config_auto_removes_empty_group(tmp_path):
     import app
 

@@ -174,7 +174,7 @@
 
             <h3 class="text-base font-semibold text-emerald-900">Batch tools &amp; per-student overrides</h3>
             <ul class="list-disc ms-6 mb-6 space-y-1">
-                <li>Use the <em>Batch student actions</em> panel to add or remove blocked slots, subjects, teacher blocks, and allowed locations for several students at once. Batch updates merge with existing values rather than replacing them outright.</li>
+                <li>Use the <em>Batch student actions</em> panel to add or remove blocked slots, subjects, teacher blocks, allowed locations, and toggle the <em>Needs lessons?</em> status for several students at once. Batch updates merge with existing values rather than replacing them outright.</li>
                 <li>The <em>Needs lessons?</em> toggle lets you temporarily archive a student without deleting their configuration—turn it off to keep historical data while skipping the student during scheduling.</li>
                 <li>Advanced dialogs provide per-student overrides for Min/Max lessons, repeat allowances, repeatable subjects, consecutive preferences, teacher-per-subject limits, and blocked slots.</li>
                 <li>Overrides apply only to the selected student and take priority over global defaults.</li>
@@ -451,6 +451,18 @@
                         <option value="{{ loc['id'] }}">{{ loc['name'] }}</option>
                         {% endfor %}
                     </select>
+                </fieldset>
+                <fieldset class="space-y-2 md:col-span-2">
+                    <legend class="font-medium">Needs lessons status</legend>
+                    <p class="text-sm text-emerald-700">Toggle whether the selected students are scheduled for lessons.</p>
+                    <label class="block">
+                        <span class="sr-only">Needs lessons action</span>
+                        <select name="batch_active_action" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                            <option value="">No change</option>
+                            <option value="activate">Mark as needs lessons</option>
+                            <option value="deactivate">Mark as doesn&rsquo;t need lessons</option>
+                        </select>
+                    </label>
                 </fieldset>
             </div>
         </fieldset>
