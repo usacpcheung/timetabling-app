@@ -168,12 +168,15 @@
             <h3 class="text-base font-semibold text-emerald-900">Fixed Assignments</h3>
             <ul class="list-disc ms-6 mb-6 space-y-1">
                 <li>Use to force specific teacher, student (or group), subject, and slot combinations.</li>
+                <li>Optionally attach a location to reserve a room or resource for that lesson; the solver treats it as a hard requirement.</li>
                 <li>If both a student and a group are selected, the entry is saved for the group only when <em>group_weight &gt; 0</em> (or no student is chosen).</li>
             </ul>
 
-            <h3 class="text-base font-semibold text-emerald-900">Per-student Overrides</h3>
+            <h3 class="text-base font-semibold text-emerald-900">Batch tools &amp; per-student overrides</h3>
             <ul class="list-disc ms-6 mb-6 space-y-1">
-                <li>Adjust Min/Max lessons, Allow Repeats, Max Repeats, Allow/Prefer Consecutive, Allow Different Teachers per Subject, and Blocked Slots.</li>
+                <li>Use the <em>Batch student actions</em> panel to add or remove blocked slots, subjects, teacher blocks, and allowed locations for several students at once. Batch updates merge with existing values rather than replacing them outright.</li>
+                <li>The <em>Needs lessons?</em> toggle lets you temporarily archive a student without deleting their configuration—turn it off to keep historical data while skipping the student during scheduling.</li>
+                <li>Advanced dialogs provide per-student overrides for Min/Max lessons, repeat allowances, repeatable subjects, consecutive preferences, teacher-per-subject limits, and blocked slots.</li>
                 <li>Overrides apply only to the selected student and take priority over global defaults.</li>
             </ul>
 
