@@ -29,6 +29,7 @@ The application focuses on a local, privacy-friendly workflow. All data lives in
 
 - Configure teachers, students, subjects, groups and locations from a single configuration page, including availability, fixed lessons and per-student restrictions.
 - Capture nuanced student rules such as teacher blocks, repeat limits, slot unavailability and permitted locations.
+- Apply batch student actions to update blocked slots, subject membership, teacher blocks and allowed locations across many students while preserving their existing settings.
 - Generate timetables with OR-Tools CP-SAT, balancing teacher workloads, honoring attendance priorities, respecting location limits and applying a configurable solver time limit.
 - Switch between teacher and location views, highlight unmet subject requirements, and inspect lesson counts and group membership snapshots for each schedule.
 - Edit saved timetables, assign worksheets, or remove lessons while attendance logs stay in sync.
@@ -143,9 +144,10 @@ Visit `/config` after launching the server to manage all scheduling inputs. The 
 
 ### Students and groups
 
-- Maintain active students, their required subjects, lesson limits and repeat preferences (including per-subject repeat allow-lists).
+- Maintain active students, their required subjects, lesson limits and repeat preferences (including per-subject repeat allow-lists). Use the _Needs lessons?_ toggle to temporarily exclude a student from scheduling without deleting their data.
 - Record student unavailability, block individual teachers (while ensuring viable alternatives remain) and restrict allowable locations.
 - Group students for joint lessons. Each subject in the group must be taught by at least one unblocked teacher, and optional location limits can keep lessons in suitable rooms.
+- Use the batch student actions panel to add or remove blocked slots, subjects, teacher blocks and allowed locations for multiple students at once.
 
 ### Locations
 

@@ -85,7 +85,7 @@ Backend fundamentals
 
 ### Route overview (located in `app.py`)
 - **Landing and generation** – `index`, `check_timetable`, `timetable`, and `generate` handle viewing and triggering schedules.
-- **Configuration** – `config` renders the configuration form, performs extensive validation and commits changes to the database.
+- **Configuration** – `config` renders the configuration form, performs extensive validation and commits changes to the database. It also powers batch student updates, advanced override dialogs and preset management utilities.
 - **Presets** – `/presets` plus POST endpoints for saving, loading and deleting presets.
 - **Attendance & management** – `attendance`, `manage_timetables`, `delete_timetables` and related helpers surface past schedules, attendance summaries and backups.
 - **Editing** – `edit_timetable` lets you fine-tune lessons, toggle worksheets and keep attendance in sync.
@@ -95,7 +95,7 @@ Front-end overview
 ------------------
 - Templates live in `templates/`. Each template expects specific context variables defined in its matching route. If you rename context keys, update every template that uses them.
 - JavaScript lives in `static/`:
-  - `config.js` dynamically updates the configuration form (dropdowns, warnings, time inputs).
+  - `config.js` dynamically updates the configuration form (dropdowns, warnings, time inputs), drives batch student actions, keeps advanced modal state in sync and restores accordion visibility from local storage.
   - `main.js` handles confirmation prompts and AJAX helpers for timetable edits.
   - `attendance.js` enhances attendance tables with sorting and search.
   - `ui.js` initialises Flowbite components across pages.
