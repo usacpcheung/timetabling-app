@@ -39,6 +39,7 @@ DB_PATH = os.path.join(DATA_DIR, "timetable.db")
 
 CURRENT_PRESET_VERSION = 2
 MAX_PRESETS = 10  # maximum number of configuration presets to keep
+DEFAULT_CONSECUTIVE_WEIGHT = 3
 
 CONFIG_SECTION_DEFINITIONS = [
     ('general', 'General', ['config']),
@@ -1586,9 +1587,15 @@ def config():
         consecutive_weight_posted = (
             consecutive_weight_raw is not None and consecutive_weight_raw.strip() != ''
         )
-        consecutive_weight_default = (
-            repeat_defaults['consecutive_weight'] if repeat_defaults else 0
-        )
+        if repeat_defaults:
+            stored_weight = repeat_defaults['consecutive_weight']
+            consecutive_weight_default = (
+                stored_weight
+                if stored_weight is not None and stored_weight > 0
+                else DEFAULT_CONSECUTIVE_WEIGHT
+            )
+        else:
+            consecutive_weight_default = DEFAULT_CONSECUTIVE_WEIGHT
         consecutive_weight = consecutive_weight_default
         consecutive_weight_valid = True
         if consecutive_weight_posted:
@@ -1697,7 +1704,6 @@ def config():
                 (max_repeats_posted and max_repeats > 1)
                 or allow_consecutive_posted
                 or prefer_consecutive_posted
-                or (consecutive_weight_posted and consecutive_weight != 0)
             )
             if repeat_conflict:
                 flash(
@@ -1714,7 +1720,10 @@ def config():
                 max_repeats = 1
                 allow_consecutive = 0
                 prefer_consecutive = 0
-                consecutive_weight = 0
+                if not consecutive_weight_valid:
+                    consecutive_weight = consecutive_weight_default
+                if consecutive_weight is None or consecutive_weight < 1:
+                    consecutive_weight = DEFAULT_CONSECUTIVE_WEIGHT
         else:
             if not allow_consecutive and prefer_consecutive:
                 flash('Cannot prefer consecutive slots when consecutive repeats are disallowed.',

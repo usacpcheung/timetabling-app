@@ -244,7 +244,7 @@
                 <input id="prefer_consecutive" type="checkbox" name="prefer_consecutive" {% if config['prefer_consecutive'] %}checked{% endif %} {% if not config['allow_repeats'] %}disabled{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
             </label>
             <label class="block repeat-control {% if not config['allow_repeats'] %}repeat-disabled{% endif %}" for="consecutive_weight">Consecutive preference weight:
-                <input id="consecutive_weight" type="number" name="consecutive_weight" value="{{ config['consecutive_weight'] }}" min="1" {% if not config['allow_repeats'] %}disabled{% endif %} class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                <input id="consecutive_weight" type="number" name="consecutive_weight" value="{{ config['consecutive_weight'] }}" min="1" data-repeat-disable-mode="readonly" {% if not config['allow_repeats'] %}readonly aria-disabled="true"{% endif %} class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
             <label class="flex items-center gap-2">Require all subjects?
                 <input type="checkbox" name="require_all_subjects" {% if config['require_all_subjects'] %}checked{% endif %} class="w-4 h-4 text-emerald-600 bg-emerald-100 border-emerald-300 rounded focus:ring-emerald-500">
@@ -861,7 +861,21 @@
             ));
 
             targets.forEach(target => {
-                target.disabled = disabled;
+                const disableMode = target.dataset.repeatDisableMode || 'disabled';
+                if (disableMode === 'readonly') {
+                    target.disabled = false;
+                    target.readOnly = disabled;
+                } else {
+                    target.disabled = disabled;
+                    if (!disabled && target.readOnly) {
+                        target.readOnly = false;
+                    }
+                }
+                if (disabled) {
+                    target.setAttribute('aria-disabled', 'true');
+                } else {
+                    target.removeAttribute('aria-disabled');
+                }
                 target.classList.toggle('cursor-not-allowed', disabled);
             });
 

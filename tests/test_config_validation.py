@@ -13,6 +13,9 @@ from werkzeug.datastructures import MultiDict
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 
+from cp_sat_timetable import build_model
+
+
 def setup_db(tmp_path):
     import app
 
@@ -458,7 +461,7 @@ def test_disable_repeats_without_repeat_inputs(tmp_path):
     assert updated['max_repeats'] == 1
     assert updated['allow_consecutive'] == 0
     assert updated['prefer_consecutive'] == 0
-    assert updated['consecutive_weight'] == 0
+    assert updated['consecutive_weight'] == 5
 
 
 def test_repeat_controls_render_disabled_when_repeats_off(tmp_path):
@@ -492,15 +495,20 @@ def test_repeat_controls_render_disabled_when_repeats_off(tmp_path):
     parser = InputCollector()
     parser.feed(html)
 
-    def assert_disabled(name):
+    def find_input(name):
         for attrs in parser.inputs:
             if attrs.get('name') == name:
-                assert 'disabled' in attrs, f'{name} should render disabled when repeats are off'
-                return
+                return attrs
         raise AssertionError(f'Could not find input named {name}')
 
-    for field in ('max_repeats', 'allow_consecutive', 'prefer_consecutive', 'consecutive_weight'):
-        assert_disabled(field)
+    for field in ('max_repeats', 'allow_consecutive', 'prefer_consecutive'):
+        attrs = find_input(field)
+        assert 'disabled' in attrs, f'{field} should render disabled when repeats are off'
+
+    weight_attrs = find_input('consecutive_weight')
+    assert 'disabled' not in weight_attrs, 'consecutive_weight should remain enabled for form submission'
+    assert 'readonly' in weight_attrs, 'consecutive_weight should render readonly when repeats are off'
+    assert weight_attrs.get('aria-disabled') == 'true'
 
     def assert_dimmed(field_id):
         attrs = parser.labels.get(field_id)
@@ -512,6 +520,59 @@ def test_repeat_controls_render_disabled_when_repeats_off(tmp_path):
 
     for label_id in ('max_repeats', 'allow_consecutive', 'prefer_consecutive', 'consecutive_weight'):
         assert_dimmed(label_id)
+
+
+def test_student_consecutive_bonus_preserved_when_repeats_disabled():
+    students = [
+        {'id': 1, 'subjects': json.dumps([1])},
+        {'id': 2, 'subjects': json.dumps([1])},
+    ]
+    teachers = [
+        {'id': 1, 'subjects': json.dumps([1]), 'min_lessons': None, 'max_lessons': None},
+    ]
+    student_repeat = {
+        1: {
+            'allow_repeats': True,
+            'max_repeats': 2,
+            'allow_consecutive': True,
+            'prefer_consecutive': True,
+        },
+        2: {
+            'allow_repeats': False,
+            'max_repeats': 1,
+            'allow_consecutive': False,
+            'prefer_consecutive': False,
+        },
+    }
+
+    model, _, _, _ = build_model(
+        students,
+        teachers,
+        slots=3,
+        min_lessons=0,
+        max_lessons=3,
+        allow_repeats=False,
+        max_repeats=1,
+        prefer_consecutive=False,
+        allow_consecutive=False,
+        consecutive_weight=5,
+        student_repeat=student_repeat,
+    )
+
+    proto = model.Proto()
+    var_names = {idx: var.name for idx, var in enumerate(proto.variables)}
+    adjacency_coeffs = {
+        var_names[idx]: coeff
+        for idx, coeff in zip(proto.objective.vars, proto.objective.coeffs)
+        if var_names[idx].startswith('adj_')
+    }
+
+    assert adjacency_coeffs, 'Expected adjacency bonuses when a student prefers consecutive lessons'
+    assert all(name.startswith('adj_s1') for name in adjacency_coeffs), (
+        'Only the student with the preference should receive adjacency bonuses'
+    )
+    expected_coeff = -int(round(5 * 100))
+    assert all(coeff == expected_coeff for coeff in adjacency_coeffs.values())
 
 
 def test_reject_min_lessons_greater_than_max(tmp_path):
