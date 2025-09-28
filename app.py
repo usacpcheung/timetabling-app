@@ -39,6 +39,7 @@ DB_PATH = os.path.join(DATA_DIR, "timetable.db")
 
 CURRENT_PRESET_VERSION = 2
 MAX_PRESETS = 10  # maximum number of configuration presets to keep
+DEFAULT_CONSECUTIVE_WEIGHT = 3
 
 CONFIG_SECTION_DEFINITIONS = [
     ('general', 'General', ['config']),
@@ -1586,9 +1587,15 @@ def config():
         consecutive_weight_posted = (
             consecutive_weight_raw is not None and consecutive_weight_raw.strip() != ''
         )
-        consecutive_weight_default = (
-            repeat_defaults['consecutive_weight'] if repeat_defaults else 0
-        )
+        if repeat_defaults:
+            stored_weight = repeat_defaults['consecutive_weight']
+            consecutive_weight_default = (
+                stored_weight
+                if stored_weight is not None and stored_weight > 0
+                else DEFAULT_CONSECUTIVE_WEIGHT
+            )
+        else:
+            consecutive_weight_default = DEFAULT_CONSECUTIVE_WEIGHT
         consecutive_weight = consecutive_weight_default
         consecutive_weight_valid = True
         if consecutive_weight_posted:
@@ -1697,7 +1704,6 @@ def config():
                 (max_repeats_posted and max_repeats > 1)
                 or allow_consecutive_posted
                 or prefer_consecutive_posted
-                or (consecutive_weight_posted and consecutive_weight != 0)
             )
             if repeat_conflict:
                 flash(
@@ -1714,7 +1720,10 @@ def config():
                 max_repeats = 1
                 allow_consecutive = 0
                 prefer_consecutive = 0
-                consecutive_weight = 0
+                if not consecutive_weight_valid:
+                    consecutive_weight = consecutive_weight_default
+                if consecutive_weight is None or consecutive_weight < 1:
+                    consecutive_weight = DEFAULT_CONSECUTIVE_WEIGHT
         else:
             if not allow_consecutive and prefer_consecutive:
                 flash('Cannot prefer consecutive slots when consecutive repeats are disallowed.',
@@ -1885,6 +1894,8 @@ def config():
         block_map_current = {}
         for r in br_rows:
             block_map_current.setdefault(r['student_id'], set()).add(r['teacher_id'])
+        c.execute('SELECT id, name FROM locations')
+        location_name_map = {row['id']: row['name'] for row in c.fetchall()}
         c.execute('SELECT id, teacher_id, student_id FROM fixed_assignments WHERE student_id IS NOT NULL')
         fr_rows = c.fetchall()
         fixed_pairs = {
@@ -1892,10 +1903,153 @@ def config():
             for r in fr_rows
             if r['student_id'] is not None and r['id'] not in assign_delete_ids
         }
+        # Helper used when parsing integer lists from the form. Invalid
+        # values are ignored so a single bad entry does not raise during
+        # iteration.
+        def _parse_int_list(values):
+            result = []
+            for item in values:
+                try:
+                    result.append(int(item))
+                except (TypeError, ValueError):
+                    continue
+            return result
+
+        def _parse_int_set(values):
+            return set(_parse_int_list(values))
+
+        # Collect per-student form payload so that batch operations can be
+        # merged before any validation or database writes occur.
+        student_form_data = {}
+        student_ids_form = []
+        for raw_sid in request.form.getlist('student_id'):
+            try:
+                sid = int(raw_sid)
+            except (TypeError, ValueError):
+                continue
+            subjects = set(_parse_int_list(request.form.getlist(f'student_subjects_{sid}')))
+            repeat_subjects = set(_parse_int_list(request.form.getlist(f'student_repeat_subjects_{sid}')))
+            repeat_subjects.intersection_update(subjects)
+            unavailable = _parse_int_set(request.form.getlist(f'student_unavail_{sid}'))
+            blocks = _parse_int_set(request.form.getlist(f'student_block_{sid}'))
+            locations = _parse_int_set(request.form.getlist(f'student_locs_{sid}'))
+            student_ids_form.append(sid)
+            student_form_data[sid] = {
+                'delete': bool(request.form.get(f'student_delete_{sid}')),
+                'name': request.form.get(f'student_name_{sid}'),
+                'subjects': subjects,
+                'active': 1 if request.form.get(f'student_active_{sid}') else 0,
+                'min_raw': request.form.get(f'student_min_{sid}'),
+                'max_raw': request.form.get(f'student_max_{sid}'),
+                'allow_repeats': 1 if request.form.get(f'student_allow_repeats_{sid}') else 0,
+                'max_repeats_raw': request.form.get(f'student_max_repeats_{sid}'),
+                'allow_consecutive': 1 if request.form.get(f'student_allow_consecutive_{sid}') else 0,
+                'prefer_consecutive': 1 if request.form.get(f'student_prefer_consecutive_{sid}') else 0,
+                'allow_multi_teacher': 1 if request.form.get(f'student_multi_teacher_{sid}') else 0,
+                'repeat_subjects': repeat_subjects,
+                'unavailable': unavailable,
+                'blocks': blocks,
+                'locations': locations,
+            }
+
+        # Apply batch operations to the collected payload before any
+        # validation occurs. Unsupported or partial selections simply leave
+        # the data untouched so existing behaviour is preserved when the new
+        # controls are absent.
+        batch_student_ids = []
+        for raw_sid in request.form.getlist('batch_students'):
+            try:
+                sid = int(raw_sid)
+            except (TypeError, ValueError):
+                continue
+            if sid in student_form_data and not student_form_data[sid]['delete']:
+                batch_student_ids.append(sid)
+
+        if batch_student_ids:
+            batch_block_action = request.form.get('batch_block_action', 'add')
+            batch_block_slots = set()
+            for raw_slot in request.form.getlist('batch_block_slots'):
+                try:
+                    slot_val = int(raw_slot)
+                except (TypeError, ValueError):
+                    continue
+                # Batch controls display slots starting at 1; convert to
+                # zero-based indexes while ignoring invalid entries.
+                slot_index = slot_val - 1
+                if slot_index < 0 or slot_index >= slots_per_day:
+                    continue
+                batch_block_slots.add(slot_index)
+
+            batch_subject_action = request.form.get('batch_subject_action', 'add')
+            batch_subject_ids = set(_parse_int_list(request.form.getlist('batch_subjects')))
+
+            batch_teacher_action = request.form.get('batch_teacher_action', 'add')
+            batch_teacher_targets = set(_parse_int_list(request.form.getlist('batch_teacher_targets')))
+
+            batch_location_action = request.form.get('batch_location_action', 'add')
+            batch_location_ids = set(_parse_int_list(request.form.getlist('batch_locations')))
+            location_changes = []
+
+            for sid in batch_student_ids:
+                data = student_form_data.get(sid)
+                if not data:
+                    continue
+                if batch_block_slots:
+                    if batch_block_action == 'remove':
+                        data['unavailable'].difference_update(batch_block_slots)
+                    else:
+                        data['unavailable'].update(batch_block_slots)
+                if batch_subject_ids:
+                    if batch_subject_action == 'remove':
+                        data['subjects'].difference_update(batch_subject_ids)
+                        data['repeat_subjects'].intersection_update(data['subjects'])
+                    else:
+                        data['subjects'].update(batch_subject_ids)
+                if batch_teacher_targets:
+                    if batch_teacher_action == 'remove':
+                        data['blocks'].difference_update(batch_teacher_targets)
+                    else:
+                        data['blocks'].update(batch_teacher_targets)
+                if batch_location_ids:
+                    current_locations = set(data.get('locations', set()))
+                    if batch_location_action == 'remove':
+                        updated_locations = current_locations.difference(batch_location_ids)
+                    else:
+                        updated_locations = current_locations.union(batch_location_ids)
+                    if updated_locations != current_locations:
+                        data['locations'] = updated_locations
+                        display_name = data.get('name') or f'Student {sid}'
+                        location_changes.append(display_name)
+
+            if batch_location_ids and location_changes:
+                unique_names = []
+                seen = set()
+                for name in location_changes:
+                    label = name or ''
+                    if label in seen:
+                        continue
+                    seen.add(label)
+                    unique_names.append(label)
+                location_labels = ', '.join(
+                    location_name_map.get(lid, str(lid))
+                    for lid in sorted(
+                        batch_location_ids,
+                        key=lambda value: location_name_map.get(value, str(value))
+                    )
+                )
+                student_labels = ', '.join(unique_names)
+                action_label = 'Removed' if batch_location_action == 'remove' else 'Added'
+                flash(
+                    f"{action_label} {location_labels} for {student_labels} via batch update.",
+                    'info',
+                )
+
         # update students
-        student_ids = request.form.getlist('student_id')
-        for sid in student_ids:
-            if request.form.get(f'student_delete_{sid}'):
+        for sid in student_ids_form:
+            data = student_form_data.get(sid)
+            if not data:
+                continue
+            if data['delete']:
                 # prevent deletion while student belongs to any group
                 c.execute('''SELECT g.name FROM group_members gm
                              JOIN groups g ON gm.group_id = g.id
@@ -1927,22 +2081,38 @@ def config():
                               (int(sid), archive_name))
                 c.execute('DELETE FROM students WHERE id=?', (int(sid),))
                 c.execute('DELETE FROM student_teacher_block WHERE student_id=?', (int(sid),))
+                c.execute('DELETE FROM student_locations WHERE student_id=?', (int(sid),))
             else:
-                name = request.form.get(f'student_name_{sid}')
-                subs = [int(x) for x in request.form.getlist(f'student_subjects_{sid}')]
-                active = 1 if request.form.get(f'student_active_{sid}') else 0
-                smin = request.form.get(f'student_min_{sid}')
-                smax = request.form.get(f'student_max_{sid}')
-                allow_rep = 1 if request.form.get(f'student_allow_repeats_{sid}') else 0
-                max_rep = request.form.get(f'student_max_repeats_{sid}')
-                allow_con = 1 if request.form.get(f'student_allow_consecutive_{sid}') else 0
-                prefer_con = 1 if request.form.get(f'student_prefer_consecutive_{sid}') else 0
-                allow_multi = 1 if request.form.get(f'student_multi_teacher_{sid}') else 0
-                rep_subs = [int(x) for x in request.form.getlist(f'student_repeat_subjects_{sid}')]
+                name = data['name']
+                subs = sorted(data['subjects'])
+                active = data['active']
+                smin = data['min_raw']
+                smax = data['max_raw']
+                allow_rep = data['allow_repeats']
+                max_rep = data['max_repeats_raw']
+                allow_con = data['allow_consecutive']
+                prefer_con = data['prefer_consecutive']
+                allow_multi = data['allow_multi_teacher']
+                rep_subs = sorted(data['repeat_subjects'])
                 subj_json = json.dumps(subs)
-                min_val = int(smin) if smin else None
-                max_val = int(smax) if smax else None
-                max_rep_val = int(max_rep) if max_rep else None
+                try:
+                    min_val = int(smin) if smin else None
+                except (TypeError, ValueError):
+                    flash('Student minimum lessons must be an integer for ' + (name or f'Student {sid}') + '.', 'error')
+                    has_error = True
+                    continue
+                try:
+                    max_val = int(smax) if smax else None
+                except (TypeError, ValueError):
+                    flash('Student maximum lessons must be an integer for ' + (name or f'Student {sid}') + '.', 'error')
+                    has_error = True
+                    continue
+                try:
+                    max_rep_val = int(max_rep) if max_rep else None
+                except (TypeError, ValueError):
+                    flash('Student max repeats must be an integer for ' + (name or f'Student {sid}') + '.', 'error')
+                    has_error = True
+                    continue
                 rep_sub_json = json.dumps(rep_subs) if rep_subs else None
                 if min_val is not None and min_val < 0:
                     flash('Student minimum lessons must be zero or greater for ' + name + '.', 'error')
@@ -1964,8 +2134,7 @@ def config():
                     flash('Student min lessons greater than max for ' + name, 'error')
                     has_error = True
                     continue
-                unavail_values = request.form.getlist(f'student_unavail_{sid}')
-                unavail_slots = {int(sl) for sl in unavail_values if sl != ''}
+                unavail_slots = {sl for sl in data['unavailable'] if sl >= 0}
                 effective_min = min_val if min_val is not None else min_lessons
                 remaining_slots = slots_per_day - len(unavail_slots)
                 if effective_min is not None and effective_min > remaining_slots:
@@ -1983,11 +2152,9 @@ def config():
                 for sl in sorted(unavail_slots):
                     c.execute('INSERT INTO student_unavailable (student_id, slot) VALUES (?, ?)',
                               (int(sid), sl))
-                blocks = request.form.getlist(f'student_block_{sid}')
                 c.execute('DELETE FROM student_teacher_block WHERE student_id=?', (int(sid),))
                 block_map_current[int(sid)] = set()
-                for tid in blocks:
-                    tval = int(tid)
+                for tval in sorted(data['blocks']):
                     if not block_allowed(int(sid), tval, teacher_map_block, student_groups_block,
                                            group_members_block, group_subj_map_block,
                                            block_map_current, fixed_pairs):
@@ -1997,6 +2164,10 @@ def config():
                     c.execute('INSERT INTO student_teacher_block (student_id, teacher_id) VALUES (?, ?)',
                               (int(sid), tval))
                     block_map_current.setdefault(int(sid), set()).add(tval)
+                c.execute('DELETE FROM student_locations WHERE student_id=?', (int(sid),))
+                for lid in sorted(data.get('locations', set())):
+                    c.execute('INSERT INTO student_locations (student_id, location_id) VALUES (?, ?)',
+                              (int(sid), int(lid)))
         new_sname = request.form.get('new_student_name')
         new_ssubs = [int(x) for x in request.form.getlist('new_student_subjects')]
         new_blocks = request.form.getlist('new_student_block')
@@ -2116,6 +2287,66 @@ def config():
         c.execute('SELECT id, name FROM subjects')
         subject_name_map = {row['id']: row['name'] for row in c.fetchall()}
 
+        def _filter_group_subjects(subject_ids, member_ids, group_id, group_label, fallback_label):
+            """Drop subjects that no longer appear in every member's subject set."""
+
+            removed = []
+            filtered = []
+            group_name = group_label or fallback_label
+            for subj in subject_ids:
+                if all(subj in student_subj_map.get(mid, set()) for mid in member_ids):
+                    filtered.append(subj)
+                else:
+                    removed.append(subj)
+            if removed:
+                labels = ', '.join(subject_name_map.get(subj) or str(subj) for subj in removed)
+                flash(
+                    f'Removed {labels} from {group_name} because not required by all members.',
+                    'info',
+                )
+                if group_id is not None:
+                    gid_int = int(group_id)
+                    cleaned_labels = []
+                    for subj in removed:
+                        subj_int = int(subj)
+                        c.execute(
+                            'SELECT 1 FROM fixed_assignments WHERE group_id=? AND subject_id=? LIMIT 1',
+                            (gid_int, subj_int),
+                        )
+                        if not c.fetchone():
+                            continue
+                        c.execute(
+                            'DELETE FROM fixed_assignments WHERE group_id=? AND subject_id=?',
+                            (gid_int, subj_int),
+                        )
+                        cleaned_labels.append(subject_name_map.get(subj) or str(subj))
+                    if cleaned_labels:
+                        cleaned = ', '.join(cleaned_labels)
+                        flash(
+                            f'Removed fixed assignments for {cleaned} in {group_name} because the subject is no longer required.',
+                            'info',
+                        )
+            return filtered
+
+        def _group_has_fixed_assignments(group_id):
+            c.execute(
+                'SELECT 1 FROM fixed_assignments WHERE group_id=? LIMIT 1',
+                (int(group_id),),
+            )
+            return c.fetchone() is not None
+
+        def _archive_and_delete_group(group_id):
+            c.execute('SELECT name FROM groups WHERE id=?', (int(group_id),))
+            row = c.fetchone()
+            if row:
+                c.execute(
+                    'INSERT OR IGNORE INTO groups_archive (id, name) VALUES (?, ?)',
+                    (int(group_id), row['name']),
+                )
+            c.execute('DELETE FROM groups WHERE id=?', (int(group_id),))
+            c.execute('DELETE FROM group_members WHERE group_id=?', (int(group_id),))
+            c.execute('DELETE FROM group_locations WHERE group_id=?', (int(group_id),))
+
         for sid, meta in student_meta.items():
             if not meta['active']:
                 continue
@@ -2162,38 +2393,47 @@ def config():
         group_ids = request.form.getlist('group_id')
         deletes_grp = set(request.form.getlist('group_delete'))
         for gid in group_ids:
+            gid_int = int(gid)
             if gid in deletes_grp:
                 # prevent deletion if fixed assignments exist
-                c.execute('SELECT 1 FROM fixed_assignments WHERE group_id=? LIMIT 1', (int(gid),))
-                if c.fetchone():
+                if _group_has_fixed_assignments(gid_int):
                     flash('Remove fixed assignments involving this group before deleting', 'error')
                     has_error = True
                     continue
-                c.execute('SELECT name FROM groups WHERE id=?', (int(gid),))
-                row = c.fetchone()
-                if row:
-                    c.execute('INSERT OR IGNORE INTO groups_archive (id, name) VALUES (?, ?)',
-                              (int(gid), row['name']))
-                c.execute('DELETE FROM groups WHERE id=?', (int(gid),))
-                c.execute('DELETE FROM group_members WHERE group_id=?', (int(gid),))
-                c.execute('DELETE FROM group_locations WHERE group_id=?', (int(gid),))
+                _archive_and_delete_group(gid_int)
                 continue
             name = request.form.get(f'group_name_{gid}')
-            subs = [int(x) for x in request.form.getlist(f'group_subjects_{gid}')]
-            members = request.form.getlist(f'group_members_{gid}')
-            if not subs or not members:
-                flash(f'Group {name} must have at least one subject and member', 'error')
+            group_label = name or f'group {gid}'
+            raw_subs = _parse_int_list(request.form.getlist(f'group_subjects_{gid}'))
+            member_ids = _parse_int_list(request.form.getlist(f'group_members_{gid}'))
+            if not member_ids:
+                flash(f'Group {group_label} must have at least one subject and member', 'error')
                 has_error = True
+                continue
+            subs = _filter_group_subjects(raw_subs, member_ids, gid_int, name, f'group {gid}')
+            if not subs:
+                if _group_has_fixed_assignments(gid_int):
+                    flash('Remove fixed assignments involving this group before deleting', 'error')
+                    has_error = True
+                    continue
+                _archive_and_delete_group(gid_int)
+                flash(
+                    f'Auto-removed {group_label} because no subjects remain after student updates.',
+                    'info',
+                )
                 continue
             # ``member_ids`` holds the numeric ids of all group members. We
             # verify that each subject is required by every student and that at
             # least one teacher can deliver it without violating any blocks.
             valid = True
-            member_ids = [int(s) for s in members]
             for subj in subs:
                 for sid in member_ids:
                     if subj not in student_subj_map.get(sid, set()):
-                        flash(f'Student does not require {subj} in group {name}', 'error')
+                        subject_label = subject_name_map.get(subj) or str(subj)
+                        flash(
+                            f'Student does not require {subject_label} in group {group_label}',
+                            'error',
+                        )
                         has_error = True
                         valid = False
                         break
@@ -2237,45 +2477,55 @@ def config():
         # check that at least one suitable teacher remains unblocked for each
         # subject.
         ng_name = request.form.get('new_group_name')
-        ng_subs = [int(x) for x in request.form.getlist('new_group_subjects')]
-        ng_members = request.form.getlist('new_group_members')
+        ng_subs = _parse_int_list(request.form.getlist('new_group_subjects'))
+        ng_members = _parse_int_list(request.form.getlist('new_group_members'))
         if ng_name and ng_subs and ng_members:
-            member_ids = [int(s) for s in ng_members]
+            ng_subs = _filter_group_subjects(ng_subs, ng_members, None, ng_name, 'new group')
+            member_ids = ng_members
             valid = True
-            for subj in ng_subs:
-                for sid in member_ids:
-                    if subj not in student_subj_map.get(sid, set()):
-                        flash(f'Student does not require {subj} in group {ng_name}', 'error')
+            if not ng_subs:
+                flash(f'Group {ng_name} must have at least one subject and member', 'error')
+                has_error = True
+                valid = False
+            if valid:
+                for subj in ng_subs:
+                    for sid in member_ids:
+                        if subj not in student_subj_map.get(sid, set()):
+                            subject_label = subject_name_map.get(subj) or str(subj)
+                            flash(
+                                f'Student does not require {subject_label} in group {ng_name}',
+                                'error',
+                            )
+                            has_error = True
+                            valid = False
+                            break
+                    if not valid:
+                        break
+                    ok = False
+                    for tid, tsubs in teacher_map_validate.items():
+                        if subj in tsubs and all(tid not in block_map_validate.get(mid, set()) for mid in member_ids):
+                            ok = True
+                            break
+                    if not ok:
+                        fallback_ok = False
+                        for tid, tsubs in teacher_map_all.items():
+                            if subj not in tsubs:
+                                continue
+                            if any(tid in block_map_validate.get(mid, set()) for mid in member_ids):
+                                continue
+                            fallback_ok = True
+                            break
+                        subject_label = subject_name_map.get(subj) or str(subj)
+                        if fallback_ok:
+                            flash(
+                                f'No teacher scheduled for {subject_label} in group {ng_name}; the solver will skip this subject.',
+                                'warning',
+                            )
+                            continue
+                        flash(f'No teacher available for {subject_label} in group {ng_name}', 'error')
                         has_error = True
                         valid = False
                         break
-                if not valid:
-                    break
-                ok = False
-                for tid, tsubs in teacher_map_validate.items():
-                    if subj in tsubs and all(tid not in block_map_validate.get(mid, set()) for mid in member_ids):
-                        ok = True
-                        break
-                if not ok:
-                    fallback_ok = False
-                    for tid, tsubs in teacher_map_all.items():
-                        if subj not in tsubs:
-                            continue
-                        if any(tid in block_map_validate.get(mid, set()) for mid in member_ids):
-                            continue
-                        fallback_ok = True
-                        break
-                    subject_label = subject_name_map.get(subj) or str(subj)
-                    if fallback_ok:
-                        flash(
-                            f'No teacher scheduled for {subject_label} in group {ng_name}; the solver will skip this subject.',
-                            'warning',
-                        )
-                        continue
-                    flash(f'No teacher available for {subject_label} in group {ng_name}', 'error')
-                    has_error = True
-                    valid = False
-                    break
             if valid:
                 c.execute('INSERT INTO groups (name, subjects) VALUES (?, ?)',
                           (ng_name, json.dumps(ng_subs)))
@@ -2318,16 +2568,6 @@ def config():
         new_loc = request.form.get('new_location_name')
         if new_loc:
             c.execute('INSERT INTO locations (name) VALUES (?)', (new_loc,))
-
-        c.execute('SELECT id FROM students')
-        student_ids = [r['id'] for r in c.fetchall()]
-        for sid in student_ids:
-            key = f'student_locs_{sid}'
-            if key in request.form:
-                sel = [int(x) for x in request.form.getlist(key)]
-                c.execute('DELETE FROM student_locations WHERE student_id=?', (sid,))
-                for lid in sel:
-                    c.execute('INSERT INTO student_locations (student_id, location_id) VALUES (?, ?)', (sid, lid))
 
         c.execute('SELECT id FROM groups')
         group_ids = [r['id'] for r in c.fetchall()]
