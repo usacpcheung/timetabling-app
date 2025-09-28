@@ -6,12 +6,19 @@ const renderFlashToasts = () => {
         return;
     }
 
+    const severityRank = { error: 3, warning: 2, success: 1, info: 0 };
+    const readableLabels = {
+        error: 'Error',
+        warning: 'Warning',
+        success: 'Success',
+        info: 'Info'
+    };
     const normaliseEntry = entry => {
         const normaliseCategory = value => {
             if (typeof value === 'string') {
-                const trimmed = value.trim();
+                const trimmed = value.trim().toLowerCase();
                 if (trimmed) {
-                    return trimmed;
+                    return Object.prototype.hasOwnProperty.call(severityRank, trimmed) ? trimmed : 'info';
                 }
             }
             return 'info';
@@ -130,9 +137,25 @@ const renderFlashToasts = () => {
         }
     };
 
+    const badgeStyles = {
+        error: 'whitespace-nowrap rounded bg-red-500/15 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-red-900 dark:bg-red-400/20 dark:text-red-100',
+        warning: 'whitespace-nowrap rounded bg-amber-500/15 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-amber-900 dark:bg-amber-400/20 dark:text-amber-100',
+        success: 'whitespace-nowrap rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-emerald-900 dark:bg-emerald-400/20 dark:text-emerald-100',
+        info: 'whitespace-nowrap rounded bg-blue-500/15 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-blue-900 dark:bg-blue-400/20 dark:text-blue-100'
+    };
+
+    const getCategoryKey = category => (Object.prototype.hasOwnProperty.call(severityRank, category) ? category : 'info');
+
     messageGroups.forEach(messages => {
-        const primaryCategory = messages[0]?.category || 'info';
-        const style = categoryStyles[primaryCategory] || categoryStyles.info;
+        const dominantCategory = messages.reduce((current, message) => {
+            const candidate = getCategoryKey(message.category);
+            if (!current) {
+                return candidate;
+            }
+            return severityRank[candidate] > severityRank[current] ? candidate : current;
+        }, 'info');
+
+        const style = categoryStyles[dominantCategory] || categoryStyles.info;
 
         const toast = document.createElement('div');
         toast.className = `flex w-full items-start justify-between gap-3 overflow-hidden rounded-lg border shadow-lg backdrop-blur ${style}`;
@@ -142,8 +165,7 @@ const renderFlashToasts = () => {
 
         const heading = document.createElement('div');
         heading.className = 'flex items-baseline justify-between gap-2 text-sm font-semibold';
-        const readableCategory = primaryCategory.charAt(0).toUpperCase() + primaryCategory.slice(1);
-        heading.textContent = readableCategory;
+        heading.textContent = readableLabels[dominantCategory] || readableLabels.info;
 
         const countBadge = document.createElement('span');
         countBadge.className = 'rounded-full bg-black/10 px-2 py-0.5 text-xs font-medium uppercase tracking-wide dark:bg-white/20';
@@ -153,10 +175,21 @@ const renderFlashToasts = () => {
         const messageList = document.createElement('ul');
         messageList.className = 'mt-2 flex max-h-60 flex-col gap-1 overflow-y-auto pr-1 text-left text-sm font-medium';
 
-        messages.forEach(({ text }) => {
+        messages.forEach(({ category, text }) => {
             const listItem = document.createElement('li');
-            listItem.className = 'break-words';
-            listItem.textContent = text;
+            listItem.className = 'flex items-start gap-2';
+
+            const categoryKey = getCategoryKey(category);
+            const badge = document.createElement('span');
+            badge.className = badgeStyles[categoryKey] || badgeStyles.info;
+            badge.textContent = readableLabels[categoryKey] || readableLabels.info;
+
+            const textSpan = document.createElement('span');
+            textSpan.className = 'flex-1 break-words text-left';
+            textSpan.textContent = text;
+
+            listItem.appendChild(badge);
+            listItem.appendChild(textSpan);
             messageList.appendChild(listItem);
         });
 
@@ -174,7 +207,7 @@ const renderFlashToasts = () => {
 
         toastContainer.appendChild(toast);
 
-        const shouldAutoDismiss = !['warning', 'error'].includes(primaryCategory);
+        const shouldAutoDismiss = severityRank[dominantCategory] < severityRank.warning;
         if (shouldAutoDismiss) {
             setTimeout(() => {
                 removeToast(toast);
