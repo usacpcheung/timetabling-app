@@ -109,18 +109,16 @@ const renderFlashToasts = () => {
         info: 'border-blue-500 bg-blue-50 text-blue-900 dark:border-blue-400 dark:bg-blue-900 dark:text-blue-100'
     };
 
-    const existingContainer = document.querySelector('[data-flash-toast-container]');
-    if (existingContainer) {
-        existingContainer.remove();
+    let toastContainer = document.querySelector('[data-flash-toast-container]');
+    if (!toastContainer) {
+        toastContainer = document.createElement('div');
+        toastContainer.className = 'fixed top-4 left-4 right-4 z-50 flex max-w-full flex-col gap-3 overflow-y-auto sm:right-auto sm:max-w-sm';
+        toastContainer.setAttribute('role', 'alert');
+        toastContainer.setAttribute('aria-live', 'assertive');
+        toastContainer.setAttribute('data-flash-toast-container', '');
+        toastContainer.style.maxHeight = 'calc(100vh - 2rem)';
+        document.body.appendChild(toastContainer);
     }
-
-    const toastContainer = document.createElement('div');
-    toastContainer.className = 'fixed top-4 left-4 right-4 z-50 flex max-w-full flex-col gap-3 overflow-y-auto sm:right-auto sm:max-w-sm';
-    toastContainer.setAttribute('role', 'alert');
-    toastContainer.setAttribute('aria-live', 'assertive');
-    toastContainer.setAttribute('data-flash-toast-container', '');
-
-    toastContainer.style.maxHeight = 'calc(100vh - 2rem)';
 
     const removeToast = toast => {
         if (!toast) {
@@ -184,15 +182,64 @@ const renderFlashToasts = () => {
         }
     });
 
-    if (!toastContainer.childElementCount) {
+};
+
+const enqueueFlashMessages = (entries, options = {}) => {
+    const ensureArray = value => (Array.isArray(value) ? value : [value]);
+    const normalised = ensureArray(entries)
+        .map(entry => {
+            if (!entry) {
+                return null;
+            }
+            if (typeof entry === 'string') {
+                const trimmed = entry.trim();
+                if (!trimmed) {
+                    return null;
+                }
+                return {
+                    category: options.category || 'info',
+                    text: trimmed
+                };
+            }
+            if (typeof entry === 'object') {
+                const category = typeof entry.category === 'string' && entry.category.trim()
+                    ? entry.category.trim()
+                    : (typeof options.category === 'string' && options.category.trim())
+                        ? options.category.trim()
+                        : 'info';
+                const textSource = entry.text ?? entry.message;
+                if (typeof textSource !== 'string') {
+                    return null;
+                }
+                const trimmed = textSource.trim();
+                if (!trimmed) {
+                    return null;
+                }
+                return {
+                    category,
+                    text: trimmed
+                };
+            }
+            return null;
+        })
+        .filter(Boolean);
+
+    if (!normalised.length) {
         return;
     }
 
-    document.body.appendChild(toastContainer);
+    const script = document.createElement('script');
+    script.type = 'application/json';
+    script.setAttribute('data-flash-payload', '');
+    script.textContent = JSON.stringify(normalised);
+    document.body.appendChild(script);
+
+    renderFlashToasts();
 };
 
 if (typeof window !== 'undefined') {
     window.renderFlashToasts = renderFlashToasts;
+    window.enqueueFlashMessages = enqueueFlashMessages;
 }
 
 document.addEventListener('DOMContentLoaded', function () {
