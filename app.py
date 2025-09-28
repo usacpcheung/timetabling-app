@@ -2379,11 +2379,10 @@ def config():
                     continue
 
                 flash(
-                    f'No teacher available for {subject_label} for student {meta["name"]}',
-                    'error',
+                    f'No teacher available for {subject_label} for student {meta["name"]}; the solver will skip this subject.',
+                    'warning',
                 )
-                has_error = True
-                break
+                continue
 
         # === Update group definitions ===
         # Every existing group is processed. We first handle deletions and then
@@ -2460,10 +2459,11 @@ def config():
                             'warning',
                         )
                         continue
-                    flash(f'No teacher available for {subject_label} in group {name}', 'error')
-                    has_error = True
-                    valid = False
-                    break
+                    flash(
+                        f'No teacher available for {subject_label} in group {name}; the solver will skip this subject.',
+                        'warning',
+                    )
+                    continue
             if not valid:
                 continue
             c.execute('UPDATE groups SET name=?, subjects=? WHERE id=?',
@@ -2522,10 +2522,11 @@ def config():
                                 'warning',
                             )
                             continue
-                        flash(f'No teacher available for {subject_label} in group {ng_name}', 'error')
-                        has_error = True
-                        valid = False
-                        break
+                        flash(
+                            f'No teacher available for {subject_label} in group {ng_name}; the solver will skip this subject.',
+                            'warning',
+                        )
+                        continue
             if valid:
                 c.execute('INSERT INTO groups (name, subjects) VALUES (?, ?)',
                           (ng_name, json.dumps(ng_subs)))

@@ -960,6 +960,56 @@ def test_warn_when_disabling_last_teacher_for_group_subject(tmp_path):
     conn.close()
 
 
+def test_student_validation_warns_when_all_teachers_blocked(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    config_row = _config_row(app.DB_PATH)
+
+    subject_row = conn.execute(
+        'SELECT id, name FROM subjects WHERE name=?',
+        ('Science',),
+    ).fetchone()
+    assert subject_row is not None
+
+    teacher_row = conn.execute(
+        'SELECT id FROM teachers WHERE name=?',
+        ('Teacher B',),
+    ).fetchone()
+    assert teacher_row is not None
+
+    student_row = conn.execute(
+        'SELECT * FROM students WHERE name=?',
+        ('Student 2',),
+    ).fetchone()
+    assert student_row is not None
+
+    conn.execute(
+        'INSERT INTO student_teacher_block (student_id, teacher_id) VALUES (?, ?)',
+        (student_row['id'], teacher_row['id']),
+    )
+    conn.commit()
+    conn.close()
+
+    data = _valid_config_form(config_row)
+    data.setlist('solver_time_limit', ['135'])
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    expected_warning = (
+        'warning',
+        f'No teacher available for {subject_row["name"]} for student {student_row["name"]}; the solver will skip this subject.',
+    )
+    assert expected_warning in flashes
+    assert all(category != 'error' for category, _ in flashes)
+
+    updated_config = _config_row(app.DB_PATH)
+    assert updated_config['solver_time_limit'] == 135
+
+
 def test_batch_subject_removal_auto_deletes_group(tmp_path):
     import app
 
@@ -1437,7 +1487,7 @@ def test_warn_when_creating_group_with_needs_lessons_disabled_teacher(tmp_path):
     assert persisted_group is not None
 
 
-def test_group_validation_reports_subject_name_when_teacher_blocked(tmp_path):
+def test_group_validation_warns_when_teacher_blocked_for_new_group(tmp_path):
     import app
 
     conn = setup_db(tmp_path)
@@ -1484,17 +1534,114 @@ def test_group_validation_reports_subject_name_when_teacher_blocked(tmp_path):
         flashes = get_flashed_messages(with_categories=True)
 
     assert response.status_code == 302
-    expected_message = f'No teacher available for {subject_row["name"]} in group {group_name}'
-    assert ('error', expected_message) in flashes
-
-    assert _config_row(app.DB_PATH) == config_row
+    student_warning = (
+        'warning',
+        f'No teacher available for {subject_row["name"]} for student Student 2; the solver will skip this subject.',
+    )
+    assert student_warning in flashes
+    group_warning = (
+        'warning',
+        f'No teacher available for {subject_row["name"]} in group {group_name}; the solver will skip this subject.',
+    )
+    assert group_warning in flashes
+    assert all(category != 'error' for category, _ in flashes)
 
     conn = sqlite3.connect(app.DB_PATH)
     conn.row_factory = sqlite3.Row
     groups_after = conn.execute('SELECT COUNT(*) FROM groups').fetchone()[0]
+    persisted_group = conn.execute(
+        'SELECT name FROM groups WHERE name=?',
+        (group_name,),
+    ).fetchone()
     conn.close()
 
-    assert groups_after == groups_before
+    assert groups_after == groups_before + 1
+    assert persisted_group is not None
+
+
+def test_group_validation_warns_when_teacher_blocked_for_existing_group(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    config_row = _config_row(app.DB_PATH)
+
+    subject_row = conn.execute(
+        'SELECT id, name FROM subjects WHERE name=?',
+        ('Science',),
+    ).fetchone()
+    assert subject_row is not None
+
+    teacher_row = conn.execute(
+        'SELECT id FROM teachers WHERE name=?',
+        ('Teacher B',),
+    ).fetchone()
+    assert teacher_row is not None
+
+    member_rows = conn.execute(
+        'SELECT id, name FROM students WHERE name IN (?, ?)',
+        ('Student 2', 'Student 4'),
+    ).fetchall()
+    member_ids = [row['id'] for row in member_rows]
+    assert member_ids, 'Expected at least one student requiring Science'
+
+    group_name = 'Science Blocked Existing'
+    cursor = conn.cursor()
+    cursor.execute(
+        'INSERT INTO groups (name, subjects) VALUES (?, ?)',
+        (group_name, json.dumps([subject_row['id']])),
+    )
+    group_id = cursor.lastrowid
+    for sid in member_ids:
+        cursor.execute(
+            'INSERT INTO group_members (group_id, student_id) VALUES (?, ?)',
+            (group_id, sid),
+        )
+    conn.commit()
+
+    for sid in member_ids:
+        conn.execute(
+            'INSERT INTO student_teacher_block (student_id, teacher_id) VALUES (?, ?)',
+            (sid, teacher_row['id']),
+        )
+
+    conn.commit()
+    conn.close()
+
+    data = _valid_config_form(config_row)
+    new_name = 'Science Blocked Existing Updated'
+    data.add('group_id', str(group_id))
+    data.add(f'group_name_{group_id}', new_name)
+    data.setlist(f'group_subjects_{group_id}', [str(subject_row['id'])])
+    data.setlist(f'group_members_{group_id}', [str(sid) for sid in member_ids])
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    for member in member_rows:
+        expected_student_warning = (
+            'warning',
+            f'No teacher available for {subject_row["name"]} for student {member["name"]}; the solver will skip this subject.',
+        )
+        assert expected_student_warning in flashes
+    group_warning = (
+        'warning',
+        f'No teacher available for {subject_row["name"]} in group {new_name}; the solver will skip this subject.',
+    )
+    assert group_warning in flashes
+    assert all(category != 'error' for category, _ in flashes)
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    persisted_group = conn.execute(
+        'SELECT name FROM groups WHERE id=?',
+        (group_id,),
+    ).fetchone()
+    conn.close()
+
+    assert persisted_group is not None
+    assert persisted_group['name'] == new_name
 
 
 def test_block_teacher_after_deleting_fixed_assignment(tmp_path):
