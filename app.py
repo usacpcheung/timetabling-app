@@ -2709,8 +2709,10 @@ def config():
 
         if has_error:
             conn.rollback()
+            flash('Configuration not saved; changes have been rolled back.', 'error')
         else:
             conn.commit()
+            flash('Configuration saved successfully.', 'success')
         conn.close()
         return redirect(url_for('config'))
 

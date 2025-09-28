@@ -124,6 +124,10 @@ def _post_invalid_weight(tmp_path, field, value, expected_error, extra_updates=N
 
     assert response.status_code == 302
     assert ('error', expected_error) in flashes
+    assert (
+        'error',
+        'Configuration not saved; changes have been rolled back.',
+    ) in flashes
     assert _config_row(app.DB_PATH) == original
 
 
@@ -933,6 +937,10 @@ def test_warn_when_disabling_last_teacher_for_group_subject(tmp_path):
         flashes = get_flashed_messages(with_categories=True)
 
     assert response.status_code == 302
+    assert (
+        'success',
+        'Configuration saved successfully.',
+    ) in flashes
     expected_student_warning = (
         'warning',
         f'No teacher scheduled for {subject_row["name"]} for student Student 2; the solver will skip this subject.',
@@ -999,6 +1007,10 @@ def test_student_validation_warns_when_all_teachers_blocked(tmp_path):
         flashes = get_flashed_messages(with_categories=True)
 
     assert response.status_code == 302
+    assert (
+        'success',
+        'Configuration saved successfully.',
+    ) in flashes
     expected_warning = (
         'warning',
         f'No teacher available for {subject_row["name"]} for student {student_row["name"]}; the solver will skip this subject.',
