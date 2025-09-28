@@ -2,6 +2,7 @@
 // Populate drop-downs and handle dynamic slot time fields.
 
 document.addEventListener('DOMContentLoaded', function () {
+    const SCROLL_STORAGE_KEY = 'config_scroll';
     const loadForm = document.getElementById('load-form');
     const overwriteInput = document.getElementById('overwrite');
     const presetSectionsInput = document.getElementById('selected-sections-input');
@@ -312,6 +313,39 @@ document.addEventListener('DOMContentLoaded', function () {
 
     restoreAccordionState();
 
+    const restoreScrollPosition = () => {
+        let savedScroll = null;
+        try {
+            savedScroll = sessionStorage.getItem(SCROLL_STORAGE_KEY);
+        } catch (err) {
+            savedScroll = null;
+        }
+        if (savedScroll === null) {
+            return;
+        }
+        const offset = Number(savedScroll);
+        if (!Number.isFinite(offset)) {
+            try {
+                sessionStorage.removeItem(SCROLL_STORAGE_KEY);
+            } catch (err) {
+                /* noop */
+            }
+            return;
+        }
+        try {
+            window.scrollTo({ top: offset, behavior: 'instant' });
+        } catch (err) {
+            window.scrollTo(0, offset);
+        }
+        try {
+            sessionStorage.removeItem(SCROLL_STORAGE_KEY);
+        } catch (err) {
+            /* noop */
+        }
+    };
+
+    restoreScrollPosition();
+
     accordionButtons.forEach(btn => {
         btn.addEventListener('click', () => {
             setTimeout(saveAccordionState, 0);
@@ -334,11 +368,20 @@ document.addEventListener('DOMContentLoaded', function () {
         }, 0);
     };
 
+    const persistScrollForSubmit = () => {
+        try {
+            sessionStorage.setItem(SCROLL_STORAGE_KEY, String(window.scrollY || 0));
+        } catch (err) {
+            /* noop */
+        }
+    };
+
     const triggerConfigSubmit = () => {
         if (!configForm) {
             return;
         }
         allowNextSubmit();
+        persistScrollForSubmit();
         if (typeof configForm.requestSubmit === 'function') {
             configForm.requestSubmit();
         } else {
@@ -350,7 +393,9 @@ document.addEventListener('DOMContentLoaded', function () {
         configForm.addEventListener('submit', event => {
             if (!allowSubmit || !validateBatchActions()) {
                 event.preventDefault();
+                return;
             }
+            persistScrollForSubmit();
         });
 
         configForm.addEventListener('keydown', event => {
@@ -733,8 +778,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const tids = Array.from(unavailTeacher.selectedOptions).map(o => o.value);
         const slots = Array.from(unavailSlot.selectedOptions).map(o => parseInt(o.value, 10) - 1);
         if (!tids.length || !slots.length) return;
-        const flashes = document.getElementById('flash-messages');
-        if (!flashes) return;
+        const messages = [];
         tids.forEach(tid => {
             const fixed = assignData[tid] || [];
             const unav = unavailData[tid] || [];
@@ -746,13 +790,16 @@ document.addEventListener('DOMContentLoaded', function () {
                     msg = 'Slot already marked unavailable.';
                 }
                 if (msg) {
-                    const li = document.createElement('li');
-                    li.className = 'error';
-                    li.textContent = msg;
-                    flashes.appendChild(li);
+                    messages.push({
+                        category: 'error',
+                        text: msg
+                    });
                 }
             });
         });
+        if (messages.length && typeof window.enqueueFlashMessages === 'function') {
+            window.enqueueFlashMessages(messages, { category: 'error' });
+        }
     }
     if (unavailTeacher && unavailSlot) {
         unavailTeacher.addEventListener('change', warnUnavail);
