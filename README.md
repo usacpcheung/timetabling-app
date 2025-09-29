@@ -29,7 +29,7 @@ The application focuses on a local, privacy-friendly workflow. All data lives in
 
 - Configure teachers, students, subjects, groups and locations from a single configuration page, including availability, fixed lessons and per-student restrictions.
 - Capture nuanced student rules such as teacher blocks, repeat limits, slot unavailability and permitted locations.
-- Apply batch student actions to update blocked slots, subject membership, teacher blocks and allowed locations across many students while preserving their existing settings.
+- Apply batch teacher and student actions to adjust subject assignments, lesson limits, availability, blocked slots, subject membership, teacher blocks and allowed locations across many records while preserving their existing settings.
 - Generate timetables with OR-Tools CP-SAT, balancing teacher workloads, honoring attendance priorities, respecting location limits and applying a configurable solver time limit.
 - Switch between teacher and location views, highlight unmet subject requirements, and inspect lesson counts and group membership snapshots for each schedule.
 - Edit saved timetables, assign worksheets, or remove lessons while attendance logs stay in sync.
@@ -141,6 +141,7 @@ Visit `/config` after launching the server to manage all scheduling inputs. The 
 
 - Assign subjects to each teacher, set optional min/max lesson limits and mark unavailable slots.
 - Configure fixed assignments that reserve specific teacher/student (or group) combinations for a slot and subject. Validation prevents conflicts with availability or missing subject requirements.
+- Use the batch teacher actions panel to apply shared subject updates, toggle availability and adjust lesson defaults for multiple teachers simultaneously.
 
 ### Students and groups
 
@@ -148,6 +149,7 @@ Visit `/config` after launching the server to manage all scheduling inputs. The 
 - Record student unavailability, block individual teachers (while ensuring viable alternatives remain) and restrict allowable locations.
 - Group students for joint lessons. Each subject in the group must be taught by at least one unblocked teacher, and optional location limits can keep lessons in suitable rooms.
 - Use the batch student actions panel to add or remove blocked slots, subjects, teacher blocks, allowed locations and toggle the _Needs lessons?_ status for multiple students at once.
+- Batch changes merge with existing data for both teachers and students, ensuring only the selected fields are updated.
 
 ### Locations
 
