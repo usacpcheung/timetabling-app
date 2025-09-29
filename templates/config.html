@@ -172,9 +172,10 @@
                 <li>If both a student and a group are selected, the entry is saved for the group only when <em>group_weight &gt; 0</em> (or no student is chosen).</li>
             </ul>
 
-            <h3 class="text-base font-semibold text-emerald-900">Batch tools &amp; per-student overrides</h3>
+            <h3 class="text-base font-semibold text-emerald-900">Batch tools &amp; per-person overrides</h3>
             <ul class="list-disc ms-6 mb-6 space-y-1">
-                <li>Use the <em>Batch student actions</em> panel to add or remove blocked slots, subjects, teacher blocks, allowed locations, and toggle the <em>Needs lessons?</em> status for several students at once. Batch updates merge with existing values rather than replacing them outright.</li>
+                <li>Use the <em>Batch teacher actions</em> panel to adjust assigned subjects, update minimum/maximum lesson defaults, or toggle availability for several teachers at once. Changes layer on top of existing data—removals only affect the selected values and preserve other assignments.</li>
+                <li>The <em>Batch student actions</em> panel still handles blocked slots, subjects, teacher blocks, allowed locations, and the <em>Needs lessons?</em> status across multiple students. Batch updates merge with existing values rather than replacing them outright.</li>
                 <li>The <em>Needs lessons?</em> toggle lets you temporarily archive a student without deleting their configuration—turn it off to keep historical data while skipping the student during scheduling.</li>
                 <li>Advanced dialogs provide per-student overrides for Min/Max lessons, repeat allowances, repeatable subjects, consecutive preferences, teacher-per-subject limits, and blocked slots.</li>
                 <li>Overrides apply only to the selected student and take priority over global defaults.</li>
@@ -318,6 +319,48 @@
         </button>
     </h2>
     <div id="body-teachers" class="hidden p-4 border border-b-0 border-emerald-200">
+        <fieldset class="space-y-4 mb-8 border border-emerald-200 rounded-lg p-4 bg-emerald-50/50" aria-labelledby="batch-teacher-actions-heading">
+            <legend id="batch-teacher-actions-heading" class="font-semibold text-emerald-900">Batch teacher actions</legend>
+            <p class="text-sm text-emerald-700">Select teachers to apply shared subject changes or toggle the <em>Need lessons?</em> flag for several teachers at once.</p>
+            <label class="block">
+                <span class="font-medium">Teachers</span>
+                <select multiple name="batch_teachers" class="border border-emerald-300 rounded-lg p-2.5 w-full" size="6">
+                    {% for t in teachers %}
+                    <option value="{{ t['id'] }}">{{ t['name'] }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <div class="grid gap-4 md:grid-cols-2">
+                <fieldset class="space-y-2">
+                    <legend class="font-medium">Subjects</legend>
+                    <p class="text-sm text-emerald-700">Add or remove subjects from every selected teacher.</p>
+                    <label class="block">
+                        <span class="sr-only">Subject action</span>
+                        <select name="batch_teacher_subject_action" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                            <option value="add">Add selected subjects</option>
+                            <option value="remove">Remove selected subjects</option>
+                        </select>
+                    </label>
+                    <select multiple name="batch_teacher_subjects" class="border border-emerald-300 rounded-lg p-2.5 w-full" size="6">
+                        {% for sub in subjects %}
+                        <option value="{{ sub['id'] }}">{{ sub['name'] }}</option>
+                        {% endfor %}
+                    </select>
+                </fieldset>
+                <fieldset class="space-y-2">
+                    <legend class="font-medium">Need lessons?</legend>
+                    <p class="text-sm text-emerald-700">Toggle whether selected teachers should be considered when scheduling.</p>
+                    <label class="block">
+                        <span class="sr-only">Needs lessons action</span>
+                        <select name="batch_teacher_need_action" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                            <option value="no-change">No change</option>
+                            <option value="activate">Mark as needing lessons</option>
+                            <option value="deactivate">Mark as not needing lessons</option>
+                        </select>
+                    </label>
+                </fieldset>
+            </div>
+        </fieldset>
         <fieldset class="space-y-4">
             {% for t in teachers %}
             <input type="hidden" name="teacher_id" value="{{ t['id'] }}">

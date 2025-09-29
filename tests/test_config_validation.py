@@ -89,6 +89,24 @@ def _teacher_edit_form(config_row, teacher_row):
     return data
 
 
+def _teachers_form(config_row, teacher_rows):
+    data = _valid_config_form(config_row)
+    for teacher in teacher_rows:
+        tid = teacher['id']
+        data.add('teacher_id', str(tid))
+        data.add(f'teacher_name_{tid}', teacher['name'])
+        for subj_id in json.loads(teacher['subjects']):
+            data.add(f'teacher_subjects_{tid}', str(subj_id))
+        needs_lessons = teacher.get('needs_lessons', 1)
+        if needs_lessons:
+            data.add(f'teacher_need_lessons_{tid}', '1')
+        if teacher.get('min_lessons') is not None:
+            data.add(f'teacher_min_{tid}', str(teacher['min_lessons']))
+        if teacher.get('max_lessons') is not None:
+            data.add(f'teacher_max_{tid}', str(teacher['max_lessons']))
+    return data
+
+
 def _student_edit_form(config_row, student_row):
     data = _valid_config_form(config_row)
     sid = student_row['id']
@@ -1438,6 +1456,251 @@ def test_batch_active_toggle(tmp_path):
     conn.close()
 
     assert all(row['active'] == 1 for row in active_rows)
+
+
+def test_batch_teacher_subject_add(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    config_row = _config_row(app.DB_PATH)
+
+    subject_rows = conn.execute('SELECT id, name FROM subjects').fetchall()
+    subject_lookup = {row['name']: row['id'] for row in subject_rows}
+    required_subjects = {'Math', 'Science', 'English'}
+    missing = required_subjects - subject_lookup.keys()
+    assert not missing, f'Missing expected subjects: {missing}'
+
+    teacher_specs = [
+        ('Batch Teacher 1', ['Math'], 1),
+        ('Batch Teacher 2', ['Science'], 1),
+        ('Batch Teacher 3', ['Math'], 1),
+    ]
+    cursor = conn.cursor()
+    for name, subject_names, needs_lessons in teacher_specs:
+        subject_ids = [subject_lookup[sub] for sub in subject_names]
+        cursor.execute(
+            'INSERT INTO teachers (name, subjects, min_lessons, max_lessons, needs_lessons) VALUES (?, ?, ?, ?, ?)',
+            (name, json.dumps(subject_ids), None, None, needs_lessons),
+        )
+    conn.commit()
+
+    teacher_rows = [
+        dict(row)
+        for row in conn.execute(
+            'SELECT * FROM teachers WHERE name IN (?, ?, ?)',
+            tuple(spec[0] for spec in teacher_specs),
+        ).fetchall()
+    ]
+    original_subjects = {
+        row['id']: set(json.loads(row['subjects']))
+        for row in teacher_rows
+    }
+    conn.close()
+
+    english_id = subject_lookup['English']
+    selected_ids = [teacher_rows[0]['id'], teacher_rows[1]['id']]
+
+    data = _teachers_form(config_row, teacher_rows)
+    data.setlist('batch_teachers', [str(tid) for tid in selected_ids])
+    data.add('batch_teacher_subject_action', 'add')
+    data.setlist('batch_teacher_subjects', [str(english_id)])
+    data.add('batch_teacher_need_action', 'no-change')
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert all(category != 'error' for category, _ in flashes)
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    updated_rows = conn.execute(
+        'SELECT id, subjects FROM teachers WHERE id IN (?, ?, ?)',
+        (teacher_rows[0]['id'], teacher_rows[1]['id'], teacher_rows[2]['id']),
+    ).fetchall()
+    conn.close()
+
+    updated_subjects = {
+        row['id']: set(json.loads(row['subjects']))
+        for row in updated_rows
+    }
+
+    for tid in selected_ids:
+        assert updated_subjects[tid] == original_subjects[tid] | {english_id}
+    untouched_id = teacher_rows[2]['id']
+    assert updated_subjects[untouched_id] == original_subjects[untouched_id]
+
+
+def test_batch_teacher_subject_remove(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    config_row = _config_row(app.DB_PATH)
+
+    subject_rows = conn.execute('SELECT id, name FROM subjects').fetchall()
+    subject_lookup = {row['name']: row['id'] for row in subject_rows}
+    required_subjects = {'Math', 'Science', 'English'}
+    missing = required_subjects - subject_lookup.keys()
+    assert not missing, f'Missing expected subjects: {missing}'
+
+    teacher_specs = [
+        ('Remove Teacher 1', ['Math', 'Science'], 1),
+        ('Remove Teacher 2', ['Science', 'English'], 1),
+        ('Remove Teacher 3', ['Math'], 1),
+    ]
+    cursor = conn.cursor()
+    for name, subject_names, needs_lessons in teacher_specs:
+        subject_ids = [subject_lookup[sub] for sub in subject_names]
+        cursor.execute(
+            'INSERT INTO teachers (name, subjects, min_lessons, max_lessons, needs_lessons) VALUES (?, ?, ?, ?, ?)',
+            (name, json.dumps(subject_ids), None, None, needs_lessons),
+        )
+    conn.commit()
+
+    teacher_rows = [
+        dict(row)
+        for row in conn.execute(
+            'SELECT * FROM teachers WHERE name IN (?, ?, ?)',
+            tuple(spec[0] for spec in teacher_specs),
+        ).fetchall()
+    ]
+    original_subjects = {
+        row['id']: set(json.loads(row['subjects']))
+        for row in teacher_rows
+    }
+    conn.close()
+
+    science_id = subject_lookup['Science']
+    selected_ids = [teacher_rows[0]['id'], teacher_rows[1]['id']]
+
+    data = _teachers_form(config_row, teacher_rows)
+    data.setlist('batch_teachers', [str(tid) for tid in selected_ids])
+    data.add('batch_teacher_subject_action', 'remove')
+    data.setlist('batch_teacher_subjects', [str(science_id)])
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert all(category != 'error' for category, _ in flashes)
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    updated_rows = conn.execute(
+        'SELECT id, subjects FROM teachers WHERE id IN (?, ?, ?)',
+        (teacher_rows[0]['id'], teacher_rows[1]['id'], teacher_rows[2]['id']),
+    ).fetchall()
+    conn.close()
+
+    updated_subjects = {
+        row['id']: set(json.loads(row['subjects']))
+        for row in updated_rows
+    }
+
+    for tid in selected_ids:
+        expected = original_subjects[tid] - {science_id}
+        assert updated_subjects[tid] == expected
+    untouched_id = teacher_rows[2]['id']
+    assert updated_subjects[untouched_id] == original_subjects[untouched_id]
+
+
+def test_batch_teacher_need_toggle(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    config_row = _config_row(app.DB_PATH)
+
+    subject_rows = conn.execute('SELECT id, name FROM subjects').fetchall()
+    subject_lookup = {row['name']: row['id'] for row in subject_rows}
+    assert 'Math' in subject_lookup, 'Expected Math subject to be present'
+
+    teacher_specs = [
+        ('Toggle Teacher 1', ['Math'], 1),
+        ('Toggle Teacher 2', ['Math'], 1),
+        ('Toggle Teacher 3', ['Math'], 0),
+    ]
+    cursor = conn.cursor()
+    for name, subject_names, needs_lessons in teacher_specs:
+        subject_ids = [subject_lookup[sub] for sub in subject_names]
+        cursor.execute(
+            'INSERT INTO teachers (name, subjects, min_lessons, max_lessons, needs_lessons) VALUES (?, ?, ?, ?, ?)',
+            (name, json.dumps(subject_ids), None, None, needs_lessons),
+        )
+    conn.commit()
+
+    teacher_rows = [
+        dict(row)
+        for row in conn.execute(
+            'SELECT * FROM teachers WHERE name IN (?, ?, ?)',
+            tuple(spec[0] for spec in teacher_specs),
+        ).fetchall()
+    ]
+    conn.close()
+
+    first_pass_ids = [teacher_rows[0]['id'], teacher_rows[1]['id']]
+    data = _teachers_form(config_row, teacher_rows)
+    data.setlist('batch_teachers', [str(tid) for tid in first_pass_ids])
+    data.add('batch_teacher_need_action', 'deactivate')
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert all(category != 'error' for category, _ in flashes)
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    status_after_first = {
+        row['id']: row['needs_lessons']
+        for row in conn.execute(
+            'SELECT id, needs_lessons FROM teachers WHERE id IN (?, ?, ?)',
+            (teacher_rows[0]['id'], teacher_rows[1]['id'], teacher_rows[2]['id']),
+        ).fetchall()
+    }
+
+    assert status_after_first[teacher_rows[0]['id']] == 0
+    assert status_after_first[teacher_rows[1]['id']] == 0
+    assert status_after_first[teacher_rows[2]['id']] == 0
+
+    refreshed_teachers = [
+        dict(row)
+        for row in conn.execute(
+            'SELECT * FROM teachers WHERE id IN (?, ?, ?)',
+            (teacher_rows[0]['id'], teacher_rows[1]['id'], teacher_rows[2]['id']),
+        ).fetchall()
+    ]
+    conn.close()
+
+    config_row = _config_row(app.DB_PATH)
+    second_pass_ids = [teacher_rows[1]['id'], teacher_rows[2]['id']]
+    data_activate = _teachers_form(config_row, refreshed_teachers)
+    data_activate.setlist('batch_teachers', [str(tid) for tid in second_pass_ids])
+    data_activate.add('batch_teacher_need_action', 'activate')
+
+    with app.app.test_request_context('/config', method='POST', data=data_activate):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert all(category != 'error' for category, _ in flashes)
+
+    conn = sqlite3.connect(app.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    final_status = {
+        row['id']: row['needs_lessons']
+        for row in conn.execute(
+            'SELECT id, needs_lessons FROM teachers WHERE id IN (?, ?, ?)',
+            (teacher_rows[0]['id'], teacher_rows[1]['id'], teacher_rows[2]['id']),
+        ).fetchall()
+    }
+    conn.close()
+
+    assert final_status[teacher_rows[0]['id']] == 0
+    assert final_status[teacher_rows[1]['id']] == 1
+    assert final_status[teacher_rows[2]['id']] == 1
 
 
 def test_followup_config_auto_removes_empty_group(tmp_path):
