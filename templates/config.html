@@ -172,9 +172,10 @@
                 <li>If both a student and a group are selected, the entry is saved for the group only when <em>group_weight &gt; 0</em> (or no student is chosen).</li>
             </ul>
 
-            <h3 class="text-base font-semibold text-emerald-900">Batch tools &amp; per-student overrides</h3>
+            <h3 class="text-base font-semibold text-emerald-900">Batch tools &amp; per-person overrides</h3>
             <ul class="list-disc ms-6 mb-6 space-y-1">
-                <li>Use the <em>Batch student actions</em> panel to add or remove blocked slots, subjects, teacher blocks, allowed locations, and toggle the <em>Needs lessons?</em> status for several students at once. Batch updates merge with existing values rather than replacing them outright.</li>
+                <li>Use the <em>Batch teacher actions</em> panel to adjust assigned subjects, update minimum/maximum lesson defaults, or toggle availability for several teachers at once. Changes layer on top of existing data—removals only affect the selected values and preserve other assignments.</li>
+                <li>The <em>Batch student actions</em> panel still handles blocked slots, subjects, teacher blocks, allowed locations, and the <em>Needs lessons?</em> status across multiple students. Batch updates merge with existing values rather than replacing them outright.</li>
                 <li>The <em>Needs lessons?</em> toggle lets you temporarily archive a student without deleting their configuration—turn it off to keep historical data while skipping the student during scheduling.</li>
                 <li>Advanced dialogs provide per-student overrides for Min/Max lessons, repeat allowances, repeatable subjects, consecutive preferences, teacher-per-subject limits, and blocked slots.</li>
                 <li>Overrides apply only to the selected student and take priority over global defaults.</li>
