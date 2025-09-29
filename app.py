@@ -1775,8 +1775,24 @@ def config():
             min_val = int(new_min) if new_min else 0
             c.execute('INSERT INTO subjects (name, min_percentage) VALUES (?, ?)', (new_sub, min_val))
 
+        def _parse_int_list(values):
+            result = []
+            for item in values:
+                try:
+                    result.append(int(item))
+                except (TypeError, ValueError):
+                    continue
+            return result
+
+        def _parse_int_set(values):
+            return set(_parse_int_list(values))
+
         # update teachers
         teacher_ids = request.form.getlist('teacher_id')
+        batch_teacher_ids = set(_parse_int_list(request.form.getlist('batch_teachers')))
+        batch_teacher_subject_action = request.form.get('batch_teacher_subject_action')
+        batch_teacher_subjects = set(_parse_int_list(request.form.getlist('batch_teacher_subjects')))
+        batch_teacher_need_action = request.form.get('batch_teacher_need_action')
         deletes = set()
         for tid in teacher_ids:
             if request.form.get(f'teacher_delete_{tid}'):
@@ -1804,8 +1820,17 @@ def config():
                 deletes.add(tid)
             else:
                 name = request.form.get(f'teacher_name_{tid}')
-                subs = [int(x) for x in request.form.getlist(f'teacher_subjects_{tid}')]
-                subj_json = json.dumps(subs)
+                try:
+                    tid_int = int(tid)
+                except (TypeError, ValueError):
+                    continue
+                subs = set(_parse_int_list(request.form.getlist(f'teacher_subjects_{tid}')))
+                if tid_int in batch_teacher_ids:
+                    if batch_teacher_subject_action == 'add' and batch_teacher_subjects:
+                        subs.update(batch_teacher_subjects)
+                    elif batch_teacher_subject_action == 'remove' and batch_teacher_subjects:
+                        subs.difference_update(batch_teacher_subjects)
+                subj_json = json.dumps(sorted(subs))
                 tmin = request.form.get(f'teacher_min_{tid}')
                 tmax = request.form.get(f'teacher_max_{tid}')
                 min_val = int(tmin) if tmin else None
@@ -1831,9 +1856,14 @@ def config():
                     has_error = True
                     continue
                 needs_lessons = 1 if request.form.get(f'teacher_need_lessons_{tid}') else 0
+                if tid_int in batch_teacher_ids:
+                    if batch_teacher_need_action == 'activate':
+                        needs_lessons = 1
+                    elif batch_teacher_need_action == 'deactivate':
+                        needs_lessons = 0
                 c.execute(
                     'UPDATE teachers SET name=?, subjects=?, min_lessons=?, max_lessons=?, needs_lessons=? WHERE id=?',
-                    (name, subj_json, min_val, max_val, needs_lessons, int(tid)),
+                    (name, subj_json, min_val, max_val, needs_lessons, tid_int),
                 )
         new_tname = request.form.get('new_teacher_name')
         new_tsubs = [int(x) for x in request.form.getlist('new_teacher_subjects')]
@@ -1906,18 +1936,6 @@ def config():
         # Helper used when parsing integer lists from the form. Invalid
         # values are ignored so a single bad entry does not raise during
         # iteration.
-        def _parse_int_list(values):
-            result = []
-            for item in values:
-                try:
-                    result.append(int(item))
-                except (TypeError, ValueError):
-                    continue
-            return result
-
-        def _parse_int_set(values):
-            return set(_parse_int_list(values))
-
         # Collect per-student form payload so that batch operations can be
         # merged before any validation or database writes occur.
         student_form_data = {}

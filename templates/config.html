@@ -318,6 +318,48 @@
         </button>
     </h2>
     <div id="body-teachers" class="hidden p-4 border border-b-0 border-emerald-200">
+        <fieldset class="space-y-4 mb-8 border border-emerald-200 rounded-lg p-4 bg-emerald-50/50" aria-labelledby="batch-teacher-actions-heading">
+            <legend id="batch-teacher-actions-heading" class="font-semibold text-emerald-900">Batch teacher actions</legend>
+            <p class="text-sm text-emerald-700">Select teachers to apply shared subject changes or toggle the <em>Need lessons?</em> flag for several teachers at once.</p>
+            <label class="block">
+                <span class="font-medium">Teachers</span>
+                <select multiple name="batch_teachers" class="border border-emerald-300 rounded-lg p-2.5 w-full" size="6">
+                    {% for t in teachers %}
+                    <option value="{{ t['id'] }}">{{ t['name'] }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <div class="grid gap-4 md:grid-cols-2">
+                <fieldset class="space-y-2">
+                    <legend class="font-medium">Subjects</legend>
+                    <p class="text-sm text-emerald-700">Add or remove subjects from every selected teacher.</p>
+                    <label class="block">
+                        <span class="sr-only">Subject action</span>
+                        <select name="batch_teacher_subject_action" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                            <option value="add">Add selected subjects</option>
+                            <option value="remove">Remove selected subjects</option>
+                        </select>
+                    </label>
+                    <select multiple name="batch_teacher_subjects" class="border border-emerald-300 rounded-lg p-2.5 w-full" size="6">
+                        {% for sub in subjects %}
+                        <option value="{{ sub['id'] }}">{{ sub['name'] }}</option>
+                        {% endfor %}
+                    </select>
+                </fieldset>
+                <fieldset class="space-y-2">
+                    <legend class="font-medium">Need lessons?</legend>
+                    <p class="text-sm text-emerald-700">Toggle whether selected teachers should be considered when scheduling.</p>
+                    <label class="block">
+                        <span class="sr-only">Needs lessons action</span>
+                        <select name="batch_teacher_need_action" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                            <option value="no-change">No change</option>
+                            <option value="activate">Mark as needing lessons</option>
+                            <option value="deactivate">Mark as not needing lessons</option>
+                        </select>
+                    </label>
+                </fieldset>
+            </div>
+        </fieldset>
         <fieldset class="space-y-4">
             {% for t in teachers %}
             <input type="hidden" name="teacher_id" value="{{ t['id'] }}">
