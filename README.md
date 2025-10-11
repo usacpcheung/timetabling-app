@@ -20,6 +20,9 @@ A local-first, browser-based school timetabling application built with **Flask**
 - [Validation safeguards](#validation-safeguards)
 - [Testing and maintenance](#testing-and-maintenance)
 - [Troubleshooting tips](#troubleshooting-tips)
+- [License](#license)
+- [Third-party notices](#third-party-notices)
+- [Redistribution obligations](#redistribution-obligations)
 
 ## Overview
 
@@ -191,3 +194,22 @@ Use the *Presets* modal to snapshot the current configuration, download previous
 - If the solver reports infeasibility, inspect the generated assumption diagnostics via the solver snapshot download, or temporarily relax constraints such as repeat limits or teacher blocks.
 - Clearing the database from the *Manage Timetables* page will recreate the default demo dataset, which is useful during demos or when testing new solver strategies.
 - Ensure the `data/` directory remains writable—permission issues are the most common cause of missing timetables or failed backups on shared machines.
+
+## License
+
+This project is released under the [MIT License](LICENSE).
+
+## Third-party notices
+
+The application bundles Flowbite JavaScript assets within `static/vendor/`. Their MIT license notices are stored in
+`static/vendor/THIRD_PARTY_NOTICES.md` and must accompany any redistribution of those files.
+
+## Redistribution obligations
+
+When creating downstream distributions (for example compiled executables or Docker images), include:
+
+- A copy of this project's [MIT License](LICENSE).
+- The Flowbite license notices from `static/vendor/THIRD_PARTY_NOTICES.md` alongside the bundled assets.
+- Google OR-Tools' Apache-2.0 license and attribution. The OR-Tools project publishes the license and NOTICE file in its
+  repository—include their Apache-2.0 text and an acknowledgement such as “This product includes software developed by
+  Google LLC (OR-Tools)” in your distribution's NOTICE section to meet the dependency's requirements.
