@@ -2610,6 +2610,20 @@ def config():
         for uid in unavail_ids:
             if uid in del_unav:
                 c.execute('DELETE FROM teacher_unavailable WHERE id=?', (int(uid),))
+        clear_teachers = [int(t) for t in request.form.getlist('clear_unavail_teacher')]
+        clear_slots = [int(s) - 1 for s in request.form.getlist('clear_unavail_slot')]
+        cleared_rows = 0
+        if clear_teachers and clear_slots:
+            for tid in clear_teachers:
+                for slot in clear_slots:
+                    c.execute(
+                        'DELETE FROM teacher_unavailable WHERE teacher_id=? AND slot=?',
+                        (tid, slot),
+                    )
+                    if c.rowcount > 0:
+                        cleared_rows += c.rowcount
+            if cleared_rows == 0:
+                flash('No matching teacher unavailability entries were cleared.', 'info')
         nu_teachers = [int(t) for t in request.form.getlist('new_unavail_teacher')]
         nu_slots = [int(s) - 1 for s in request.form.getlist('new_unavail_slot')]
 

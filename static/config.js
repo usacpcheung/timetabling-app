@@ -832,6 +832,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const unavailTeacher = document.getElementById('new_unavail_teacher');
     const unavailSlot = document.getElementById('new_unavail_slot');
+    const clearUnavailTeacher = document.getElementById('clear_unavail_teacher');
+    const clearUnavailSlot = document.getElementById('clear_unavail_slot');
     // Display a warning when marking slots unavailable would conflict.
     function warnUnavail() {
         if (!unavailTeacher || !unavailSlot) return;
@@ -864,6 +866,34 @@ document.addEventListener('DOMContentLoaded', function () {
     if (unavailTeacher && unavailSlot) {
         unavailTeacher.addEventListener('change', warnUnavail);
         unavailSlot.addEventListener('change', warnUnavail);
+    }
+
+    function warnClearUnavail() {
+        if (!clearUnavailTeacher || !clearUnavailSlot) return;
+        const tids = Array.from(clearUnavailTeacher.selectedOptions).map(o => o.value);
+        const slots = Array.from(clearUnavailSlot.selectedOptions).map(o => parseInt(o.value, 10) - 1);
+        if (!tids.length || !slots.length) return;
+        let missing = false;
+        tids.forEach(tid => {
+            const unav = unavailData[tid] || [];
+            slots.forEach(slot => {
+                if (!unav.includes(slot)) {
+                    missing = true;
+                }
+            });
+        });
+        if (missing && typeof window.enqueueFlashMessages === 'function') {
+            window.enqueueFlashMessages([
+                {
+                    category: 'warning',
+                    text: 'Slot is not currently blocked for one or more selected teachers.'
+                }
+            ], { category: 'warning' });
+        }
+    }
+    if (clearUnavailTeacher && clearUnavailSlot) {
+        clearUnavailTeacher.addEventListener('change', warnClearUnavail);
+        clearUnavailSlot.addEventListener('change', warnClearUnavail);
     }
 
     
