@@ -23,7 +23,7 @@ from datetime import datetime
 from collections import OrderedDict
 from werkzeug.utils import secure_filename
 
-from cp_sat_timetable import build_model, solve_and_print, AssumptionInfo
+from solver.api import AssumptionInfo, SolverStatus, solve_schedule
 
 app = Flask(__name__)
 app.secret_key = 'dev'
@@ -3794,14 +3794,26 @@ def generate_schedule(target_date=None):
     for gid, locs in group_loc_map.items():
         loc_restrict[offset + gid] = locs
 
-    model, vars_, loc_vars, assumption_registry = build_model(
-        full_students, teachers, slots, min_lessons, max_lessons,
-        allow_repeats=allow_repeats, max_repeats=max_repeats,
-        prefer_consecutive=prefer_consecutive, allow_consecutive=allow_consecutive,
+    def progress_cb(msg):
+        app.logger.info(msg)
+
+    result = solve_schedule(
+        full_students,
+        teachers,
+        slots,
+        min_lessons,
+        max_lessons,
+        allow_repeats=allow_repeats,
+        max_repeats=max_repeats,
+        prefer_consecutive=prefer_consecutive,
+        allow_consecutive=allow_consecutive,
         consecutive_weight=consecutive_weight,
-        unavailable=unavailable, fixed=assignments_fixed,
-        teacher_min_lessons=teacher_min, teacher_max_lessons=teacher_max,
-        add_assumptions=True, group_members=group_map_offset,
+        unavailable=unavailable,
+        fixed=assignments_fixed,
+        teacher_min_lessons=teacher_min,
+        teacher_max_lessons=teacher_max,
+        add_assumptions=True,
+        group_members=group_map_offset,
         require_all_subjects=require_all_subjects,
         subject_weights=subject_weights,
         group_weight=group_weight,
@@ -3816,42 +3828,41 @@ def generate_schedule(target_date=None):
         locations=locations,
         location_restrict=loc_restrict,
         subject_lookup=subject_lookup,
-        slot_labels=slot_label_map)
-
-    progress_messages = []
-
-    def progress_cb(msg):
-        progress_messages.append(msg)
-        app.logger.info(msg)
-
-    status, assignments, core, progress = solve_and_print(
-        model,
-        vars_,
-        loc_vars,
-        assumption_registry,
+        slot_labels=slot_label_map,
         time_limit=solver_time_limit,
         progress_callback=progress_cb,
     )
 
-    from ortools.sat.python import cp_model
-    if status == cp_model.OPTIMAL:
+    if result.status == SolverStatus.OPTIMAL:
         flash('Optimal timetable found.', 'success')
-    elif status == cp_model.FEASIBLE:
+    elif result.status == SolverStatus.FEASIBLE:
         flash('Feasible timetable found before time limit.', 'info')
 
-    for msg in progress:
+    for msg in result.progress:
         flash(msg, 'info')
 
     # Insert solver results into DB
+    assignments = result.assignments
+    core = result.core
     if assignments:
         group_lessons = set()
         filtered = []
-        for sid, tid, subj, slot, loc in assignments:
+        for assignment in assignments:
+            sid = assignment.student_id
+            tid = assignment.teacher_id
+            subj = assignment.subject_id
+            slot = assignment.slot
+            loc = assignment.location_id
             if sid >= offset:
                 gid = sid - offset
                 group_lessons.add((gid, tid, subj, slot, loc))
                 filtered.append((None, gid, tid, subj, slot, loc))
-        for sid, tid, subj, slot, loc in assignments:
+        for assignment in assignments:
+            sid = assignment.student_id
+            tid = assignment.teacher_id
+            subj = assignment.subject_id
+            slot = assignment.slot
+            loc = assignment.location_id
             if sid >= offset:
                 continue
             skip = False
@@ -3879,7 +3890,7 @@ def generate_schedule(target_date=None):
             c.executemany('INSERT INTO attendance_log (student_id, student_name, subject_id, date) VALUES (?, ?, ?, ?)',
                           attendance_rows)
     else:
-        if status == cp_model.INFEASIBLE:
+        if result.status == SolverStatus.INFEASIBLE:
             flash('No feasible timetable could be generated.', 'error')
             for summary in summarize_unsat_core(core):
                 if summary.get('aggregated'):

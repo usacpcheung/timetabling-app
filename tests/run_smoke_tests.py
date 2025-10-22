@@ -5,8 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from ortools.sat.python import cp_model
-from cp_sat_timetable import build_model, solve_and_print
+from solver.api import SolverStatus, build_model, solve_model
 from app import summarize_unsat_core, _format_summary_details, UNSAT_REASON_MAP
 import json
 
@@ -32,10 +31,10 @@ def test_no_locations_allows_schedule():
         add_assumptions=True,
         locations=None,  # no locations configured
     )
-    status, assignments, core, progress = solve_and_print(model, vars_, loc_vars, assumption_registry)
-    assert status in (cp_model.OPTIMAL, cp_model.FEASIBLE)
-    assert len(assignments) > 0, "Expected some lessons to be scheduled without locations"
-    assert progress, "Expected at least one progress message"
+    result = solve_model(model, vars_, loc_vars, assumption_registry)
+    assert result.status in (SolverStatus.OPTIMAL, SolverStatus.FEASIBLE)
+    assert len(result.assignments) > 0, "Expected some lessons to be scheduled without locations"
+    assert result.progress, "Expected at least one progress message"
 
 
 def test_multi_teacher_disallowed_allows_repeats_same_teacher():
@@ -55,14 +54,14 @@ def test_multi_teacher_disallowed_allows_repeats_same_teacher():
         student_limits={1: (2, 2)},
         locations=[],
     )
-    status, assignments, core, progress = solve_and_print(model, vars_, loc_vars, assumption_registry)
-    assert status in (cp_model.OPTIMAL, cp_model.FEASIBLE)
+    result = solve_model(model, vars_, loc_vars, assumption_registry)
+    assert result.status in (SolverStatus.OPTIMAL, SolverStatus.FEASIBLE)
     # Both slots scheduled, but with the same teacher id
-    assigned = [(sid, tid, subj, sl) for (sid, tid, subj, sl, loc) in assignments]
+    assigned = [assignment.as_tuple()[:-1] for assignment in result.assignments]
     assert len(assigned) == 2
     tids = {t for (_, t, _, _) in assigned}
     assert len(tids) == 1, f"Expected one teacher only; got {tids}"
-    assert progress, "Expected progress messages for feasible solve"
+    assert result.progress, "Expected progress messages for feasible solve"
 
 
 def test_unsat_core_present_on_conflict():
@@ -82,13 +81,13 @@ def test_unsat_core_present_on_conflict():
         student_limits={1: (1, 1)},
         locations=[],
     )
-    status, assignments, core, progress = solve_and_print(model, vars_, loc_vars, assumption_registry)
-    assert status == cp_model.INFEASIBLE, "Expected infeasible due to teacher unavailability and student min"
-    assert core, "Expected an unsat core to be reported"
+    result = solve_model(model, vars_, loc_vars, assumption_registry)
+    assert result.status == SolverStatus.INFEASIBLE, "Expected infeasible due to teacher unavailability and student min"
+    assert result.core, "Expected an unsat core to be reported"
     # Core likely includes teacher_availability and student_limits
-    assert any(getattr(info, "kind", None) in ("teacher_availability", "student_limits") for info in core), f"Unexpected core: {core}"
-    assert progress == [], "No progress messages expected when infeasible"
-    summaries = summarize_unsat_core(core)
+    assert any(getattr(info, "kind", None) in ("teacher_availability", "student_limits") for info in result.core), f"Unexpected core: {result.core}"
+    assert result.progress == [], "No progress messages expected when infeasible"
+    summaries = summarize_unsat_core(result.core)
     teacher_summaries = [s for s in summaries if s.get('aggregated') and s.get('kind') == 'teacher_availability']
     assert teacher_summaries, f"Expected teacher summaries; got {summaries}"
     capacity_summary = next((s for s in teacher_summaries if s.get('category') == 'capacity'), None)
@@ -144,9 +143,9 @@ def test_group_unsat_message_includes_group_and_subject_names():
         locations=[],
         subject_lookup={subject_id: subject_name},
     )
-    status, assignments, core, progress = solve_and_print(model, vars_, loc_vars, assumption_registry)
-    assert status == cp_model.INFEASIBLE, "Expected infeasible due to group requirements"
-    summaries = summarize_unsat_core(core)
+    result = solve_model(model, vars_, loc_vars, assumption_registry)
+    assert result.status == SolverStatus.INFEASIBLE, "Expected infeasible due to group requirements"
+    summaries = summarize_unsat_core(result.core)
     aggregated_messages = []
     for summary in summaries:
         if summary.get('aggregated'):

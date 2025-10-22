@@ -13,7 +13,7 @@ from werkzeug.datastructures import MultiDict
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 
-from cp_sat_timetable import build_model
+from solver.api import SolverResult, SolverStatus, build_model
 
 
 def setup_db(tmp_path):
@@ -2191,8 +2191,6 @@ def test_reject_student_individual_min_greater_than_max(tmp_path):
 
 def test_teacher_without_lessons_flag_is_optional(tmp_path, monkeypatch):
     import app
-    from ortools.sat.python import cp_model
-
     conn = setup_db(tmp_path)
     config_row = _config_row(app.DB_PATH)
     teacher_row = conn.execute('SELECT * FROM teachers ORDER BY id LIMIT 1').fetchone()
@@ -2230,15 +2228,17 @@ def test_teacher_without_lessons_flag_is_optional(tmp_path, monkeypatch):
 
     captured = {}
 
-    def fake_build_model(full_students, teachers, *args, **kwargs):
+    def fake_solve_schedule(full_students, teachers, *args, **kwargs):
         captured['teachers'] = list(teachers)
-        return object(), {}, {}, None
+        return SolverResult(
+            status=SolverStatus.OPTIMAL,
+            assignments=[],
+            core=[],
+            progress=[],
+            raw_status=SolverStatus.OPTIMAL,
+        )
 
-    def fake_solve_and_print(*args, **kwargs):
-        return cp_model.OPTIMAL, [], None, []
-
-    monkeypatch.setattr(app, 'build_model', fake_build_model)
-    monkeypatch.setattr(app, 'solve_and_print', fake_solve_and_print)
+    monkeypatch.setattr(app, 'solve_schedule', fake_solve_schedule)
 
     with app.app.test_request_context('/generate'):
         app.generate_schedule(target_date='2024-01-02')

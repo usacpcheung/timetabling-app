@@ -1,5 +1,4 @@
-from ortools.sat.python import cp_model
-from cp_sat_timetable import build_model, solve_and_print
+from solver.api import SolverStatus, build_model, solve_model
 import json
 
 def make_row(id_, subjects):
@@ -32,8 +31,8 @@ def test_repeat_allowed_only_for_selected_subjects():
         student_repeat=student_repeat,
         locations=[],
     )
-    status, assignments, _, _ = solve_and_print(model, vars_, loc_vars, assumption_registry)
-    assert status in (cp_model.OPTIMAL, cp_model.FEASIBLE)
-    subjects = [subj for (_, _, subj, _, _) in assignments]
+    result = solve_model(model, vars_, loc_vars, assumption_registry)
+    assert result.status in (SolverStatus.OPTIMAL, SolverStatus.FEASIBLE)
+    subjects = [assignment.subject_id for assignment in result.assignments]
     assert subjects.count("English") <= 1, "English should not be repeated"
 
