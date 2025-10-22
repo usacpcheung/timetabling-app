@@ -791,3 +791,21 @@ def solve_cp_sat_model(
         progress=progress,
         raw_status=raw_status,
     )
+
+
+def solve(
+    model,
+    vars_,
+    loc_vars,
+    assumption_registry=None,
+    **kwargs,
+):
+    """Compatibility wrapper exposing the backend's generic ``solve`` entry point."""
+
+    return solve_cp_sat_model(
+        model,
+        vars_,
+        loc_vars,
+        assumption_registry=assumption_registry,
+        **kwargs,
+    )

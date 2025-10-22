@@ -3,6 +3,9 @@ Flask>=2.2,<3.1
 
 # OR-Tools CP-SAT solver used for timetabling model (use latest)
 ortools
+# PuLP modeling interface and HiGHS MILP solver backend (experimental alternative)
+pulp
+highspy
 
 # Test runner used by the test suite in `tests/`
 pytest>=7.0,<9.0
