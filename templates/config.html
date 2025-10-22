@@ -810,6 +810,23 @@
                     {% endfor %}
                 </select>
             </label>
+            <div class="border-t border-emerald-200 pt-4 mt-4 space-y-2">
+                <p class="text-sm text-emerald-800">Clear existing blocks for multiple teachers and slots at once.</p>
+                <label class="block">Teachers to clear:
+                    <select multiple name="clear_unavail_teacher" id="clear_unavail_teacher" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                        {% for t in teachers %}
+                        <option value="{{ t['id'] }}">{{ t['name'] }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label class="block">Slots to clear:
+                    <select multiple name="clear_unavail_slot" id="clear_unavail_slot" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                        {% for i in range(1, config['slots_per_day'] + 1) %}
+                        <option value="{{ i }}">{{ i }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+            </div>
         </fieldset>
     </div>
     <!-- Fixed assignments -->
