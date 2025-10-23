@@ -794,13 +794,38 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function toSubjectArray(raw) {
+        if (!raw) {
+            return [];
+        }
+
+        const result = [];
+        const seen = new Set();
+
+        const addValue = value => {
+            const num = Number.parseInt(value, 10);
+            if (Number.isNaN(num) || seen.has(num)) {
+                return;
+            }
+            seen.add(num);
+            result.push(num);
+        };
+
         if (Array.isArray(raw)) {
-            return raw;
+            raw.forEach(addValue);
+            return result;
         }
+
         if (raw && typeof raw === 'object') {
-            return Object.keys(raw).filter(key => raw[key]);
+            Object.keys(raw).forEach(key => {
+                if (raw[key]) {
+                    addValue(key);
+                }
+            });
+            return result;
         }
-        return [];
+
+        addValue(raw);
+        return result;
     }
 
     // Update subject and slot dropdowns based on the chosen teacher and student.
@@ -808,7 +833,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const tid = teacherSelect.value;
         const sid = studentSelect.value;
         const gid = groupSelect ? groupSelect.value : '';
-        const teacherSubs = teacherData[tid] || [];
+        const teacherSubs = toSubjectArray(teacherData[tid]);
         const baseSubs = gid ? toSubjectArray(groupData[gid]) : toSubjectArray(studentData[sid]);
         const common = baseSubs.filter(s => teacherSubs.includes(s));
 
