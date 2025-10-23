@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import dataclass
 import json
+import time
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Set, Tuple
 
 import pulp
@@ -172,6 +173,8 @@ def _solve_with_forced(
     forced: Sequence[int],
     time_limit: Optional[float],
 ) -> Tuple[str, Set[int]]:
+    if time_limit is not None and time_limit <= 0:
+        return "Not Solved", set()
     solver = _make_solver(time_limit)
     with _force_indicator_bounds(registry, forced, 1.0):
         model.solve(solver)
@@ -189,16 +192,40 @@ def _extract_unsat_core(
     initial_zeros: Sequence[int],
     time_limit: Optional[float],
 ) -> List[AssumptionInfo]:
+    deadline: Optional[float] = None
+    if time_limit is not None:
+        deadline = time.perf_counter() + max(time_limit, 0.0)
+
+    def remaining_time() -> Optional[float]:
+        if deadline is None:
+            return None
+        remaining = deadline - time.perf_counter()
+        if remaining <= 0:
+            return 0.0
+        return remaining
+
+    def solve_with_budget(forced_indices: Sequence[int]) -> Optional[Tuple[str, Set[int]]]:
+        remaining = remaining_time()
+        if remaining is not None and remaining <= 0:
+            return None
+        return _solve_with_forced(model, registry, forced_indices, remaining)
+
     forced: Set[int] = set(initial_zeros)
     if not forced:
-        status_str, zeros = _solve_with_forced(model, registry, [], time_limit)
+        result = solve_with_budget([])
+        if result is None:
+            return []
+        status_str, zeros = result
         if status_str in ("Infeasible", "Unbounded"):
             return registry.all_infos()
         forced.update(zeros)
 
     progress_made = True
     while forced and progress_made:
-        status_str, zeros = _solve_with_forced(model, registry, sorted(forced), time_limit)
+        result = solve_with_budget(sorted(forced))
+        if result is None:
+            return []
+        status_str, zeros = result
         if status_str in ("Infeasible", "Unbounded"):
             break
         new_zeros = zeros - forced
@@ -211,7 +238,10 @@ def _extract_unsat_core(
     core: Set[int] = set(sorted(forced))
     for idx in list(core):
         trial = sorted(core - {idx})
-        status_str, _ = _solve_with_forced(model, registry, trial, time_limit)
+        result = solve_with_budget(trial)
+        if result is None:
+            return []
+        status_str, _ = result
         if status_str not in ("Optimal", "Feasible", "Integer Feasible"):
             # Remaining assumptions already conflict without this one.
             core.discard(idx)
