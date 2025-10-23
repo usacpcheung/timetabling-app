@@ -8,23 +8,12 @@ particular lesson occurs. Keeping this optimization code separate from the Flask
 application makes the model easier to understand in isolation.
 """
 
-from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
 from ortools.sat.python import cp_model
 import json
 
-from .api import Assignment, SolverResult, SolverStatus
-
-
-@dataclass
-class AssumptionInfo:
-    """Record describing an assumption literal added to the model."""
-
-    literal: cp_model.IntVar
-    kind: str
-    label: str
-    context: Dict[str, Any]
+from .api import AssumptionInfo, Assignment, SolverResult, SolverStatus
 
 
 class AssumptionRegistry:
@@ -50,7 +39,6 @@ class AssumptionRegistry:
         lit_name = name or f"assumption_{kind}_{idx}"
         literal = self._model.NewBoolVar(lit_name)
         info = AssumptionInfo(
-            literal=literal,
             kind=kind,
             label=label or lit_name,
             context=context or {},
@@ -71,7 +59,6 @@ class AssumptionRegistry:
         if not self.enabled:
             return None
         info = AssumptionInfo(
-            literal=literal,
             kind=kind,
             label=label or literal.Name(),
             context=context or {},
@@ -790,4 +777,22 @@ def solve_cp_sat_model(
         core=core,
         progress=progress,
         raw_status=raw_status,
+    )
+
+
+def solve(
+    model,
+    vars_,
+    loc_vars,
+    assumption_registry=None,
+    **kwargs,
+):
+    """Compatibility wrapper exposing the backend's generic ``solve`` entry point."""
+
+    return solve_cp_sat_model(
+        model,
+        vars_,
+        loc_vars,
+        assumption_registry=assumption_registry,
+        **kwargs,
     )
