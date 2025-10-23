@@ -2761,6 +2761,52 @@ def config():
         slot_times = json.loads(cfg['slot_start_times']) if cfg['slot_start_times'] else []
     except Exception:
         slot_times = []
+    def _normalize_subject_list(raw):
+        """Return a clean list of subject IDs from legacy or current payloads."""
+
+        if not raw:
+            return []
+
+        if isinstance(raw, bytes):
+            try:
+                raw = raw.decode('utf-8')
+            except Exception:
+                return []
+
+        if isinstance(raw, str):
+            try:
+                parsed = json.loads(raw)
+            except (TypeError, ValueError):
+                return []
+        else:
+            parsed = raw
+
+        result = []
+        seen = set()
+
+        def _add(value):
+            try:
+                num = int(value)
+            except (TypeError, ValueError):
+                return
+            if num in seen:
+                return
+            seen.add(num)
+            result.append(num)
+
+        if isinstance(parsed, list):
+            for item in parsed:
+                _add(item)
+        elif isinstance(parsed, dict):
+            for key, value in parsed.items():
+                if not value:
+                    continue
+                _add(key)
+        else:
+            _add(parsed)
+
+        return result
+
     c.execute('SELECT * FROM teachers')
     teacher_rows = c.fetchall()
     c.execute('SELECT * FROM students')
@@ -2780,16 +2826,16 @@ def config():
     subj_map = {s['id']: s['name'] for s in subjects}
     c.execute('SELECT * FROM groups')
     group_rows = c.fetchall()
-    group_subj_map = {g['id']: json.loads(g['subjects']) for g in group_rows}
+    group_subj_map = {g['id']: _normalize_subject_list(g['subjects']) for g in group_rows}
     c.execute('SELECT group_id, student_id FROM group_members')
     gm_rows = c.fetchall()
     group_map = {}
     for gm in gm_rows:
         group_map.setdefault(gm['group_id'], []).append(gm['student_id'])
     # Build mappings of subject IDs for form selections
-    teacher_map = {t['id']: json.loads(t['subjects']) for t in teacher_rows}
-    student_map = {s['id']: json.loads(s['subjects']) for s in student_rows}
-    student_repeat_map = {s['id']: json.loads(s['repeat_subjects']) if s['repeat_subjects'] else [] for s in student_rows}
+    teacher_map = {t['id']: _normalize_subject_list(t['subjects']) for t in teacher_rows}
+    student_map = {s['id']: _normalize_subject_list(s['subjects']) for s in student_rows}
+    student_repeat_map = {s['id']: _normalize_subject_list(s['repeat_subjects']) for s in student_rows}
     teachers = [dict(t) for t in teacher_rows]
     students = [dict(s) for s in student_rows]
     groups = [dict(g) for g in group_rows]

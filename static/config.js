@@ -793,13 +793,23 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+    function toSubjectArray(raw) {
+        if (Array.isArray(raw)) {
+            return raw;
+        }
+        if (raw && typeof raw === 'object') {
+            return Object.keys(raw).filter(key => raw[key]);
+        }
+        return [];
+    }
+
     // Update subject and slot dropdowns based on the chosen teacher and student.
     function updateOptions() {
         const tid = teacherSelect.value;
         const sid = studentSelect.value;
         const gid = groupSelect ? groupSelect.value : '';
         const teacherSubs = teacherData[tid] || [];
-        const baseSubs = gid ? (groupData[gid] || []) : (studentData[sid] || []);
+        const baseSubs = gid ? toSubjectArray(groupData[gid]) : toSubjectArray(studentData[sid]);
         const common = baseSubs.filter(s => teacherSubs.includes(s));
 
         subjectSelect.innerHTML = '';
