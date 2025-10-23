@@ -796,7 +796,10 @@ def build_model(
             total_var_map[group_var.name] = group_var
         total_vars = list(total_var_map.values())
         if total_vars:
+            lesson_options = len(total_vars)
             min_lesson, max_lesson = student_limits.get(sid, (min_lessons, max_lessons))
+            min_lesson_value = float(min_lesson) if min_lesson is not None else 0.0
+            big_m_min = max(float(lesson_options), min_lesson_value, 1.0)
             indicator_min = registry.new_literal(
                 "student_limits",
                 label=f"student_min_s{sid}",
@@ -805,7 +808,7 @@ def build_model(
                     "student_name": _get_optional(student_lookup.get(sid), "name"),
                     "min_lessons": min_lesson,
                     "max_lessons": max_lesson,
-                    "lesson_options": len(total_vars),
+                    "lesson_options": lesson_options,
                 },
             )
             _apply_assumption_constraint(
@@ -813,8 +816,8 @@ def build_model(
                 indicator_min,
                 pulp.lpSum(total_vars),
                 ">=",
-                float(min_lesson),
-                big_m=len(total_vars) or 1,
+                min_lesson_value,
+                big_m=big_m_min,
             )
             if max_lesson is not None:
                 indicator_max = registry.new_literal(
@@ -825,7 +828,7 @@ def build_model(
                         "student_name": _get_optional(student_lookup.get(sid), "name"),
                         "min_lessons": min_lesson,
                         "max_lessons": max_lesson,
-                        "lesson_options": len(total_vars),
+                        "lesson_options": lesson_options,
                     },
                 )
                 _apply_assumption_constraint(
@@ -834,7 +837,7 @@ def build_model(
                     pulp.lpSum(total_vars),
                     "<=",
                     float(max_lesson),
-                    big_m=len(total_vars) or 1,
+                    big_m=float(lesson_options) or 1,
                 )
 
     objective_terms = [var * var_weights[var] for var in vars_.values()]
