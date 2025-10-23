@@ -1,9 +1,13 @@
 import json
 
+import importlib.util
 import pytest
 
 from solver import api
 from solver.api import SolverStatus
+
+
+ORTOOLS_AVAILABLE = importlib.util.find_spec("ortools") is not None
 
 
 def _make_student(student_id, subjects, **extra):
@@ -68,6 +72,7 @@ def _infeasible_unavailability_config():
     }
 
 
+@pytest.mark.skipif(not ORTOOLS_AVAILABLE, reason="OR-Tools backend is optional")
 @pytest.mark.parametrize(
     "config_factory",
     [

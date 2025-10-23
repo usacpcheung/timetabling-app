@@ -687,8 +687,8 @@ def build_model(
         else:
             problem += load == 0
         teacher_load_vars.append(load)
-        min_required = teacher.get("min_lessons")
-        max_allowed = teacher.get("max_lessons")
+        min_required = _get_optional(teacher, "min_lessons")
+        max_allowed = _get_optional(teacher, "max_lessons")
         min_required = teacher_min_lessons if min_required is None else min_required
         max_allowed = teacher_max_lessons if max_allowed is None else max_allowed
         indicator_min = registry.new_literal(

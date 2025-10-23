@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 from typing import Dict, Iterable
 
@@ -11,6 +12,9 @@ from app import summarize_unsat_core
 from solver.api import SolverStatus, build_model, solve_model
 
 
+ORTOOLS_AVAILABLE = importlib.util.find_spec("ortools") is not None
+
+
 def _make_row(identifier: int, subjects: Iterable[int], name: str | None = None) -> Dict[str, object]:
     row: Dict[str, object] = {"id": identifier, "subjects": json.dumps(list(subjects))}
     if name is not None:
@@ -18,7 +22,19 @@ def _make_row(identifier: int, subjects: Iterable[int], name: str | None = None)
     return row
 
 
-@pytest.mark.parametrize("backend", ["ortools", "pulp"])
+@pytest.mark.parametrize(
+    "backend",
+    [
+        pytest.param(
+            "ortools",
+            marks=pytest.mark.skipif(
+                not ORTOOLS_AVAILABLE,
+                reason="OR-Tools backend is optional",
+            ),
+        ),
+        "pulp",
+    ],
+)
 def test_unsat_core_summary_matches_between_backends(backend: str) -> None:
     """Both backends should surface comparable unsat-core summaries."""
 
