@@ -5,9 +5,9 @@ stored in a local SQLite database which is initialized with some sample values
 on first run.
 The comments throughout this file explain each step in detail so beginning programmers can follow the flow.  Users interact with the app via standard web forms to configure
 teachers, students and various scheduling parameters.  When a timetable is
-requested, the configuration is passed to the CP-SAT model defined in
-``cp_sat_timetable.py`` and the resulting schedule is saved back to the
-database.
+requested, the configuration is passed through the backend-neutral solver API
+(PuLP/HiGHS by default, with an optional OR-Tools CP-SAT backend) and the
+resulting schedule is saved back to the database.
 """
 
 from flask import Flask, render_template, request, redirect, url_for, flash, send_file

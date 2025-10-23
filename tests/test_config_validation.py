@@ -1,6 +1,7 @@
 """Regression tests for configuration validation logic."""
 
 import json
+import importlib.util
 import os
 import sys
 import sqlite3
@@ -13,7 +14,12 @@ from werkzeug.datastructures import MultiDict
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 
+import pytest
+
 from solver.api import SolverResult, SolverStatus, build_model
+
+
+ORTOOLS_AVAILABLE = importlib.util.find_spec("ortools") is not None
 
 
 def setup_db(tmp_path):
@@ -544,6 +550,7 @@ def test_repeat_controls_render_disabled_when_repeats_off(tmp_path):
         assert_dimmed(label_id)
 
 
+@pytest.mark.skipif(not ORTOOLS_AVAILABLE, reason="OR-Tools backend is optional")
 def test_student_consecutive_bonus_preserved_when_repeats_disabled():
     students = [
         {'id': 1, 'subjects': json.dumps([1])},
@@ -579,6 +586,7 @@ def test_student_consecutive_bonus_preserved_when_repeats_disabled():
         allow_consecutive=False,
         consecutive_weight=5,
         student_repeat=student_repeat,
+        backend="ortools",
     )
 
     proto = model.Proto()

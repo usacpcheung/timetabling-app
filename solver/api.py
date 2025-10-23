@@ -11,9 +11,9 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - imported for type checking only
-    from .ortools_backend import AssumptionRegistry as _OrToolsAssumptionRegistry
+    from .pulp_backend import AssumptionRegistry as _DefaultAssumptionRegistry
 else:
-    _OrToolsAssumptionRegistry = None  # type: ignore
+    _DefaultAssumptionRegistry = None  # type: ignore
 
 
 class SolverStatus(str, Enum):
@@ -80,7 +80,7 @@ class AssumptionInfo:
 
 
 _BACKEND_REGISTRY: Dict[str, str] = {}
-_DEFAULT_BACKEND = "ortools"
+_DEFAULT_BACKEND = "pulp"
 
 
 def register_backend(identifier: str, module_path: str) -> None:
@@ -330,7 +330,7 @@ _default_backend_module = get_backend()
 AssumptionRegistry = getattr(
     _default_backend_module,
     "AssumptionRegistry",
-    _OrToolsAssumptionRegistry,
+    _DefaultAssumptionRegistry,
 )  # type: ignore[assignment]
 
 
