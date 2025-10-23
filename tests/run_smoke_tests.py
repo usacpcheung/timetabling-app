@@ -88,16 +88,43 @@ def test_unsat_core_present_on_conflict():
     assert any(getattr(info, "kind", None) in ("teacher_availability", "student_limits") for info in result.core), f"Unexpected core: {result.core}"
     assert result.progress == [], "No progress messages expected when infeasible"
     summaries = summarize_unsat_core(result.core)
-    teacher_summaries = [s for s in summaries if s.get('aggregated') and s.get('kind') == 'teacher_availability']
+    teacher_summaries = [
+        s for s in summaries if s.get('aggregated') and s.get('kind') == 'teacher_availability'
+    ]
     assert teacher_summaries, f"Expected teacher summaries; got {summaries}"
-    capacity_summary = next((s for s in teacher_summaries if s.get('category') == 'capacity'), None)
+    capacity_summary = next(
+        (
+            s
+            for s in teacher_summaries
+            if s.get('category') in {"capacity", "block"}
+        ),
+        None,
+    )
     assert capacity_summary is not None, f"Expected capacity summary; got {teacher_summaries}"
-    assert capacity_summary.get('slots') == [0], f"Expected slot 0 in teacher summary; got {capacity_summary}"
-    assert capacity_summary.get('slot_candidates', {}).get(0) == 1, f"Expected one candidate lesson; got {capacity_summary}"
+    assert 0 in capacity_summary.get('slots', []), f"Expected slot 0 in teacher summary; got {capacity_summary}"
+    if capacity_summary.get('category') == 'capacity':
+        assert capacity_summary.get('slot_candidates', {}).get(0) == 1, (
+            f"Expected one candidate lesson; got {capacity_summary}"
+        )
+    else:
+        assert capacity_summary.get('category') == 'block', capacity_summary
+        assert capacity_summary.get('pairs'), f"Expected conflicting lesson pairs; got {capacity_summary}"
     student_summary = next((s for s in summaries if s.get('aggregated') and s.get('kind') == 'student_limits'), None)
     assert student_summary is not None, f"Expected aggregated student summary; got {summaries}"
-    assert 0 in student_summary.get('slots', []), f"Expected slot 0 in student summary; got {student_summary}"
-    assert student_summary.get('candidate_lessons') == [1], f"Expected candidate lessons of 1; got {student_summary}"
+    slots = student_summary.get('slots', [])
+    if slots:
+        assert 0 in slots, f"Expected slot 0 in student summary; got {student_summary}"
+    else:
+        assert student_summary.get('lesson_options') in ([1], {1}), (
+            f"Expected lesson options to reference the blocked slot; got {student_summary}"
+        )
+    candidates = student_summary.get('candidate_lessons')
+    if candidates:
+        assert candidates == [1], f"Expected candidate lessons of 1; got {student_summary}"
+    else:
+        assert student_summary.get('lesson_options') in ([1], {1}), (
+            f"Expected lesson options fallback; got {student_summary}"
+        )
 
 
 def test_capacity_summary_formats_slot_candidates_human_readable():

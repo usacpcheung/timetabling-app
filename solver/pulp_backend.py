@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import dataclass
 import json
+import time
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Set, Tuple
 
 import pulp
@@ -172,6 +173,8 @@ def _solve_with_forced(
     forced: Sequence[int],
     time_limit: Optional[float],
 ) -> Tuple[str, Set[int]]:
+    if time_limit is not None and time_limit <= 0:
+        return "Not Solved", set()
     solver = _make_solver(time_limit)
     with _force_indicator_bounds(registry, forced, 1.0):
         model.solve(solver)
@@ -188,17 +191,41 @@ def _extract_unsat_core(
     registry: AssumptionRegistry,
     initial_zeros: Sequence[int],
     time_limit: Optional[float],
-) -> List[AssumptionInfo]:
+) -> Tuple[List[AssumptionInfo], bool]:
+    deadline: Optional[float] = None
+    if time_limit is not None:
+        deadline = time.perf_counter() + max(time_limit, 0.0)
+
+    def remaining_time() -> Optional[float]:
+        if deadline is None:
+            return None
+        remaining = deadline - time.perf_counter()
+        if remaining <= 0:
+            return 0.0
+        return remaining
+
+    def solve_with_budget(forced_indices: Sequence[int]) -> Optional[Tuple[str, Set[int]]]:
+        remaining = remaining_time()
+        if remaining is not None and remaining <= 0:
+            return None
+        return _solve_with_forced(model, registry, forced_indices, remaining)
+
     forced: Set[int] = set(initial_zeros)
     if not forced:
-        status_str, zeros = _solve_with_forced(model, registry, [], time_limit)
+        result = solve_with_budget([])
+        if result is None:
+            return [], True
+        status_str, zeros = result
         if status_str in ("Infeasible", "Unbounded"):
-            return registry.all_infos()
+            return registry.all_infos(), False
         forced.update(zeros)
 
     progress_made = True
     while forced and progress_made:
-        status_str, zeros = _solve_with_forced(model, registry, sorted(forced), time_limit)
+        result = solve_with_budget(sorted(forced))
+        if result is None:
+            return [], True
+        status_str, zeros = result
         if status_str in ("Infeasible", "Unbounded"):
             break
         new_zeros = zeros - forced
@@ -206,17 +233,23 @@ def _extract_unsat_core(
         forced.update(new_zeros)
 
     if not forced:
-        return []
+        return [], False
 
     core: Set[int] = set(sorted(forced))
     for idx in list(core):
         trial = sorted(core - {idx})
-        status_str, _ = _solve_with_forced(model, registry, trial, time_limit)
+        result = solve_with_budget(trial)
+        if result is None:
+            return [], True
+        status_str, _ = result
         if status_str not in ("Optimal", "Feasible", "Integer Feasible"):
             # Remaining assumptions already conflict without this one.
             core.discard(idx)
 
-    return [registry.info_for_index(i) for i in sorted(core) if registry.info_for_index(i) is not None]
+    return (
+        [registry.info_for_index(i) for i in sorted(core) if registry.info_for_index(i) is not None],
+        False,
+    )
 
 
 def _get_optional(record: Optional[Dict[str, Any]], key: str) -> Any:
@@ -687,8 +720,8 @@ def build_model(
         else:
             problem += load == 0
         teacher_load_vars.append(load)
-        min_required = teacher.get("min_lessons")
-        max_allowed = teacher.get("max_lessons")
+        min_required = _get_optional(teacher, "min_lessons")
+        max_allowed = _get_optional(teacher, "max_lessons")
         min_required = teacher_min_lessons if min_required is None else min_required
         max_allowed = teacher_max_lessons if max_allowed is None else max_allowed
         indicator_min = registry.new_literal(
@@ -756,17 +789,18 @@ def build_model(
         sid = student["id"]
         if sid in group_ids:
             continue
-        total_vars: List[pulp.LpVariable] = []
+        total_var_map: Dict[str, pulp.LpVariable] = {}
         subjects = json.loads(student["subjects"])
         for subject in subjects:
-            subject_candidates = [
-                var
+            subject_candidate_map: Dict[str, pulp.LpVariable] = {
+                var.name: var
                 for (s_id, t_id, subj, slot), var in vars_.items()
                 if s_id == sid and subj == subject
-            ]
+            }
             for (group_key, group_var) in member_to_group_vars.get(sid, []):
                 if group_key[2] == subject:
-                    subject_candidates.append(group_var)
+                    subject_candidate_map[group_var.name] = group_var
+            subject_candidates = list(subject_candidate_map.values())
             if subject_candidates:
                 if require_all_subjects:
                     indicator_required = registry.new_literal(
@@ -789,12 +823,16 @@ def build_model(
                         1,
                         big_m=len(subject_candidates) or 1,
                     )
-                total_vars.extend(subject_candidates)
+                for candidate in subject_candidates:
+                    total_var_map[candidate.name] = candidate
         for (_, group_var) in member_to_group_vars.get(sid, []):
-            if group_var not in total_vars:
-                total_vars.append(group_var)
+            total_var_map[group_var.name] = group_var
+        total_vars = list(total_var_map.values())
         if total_vars:
+            lesson_options = len(total_vars)
             min_lesson, max_lesson = student_limits.get(sid, (min_lessons, max_lessons))
+            min_lesson_value = float(min_lesson) if min_lesson is not None else 0.0
+            big_m_min = max(float(lesson_options), min_lesson_value, 1.0)
             indicator_min = registry.new_literal(
                 "student_limits",
                 label=f"student_min_s{sid}",
@@ -803,7 +841,7 @@ def build_model(
                     "student_name": _get_optional(student_lookup.get(sid), "name"),
                     "min_lessons": min_lesson,
                     "max_lessons": max_lesson,
-                    "lesson_options": len(total_vars),
+                    "lesson_options": lesson_options,
                 },
             )
             _apply_assumption_constraint(
@@ -811,8 +849,8 @@ def build_model(
                 indicator_min,
                 pulp.lpSum(total_vars),
                 ">=",
-                float(min_lesson),
-                big_m=len(total_vars) or 1,
+                min_lesson_value,
+                big_m=big_m_min,
             )
             if max_lesson is not None:
                 indicator_max = registry.new_literal(
@@ -823,7 +861,7 @@ def build_model(
                         "student_name": _get_optional(student_lookup.get(sid), "name"),
                         "min_lessons": min_lesson,
                         "max_lessons": max_lesson,
-                        "lesson_options": len(total_vars),
+                        "lesson_options": lesson_options,
                     },
                 )
                 _apply_assumption_constraint(
@@ -832,7 +870,7 @@ def build_model(
                     pulp.lpSum(total_vars),
                     "<=",
                     float(max_lesson),
-                    big_m=len(total_vars) or 1,
+                    big_m=float(lesson_options) or 1,
                 )
 
     objective_terms = [var * var_weights[var] for var in vars_.values()]
@@ -893,13 +931,23 @@ def solve(
             if _indicator_value(record.indicator) < 0.5
         ]
         if status == SolverStatus.INFEASIBLE or zero_indices:
-            core_infos = _extract_unsat_core(
+            core_infos, timed_out = _extract_unsat_core(
                 model,
                 assumption_registry,
                 zero_indices,
                 time_limit,
             )
             if core_infos:
+                status = SolverStatus.INFEASIBLE
+                status_str = "Infeasible"
+            elif zero_indices and (timed_out or not core_infos):
+                fallback_infos: List[AssumptionInfo] = []
+                for idx in zero_indices:
+                    info = assumption_registry.info_for_index(idx)
+                    if info is not None:
+                        fallback_infos.append(info)
+                if fallback_infos:
+                    core_infos = fallback_infos
                 status = SolverStatus.INFEASIBLE
                 status_str = "Infeasible"
 
