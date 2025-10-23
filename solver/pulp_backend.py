@@ -2,36 +2,34 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 import json
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+import time
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Set, Tuple
 
 import pulp
 
-from .api import Assignment, SolverResult, SolverStatus
+from .api import AssumptionInfo, Assignment, SolverResult, SolverStatus
+
+
+ASSUMPTION_BONUS_BASE = 1000.0
 
 
 @dataclass
-class AssumptionInfo:
-    """Placeholder record describing a logical assumption.
+class _AssumptionRecord:
+    """Internal representation of an assumption indicator and its metadata."""
 
-    The PuLP/HiGHS combination does not expose unsatisfied assumption cores the
-    way OR-Tools CP-SAT does.  The registry therefore stores metadata so the
-    interface remains compatible even though infeasibility diagnoses are not
-    available.
-    """
-
-    kind: str
-    label: str
-    context: Dict[str, Any]
+    info: AssumptionInfo
+    indicator: pulp.LpVariable
 
 
 class AssumptionRegistry:
-    """Collect assumption metadata for parity with the OR-Tools backend."""
+    """Collect assumption indicators and metadata for diagnostics."""
 
-    def __init__(self, _model: Any, enabled: bool = True):
+    def __init__(self, _model: pulp.LpProblem, enabled: bool = True):
         self.enabled = enabled
-        self._infos: List[AssumptionInfo] = []
+        self._records: List[_AssumptionRecord] = []
 
     def new_literal(
         self,
@@ -39,46 +37,219 @@ class AssumptionRegistry:
         label: Optional[str] = None,
         context: Optional[Dict[str, Any]] = None,
         name: Optional[str] = None,
-    ) -> Optional[AssumptionInfo]:
+    ) -> Optional[pulp.LpVariable]:
         if not self.enabled:
             return None
+        idx = len(self._records)
+        var_name = name or f"assumption_{kind}_{idx}"
+        indicator = pulp.LpVariable(
+            var_name,
+            lowBound=0,
+            upBound=1,
+            cat=pulp.LpBinary,
+        )
         info = AssumptionInfo(
             kind=kind,
-            label=label or name or kind,
+            label=label or var_name,
             context=context or {},
         )
-        self._infos.append(info)
-        return info
+        self._records.append(_AssumptionRecord(info=info, indicator=indicator))
+        return indicator
 
     def register_literal(
         self,
-        literal: AssumptionInfo,
+        literal: pulp.LpVariable,
         kind: str,
         label: Optional[str] = None,
         context: Optional[Dict[str, Any]] = None,
-    ) -> Optional[AssumptionInfo]:
+    ) -> Optional[pulp.LpVariable]:
         if not self.enabled:
             return None
         info = AssumptionInfo(
             kind=kind,
-            label=label or getattr(literal, "label", kind),
-            context=context or getattr(literal, "context", {}),
+            label=label or literal.name,
+            context=context or {},
         )
-        self._infos.append(info)
-        return info
+        self._records.append(_AssumptionRecord(info=info, indicator=literal))
+        return literal
 
     def info_for_index(self, index: int) -> Optional[AssumptionInfo]:
         if not self.enabled:
             return None
-        if 0 <= index < len(self._infos):
-            return self._infos[index]
+        if 0 <= index < len(self._records):
+            return self._records[index].info
         return None
 
+    def indicator_for_index(self, index: int) -> pulp.LpVariable:
+        return self._records[index].indicator
+
+    def indicator_vars(self) -> List[pulp.LpVariable]:
+        return [record.indicator for record in self._records]
+
+    def records(self) -> List[_AssumptionRecord]:
+        return list(self._records)
+
     def __len__(self) -> int:
-        return len(self._infos)
+        return len(self._records)
 
     def all_infos(self) -> List[AssumptionInfo]:
-        return list(self._infos)
+        return [record.info for record in self._records]
+
+
+def _indicator_value(var: pulp.LpVariable) -> float:
+    value = pulp.value(var)
+    if value is None:
+        return 0.0
+    return float(value)
+
+
+def _apply_assumption_constraint(
+    problem: pulp.LpProblem,
+    indicator: Optional[pulp.LpVariable],
+    lhs: pulp.LpAffineExpression,
+    sense: str,
+    rhs: float,
+    big_m: float,
+) -> None:
+    """Add ``lhs sense rhs`` to ``problem`` optionally guarded by ``indicator``."""
+
+    if indicator is None:
+        if sense == "==":
+            problem += lhs == rhs
+        elif sense == "<=":
+            problem += lhs <= rhs
+        elif sense == ">=":
+            problem += lhs >= rhs
+        else:  # pragma: no cover - defensive programming
+            raise ValueError(f"Unknown constraint sense '{sense}'")
+        return
+
+    slack = 1 - indicator
+    big_m = max(float(big_m), 0.0)
+    if sense == "==":
+        problem += lhs - rhs <= big_m * slack
+        problem += rhs - lhs <= big_m * slack
+    elif sense == "<=":
+        problem += lhs <= rhs + big_m * slack
+    elif sense == ">=":
+        problem += lhs >= rhs - big_m * slack
+    else:  # pragma: no cover - defensive programming
+        raise ValueError(f"Unknown constraint sense '{sense}'")
+
+
+def _make_solver(time_limit: Optional[float]) -> pulp.apis.core.LpSolver:
+    solver_cmd = pulp.apis.HiGHS_CMD(msg=False, timeLimit=time_limit)
+    if solver_cmd.available():
+        return solver_cmd
+    solver = pulp.apis.HiGHS(msg=False, timeLimit=time_limit)
+    if not solver.available():
+        raise RuntimeError("HiGHS solver is not available")
+    return solver
+
+
+@contextmanager
+def _force_indicator_bounds(
+    registry: AssumptionRegistry,
+    indices: Sequence[int],
+    value: float = 1.0,
+) -> Iterator[None]:
+    originals: List[Tuple[pulp.LpVariable, float, float]] = []
+    for idx in indices:
+        var = registry.indicator_for_index(idx)
+        originals.append((var, var.lowBound, var.upBound))
+        var.lowBound = value
+        var.upBound = value
+    try:
+        yield
+    finally:
+        for var, low, up in originals:
+            var.lowBound = low
+            var.upBound = up
+
+
+def _solve_with_forced(
+    model: pulp.LpProblem,
+    registry: AssumptionRegistry,
+    forced: Sequence[int],
+    time_limit: Optional[float],
+) -> Tuple[str, Set[int]]:
+    if time_limit is not None and time_limit <= 0:
+        return "Not Solved", set()
+    solver = _make_solver(time_limit)
+    with _force_indicator_bounds(registry, forced, 1.0):
+        model.solve(solver)
+    status_str = pulp.LpStatus.get(model.status, "Undefined")
+    zeros: Set[int] = set()
+    for idx, record in enumerate(registry.records()):
+        if _indicator_value(record.indicator) < 0.5:
+            zeros.add(idx)
+    return status_str, zeros
+
+
+def _extract_unsat_core(
+    model: pulp.LpProblem,
+    registry: AssumptionRegistry,
+    initial_zeros: Sequence[int],
+    time_limit: Optional[float],
+) -> Tuple[List[AssumptionInfo], bool]:
+    deadline: Optional[float] = None
+    if time_limit is not None:
+        deadline = time.perf_counter() + max(time_limit, 0.0)
+
+    def remaining_time() -> Optional[float]:
+        if deadline is None:
+            return None
+        remaining = deadline - time.perf_counter()
+        if remaining <= 0:
+            return 0.0
+        return remaining
+
+    def solve_with_budget(forced_indices: Sequence[int]) -> Optional[Tuple[str, Set[int]]]:
+        remaining = remaining_time()
+        if remaining is not None and remaining <= 0:
+            return None
+        return _solve_with_forced(model, registry, forced_indices, remaining)
+
+    forced: Set[int] = set(initial_zeros)
+    if not forced:
+        result = solve_with_budget([])
+        if result is None:
+            return [], True
+        status_str, zeros = result
+        if status_str in ("Infeasible", "Unbounded"):
+            return registry.all_infos(), False
+        forced.update(zeros)
+
+    progress_made = True
+    while forced and progress_made:
+        result = solve_with_budget(sorted(forced))
+        if result is None:
+            return [], True
+        status_str, zeros = result
+        if status_str in ("Infeasible", "Unbounded"):
+            break
+        new_zeros = zeros - forced
+        progress_made = bool(new_zeros)
+        forced.update(new_zeros)
+
+    if not forced:
+        return [], False
+
+    core: Set[int] = set(sorted(forced))
+    for idx in list(core):
+        trial = sorted(core - {idx})
+        result = solve_with_budget(trial)
+        if result is None:
+            return [], True
+        status_str, _ = result
+        if status_str not in ("Optimal", "Feasible", "Integer Feasible"):
+            # Remaining assumptions already conflict without this one.
+            core.discard(idx)
+
+    return (
+        [registry.info_for_index(i) for i in sorted(core) if registry.info_for_index(i) is not None],
+        False,
+    )
 
 
 def _get_optional(record: Optional[Dict[str, Any]], key: str) -> Any:
@@ -208,7 +379,7 @@ def build_model(
                         weight *= group_weight
                     var_weights[var] = weight
                     if key in fixed_set:
-                        registry.new_literal(
+                        indicator = registry.new_literal(
                             "fixed_assignment",
                             label=f"fixed_s{sid}_t{tid}_sub{subject}_sl{slot}",
                             context={
@@ -222,7 +393,14 @@ def build_model(
                                 "slot_label": slot_labels.get(slot),
                             },
                         )
-                        problem += var == 1
+                        _apply_assumption_constraint(
+                            problem,
+                            indicator,
+                            var,
+                            "==",
+                            1,
+                            big_m=1,
+                        )
                     elif is_unavailable or is_blocked:
                         if add_assumptions:
                             reasons: List[str] = []
@@ -230,7 +408,7 @@ def build_model(
                                 reasons.append("teacher_unavailable")
                             if is_blocked:
                                 reasons.append("teacher_blocked")
-                            registry.new_literal(
+                            indicator = registry.new_literal(
                                 "teacher_availability",
                                 label=f"block_s{sid}_t{tid}_sl{slot}",
                                 context={
@@ -245,7 +423,16 @@ def build_model(
                                     "reasons": reasons,
                                 },
                             )
-                        problem += var == 0
+                            _apply_assumption_constraint(
+                                problem,
+                                indicator,
+                                var,
+                                "==",
+                                0,
+                                big_m=1,
+                            )
+                        else:
+                            problem += var == 0
 
     if locations:
         for (sid, tid, subject, slot), lesson_var in list(vars_.items()):
@@ -265,7 +452,7 @@ def build_model(
                 if loc_vars_for_key:
                     problem += pulp.lpSum(loc_vars_for_key) == lesson_var
             else:
-                registry.new_literal(
+                indicator = registry.new_literal(
                     "location_restriction",
                     label=f"no_location_s{sid}_t{tid}_sub{subject}_sl{slot}",
                     context={
@@ -280,7 +467,14 @@ def build_model(
                         "allowed_locations": [],
                     },
                 )
-                problem += lesson_var == 0
+                _apply_assumption_constraint(
+                    problem,
+                    indicator,
+                    lesson_var,
+                    "==",
+                    0,
+                    big_m=1,
+                )
 
         for loc in locations:
             for slot in range(slots):
@@ -311,7 +505,7 @@ def build_model(
                 if t_id == tid and sl == slot
             ]
             if candidates:
-                registry.new_literal(
+                indicator = registry.new_literal(
                     "teacher_availability",
                     label=f"teacher_slot_t{tid}_sl{slot}",
                     context={
@@ -322,7 +516,14 @@ def build_model(
                         "candidate_lessons": len(candidates),
                     },
                 )
-                problem += pulp.lpSum(candidates) <= 1
+                _apply_assumption_constraint(
+                    problem,
+                    indicator,
+                    pulp.lpSum(candidates),
+                    "<=",
+                    1,
+                    big_m=len(candidates) or 1,
+                )
 
     for student in students:
         sid = student["id"]
@@ -341,7 +542,7 @@ def build_model(
             if not candidates:
                 continue
             if slot in blocked_slots:
-                registry.new_literal(
+                indicator = registry.new_literal(
                     "student_limits",
                     label=f"student_block_s{sid}_sl{slot}",
                     context={
@@ -352,9 +553,16 @@ def build_model(
                         "reason": "student_unavailable",
                     },
                 )
-                problem += pulp.lpSum(candidates) == 0
+                _apply_assumption_constraint(
+                    problem,
+                    indicator,
+                    pulp.lpSum(candidates),
+                    "==",
+                    0,
+                    big_m=len(candidates) or 1,
+                )
             else:
-                registry.new_literal(
+                indicator = registry.new_literal(
                     "student_limits",
                     label=f"student_slot_s{sid}_sl{slot}",
                     context={
@@ -364,7 +572,14 @@ def build_model(
                         "candidate_lessons": len(candidates),
                     },
                 )
-                problem += pulp.lpSum(candidates) <= 1
+                _apply_assumption_constraint(
+                    problem,
+                    indicator,
+                    pulp.lpSum(candidates),
+                    "<=",
+                    1,
+                    big_m=len(candidates) or 1,
+                )
 
     triple_map: Dict[Tuple[Any, Any, Any], Dict[int, pulp.LpVariable]] = {}
     for (sid, tid, subject, slot), var in vars_.items():
@@ -384,7 +599,7 @@ def build_model(
         vars_for_combo = list(slot_map.values())
         student_info = student_lookup.get(sid)
         teacher_info = teacher_lookup.get(tid)
-        registry.new_literal(
+        indicator_total = registry.new_literal(
             "repeat_restrictions",
             label=f"repeat_total_s{sid}_t{tid}_sub{subject}",
             context={
@@ -397,11 +612,18 @@ def build_model(
                 "repeat_limit": repeat_limit,
             },
         )
-        problem += pulp.lpSum(vars_for_combo) <= repeat_limit
+        _apply_assumption_constraint(
+            problem,
+            indicator_total,
+            pulp.lpSum(vars_for_combo),
+            "<=",
+            repeat_limit,
+            big_m=len(vars_for_combo) or 1,
+        )
         if not allow_consecutive_s and repeat_limit > 1:
             for slot in range(slots - 1):
                 if slot in slot_map and slot + 1 in slot_map:
-                    registry.new_literal(
+                    indicator_gap = registry.new_literal(
                         "repeat_restrictions",
                         label=f"repeat_gap_s{sid}_t{tid}_sub{subject}_sl{slot}",
                         context={
@@ -415,7 +637,14 @@ def build_model(
                             "reason": "no_consecutive_repeats",
                         },
                     )
-                    problem += slot_map[slot] + slot_map[slot + 1] <= 1
+                    _apply_assumption_constraint(
+                        problem,
+                        indicator_gap,
+                        slot_map[slot] + slot_map[slot + 1],
+                        "<=",
+                        1,
+                        big_m=2,
+                    )
         if prefer_consecutive_s and allow_consecutive_s and repeat_limit > 1:
             for slot in range(slots - 1):
                 if slot in slot_map and slot + 1 in slot_map:
@@ -454,7 +683,7 @@ def build_model(
                     problem += v <= y
                 problem += y <= pulp.lpSum(vars_list)
                 y_vars.append(y)
-            registry.new_literal(
+            indicator_multi = registry.new_literal(
                 "repeat_restrictions",
                 label=f"multi_teacher_s{sid}_sub{subject}",
                 context={
@@ -465,7 +694,14 @@ def build_model(
                     "teacher_ids": list(by_teacher.keys()),
                 },
             )
-            problem += pulp.lpSum(y_vars) <= 1
+            _apply_assumption_constraint(
+                problem,
+                indicator_multi,
+                pulp.lpSum(y_vars),
+                "<=",
+                1,
+                big_m=len(y_vars) or 1,
+            )
 
     teacher_load_vars: List[pulp.LpVariable] = []
     for teacher in teachers:
@@ -484,11 +720,11 @@ def build_model(
         else:
             problem += load == 0
         teacher_load_vars.append(load)
-        min_required = teacher.get("min_lessons")
-        max_allowed = teacher.get("max_lessons")
+        min_required = _get_optional(teacher, "min_lessons")
+        max_allowed = _get_optional(teacher, "max_lessons")
         min_required = teacher_min_lessons if min_required is None else min_required
         max_allowed = teacher_max_lessons if max_allowed is None else max_allowed
-        registry.new_literal(
+        indicator_min = registry.new_literal(
             "teacher_limits",
             label=f"teacher_min_t{tid}",
             context={
@@ -497,9 +733,16 @@ def build_model(
                 "min_lessons": min_required,
             },
         )
-        problem += load >= min_required
+        _apply_assumption_constraint(
+            problem,
+            indicator_min,
+            load,
+            ">=",
+            float(min_required),
+            big_m=max(slots, int(min_required) if min_required is not None else 0),
+        )
         if max_allowed is not None:
-            registry.new_literal(
+            indicator_max = registry.new_literal(
                 "teacher_limits",
                 label=f"teacher_max_t{tid}",
                 context={
@@ -508,7 +751,14 @@ def build_model(
                     "max_lessons": max_allowed,
                 },
             )
-            problem += load <= max_allowed
+            _apply_assumption_constraint(
+                problem,
+                indicator_max,
+                load,
+                "<=",
+                float(max_allowed),
+                big_m=max(slots, int(max_allowed)),
+            )
 
     load_diff: Optional[pulp.LpVariable] = None
     if balance_teacher_load and teacher_load_vars:
@@ -539,20 +789,21 @@ def build_model(
         sid = student["id"]
         if sid in group_ids:
             continue
-        total_vars: List[pulp.LpVariable] = []
+        total_var_map: Dict[str, pulp.LpVariable] = {}
         subjects = json.loads(student["subjects"])
         for subject in subjects:
-            subject_candidates = [
-                var
+            subject_candidate_map: Dict[str, pulp.LpVariable] = {
+                var.name: var
                 for (s_id, t_id, subj, slot), var in vars_.items()
                 if s_id == sid and subj == subject
-            ]
+            }
             for (group_key, group_var) in member_to_group_vars.get(sid, []):
                 if group_key[2] == subject:
-                    subject_candidates.append(group_var)
+                    subject_candidate_map[group_var.name] = group_var
+            subject_candidates = list(subject_candidate_map.values())
             if subject_candidates:
                 if require_all_subjects:
-                    registry.new_literal(
+                    indicator_required = registry.new_literal(
                         "student_limits",
                         label=f"student_subject_s{sid}_sub{subject}",
                         context={
@@ -564,14 +815,25 @@ def build_model(
                             "candidate_lessons": len(subject_candidates),
                         },
                     )
-                    problem += pulp.lpSum(subject_candidates) >= 1
-                total_vars.extend(subject_candidates)
+                    _apply_assumption_constraint(
+                        problem,
+                        indicator_required,
+                        pulp.lpSum(subject_candidates),
+                        ">=",
+                        1,
+                        big_m=len(subject_candidates) or 1,
+                    )
+                for candidate in subject_candidates:
+                    total_var_map[candidate.name] = candidate
         for (_, group_var) in member_to_group_vars.get(sid, []):
-            if group_var not in total_vars:
-                total_vars.append(group_var)
+            total_var_map[group_var.name] = group_var
+        total_vars = list(total_var_map.values())
         if total_vars:
+            lesson_options = len(total_vars)
             min_lesson, max_lesson = student_limits.get(sid, (min_lessons, max_lessons))
-            registry.new_literal(
+            min_lesson_value = float(min_lesson) if min_lesson is not None else 0.0
+            big_m_min = max(float(lesson_options), min_lesson_value, 1.0)
+            indicator_min = registry.new_literal(
                 "student_limits",
                 label=f"student_min_s{sid}",
                 context={
@@ -579,12 +841,19 @@ def build_model(
                     "student_name": _get_optional(student_lookup.get(sid), "name"),
                     "min_lessons": min_lesson,
                     "max_lessons": max_lesson,
-                    "lesson_options": len(total_vars),
+                    "lesson_options": lesson_options,
                 },
             )
-            problem += pulp.lpSum(total_vars) >= min_lesson
+            _apply_assumption_constraint(
+                problem,
+                indicator_min,
+                pulp.lpSum(total_vars),
+                ">=",
+                min_lesson_value,
+                big_m=big_m_min,
+            )
             if max_lesson is not None:
-                registry.new_literal(
+                indicator_max = registry.new_literal(
                     "student_limits",
                     label=f"student_max_s{sid}",
                     context={
@@ -592,16 +861,32 @@ def build_model(
                         "student_name": _get_optional(student_lookup.get(sid), "name"),
                         "min_lessons": min_lesson,
                         "max_lessons": max_lesson,
-                        "lesson_options": len(total_vars),
+                        "lesson_options": lesson_options,
                     },
                 )
-                problem += pulp.lpSum(total_vars) <= max_lesson
+                _apply_assumption_constraint(
+                    problem,
+                    indicator_max,
+                    pulp.lpSum(total_vars),
+                    "<=",
+                    float(max_lesson),
+                    big_m=float(lesson_options) or 1,
+                )
 
     objective_terms = [var * var_weights[var] for var in vars_.values()]
     if adjacency_vars:
         objective_terms.append(pulp.lpSum(adjacency_vars) * float(consecutive_weight))
     if balance_teacher_load and load_diff is not None:
         objective_terms.append(-float(balance_weight) * load_diff)
+    assumption_bonus_vars = registry.indicator_vars() if registry.enabled else []
+    if assumption_bonus_vars:
+        base_weight = sum(abs(weight) for weight in var_weights.values())
+        if adjacency_vars:
+            base_weight += abs(float(consecutive_weight)) * len(adjacency_vars)
+        if balance_teacher_load and load_diff is not None:
+            base_weight += abs(float(balance_weight)) * slots
+        bonus_weight = max(ASSUMPTION_BONUS_BASE, base_weight + 1.0)
+        objective_terms.append(bonus_weight * pulp.lpSum(assumption_bonus_vars))
     if objective_terms:
         problem += pulp.lpSum(objective_terms)
     else:
@@ -632,21 +917,43 @@ def solve(
 ) -> SolverResult:
     """Solve the PuLP model using HiGHS and return a :class:`SolverResult`."""
 
-    solver_cmd = pulp.apis.HiGHS_CMD(msg=False, timeLimit=time_limit)
-    solver: pulp.apis.core.LpSolver
-    if solver_cmd.available():
-        solver = solver_cmd
-    else:
-        solver = pulp.apis.HiGHS(msg=False, timeLimit=time_limit)
-        if not solver.available():
-            raise RuntimeError("HiGHS solver is not available")
-
+    solver = _make_solver(time_limit)
     model.solve(solver)
     status_str = pulp.LpStatus.get(model.status, "Undefined")
     status = _STATUS_MAP.get(status_str, SolverStatus.UNKNOWN)
 
+    core_infos: List[AssumptionInfo] = []
+    if assumption_registry and getattr(assumption_registry, "enabled", False):
+        records = assumption_registry.records()
+        zero_indices = [
+            idx
+            for idx, record in enumerate(records)
+            if _indicator_value(record.indicator) < 0.5
+        ]
+        if status == SolverStatus.INFEASIBLE or zero_indices:
+            core_infos, timed_out = _extract_unsat_core(
+                model,
+                assumption_registry,
+                zero_indices,
+                time_limit,
+            )
+            if core_infos:
+                status = SolverStatus.INFEASIBLE
+                status_str = "Infeasible"
+            elif zero_indices and (timed_out or not core_infos):
+                fallback_infos: List[AssumptionInfo] = []
+                for idx in zero_indices:
+                    info = assumption_registry.info_for_index(idx)
+                    if info is not None:
+                        fallback_infos.append(info)
+                if fallback_infos:
+                    core_infos = fallback_infos
+                status = SolverStatus.INFEASIBLE
+                status_str = "Infeasible"
+
     assignments: List[Assignment] = []
-    if status in (SolverStatus.OPTIMAL, SolverStatus.FEASIBLE):
+    progress: List[str] = []
+    if status in (SolverStatus.OPTIMAL, SolverStatus.FEASIBLE) and not core_infos:
         for (sid, tid, subject, slot), var in vars_.items():
             value = pulp.value(var)
             if value is not None and value > 0.5:
@@ -658,10 +965,9 @@ def solve(
                             location_id = loc
                             break
                 assignments.append(Assignment(sid, tid, subject, slot, location_id))
-
-    progress: List[str] = []
-    if status in (SolverStatus.OPTIMAL, SolverStatus.FEASIBLE):
         objective_value = pulp.value(model.objective)
+        if objective_value is None:
+            objective_value = 0.0
         message = f"HiGHS solution: status={status_str}, objective={objective_value:.2f}"
         progress.append(message)
         if progress_callback is not None:
@@ -670,7 +976,7 @@ def solve(
     result = SolverResult(
         status=status,
         assignments=assignments,
-        core=[],
+        core=core_infos,
         progress=progress,
         raw_status=status_str,
     )

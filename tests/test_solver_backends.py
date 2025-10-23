@@ -4,21 +4,30 @@ from __future__ import annotations
 
 import pytest
 
-from solver import api, ortools_backend, pulp_backend
+from solver import api
 
 
-def test_default_backend_is_ortools():
-    """The default backend should resolve to the OR-Tools implementation."""
+def _get_backend(identifier: str):
+    try:
+        return api.get_backend(identifier)
+    except ModuleNotFoundError as exc:  # pragma: no cover - optional dependency missing
+        pytest.skip(f"Backend '{identifier}' is unavailable: {exc}")
+    except ImportError as exc:  # pragma: no cover - propagate optional dependency issues
+        pytest.skip(f"Backend '{identifier}' could not be imported: {exc}")
+
+
+def test_default_backend_is_pulp():
+    """The default backend should resolve to the PuLP implementation."""
 
     backend = api.get_backend()
-    assert backend is ortools_backend
+    assert backend.__name__ == "solver.pulp_backend"
 
 
 def test_pulp_backend_can_be_resolved():
-    """The experimental PuLP backend should be registered and importable."""
+    """The PuLP backend should be registered and importable."""
 
-    backend = api.get_backend("pulp")
-    assert backend is pulp_backend
+    backend = _get_backend("pulp")
+    assert backend.__name__ == "solver.pulp_backend"
 
 
 def test_unknown_backend_raises_clear_error():
@@ -46,7 +55,8 @@ def test_solve_model_uses_requested_backend(monkeypatch):
         assert "progress_callback" in kwargs
         return sentinel
 
-    monkeypatch.setattr(pulp_backend, "solve", fake_solve)
+    backend_module = _get_backend("pulp")
+    monkeypatch.setattr(backend_module, "solve", fake_solve)
 
     result = api.solve_model("model", {}, {}, backend="pulp")
     assert result is sentinel
@@ -56,5 +66,5 @@ def test_available_backends_includes_registered_values():
     """The helper exposing available backends should list known identifiers."""
 
     choices = api.available_backends()
-    assert "ortools" in choices
     assert "pulp" in choices
+    assert "ortools" in choices

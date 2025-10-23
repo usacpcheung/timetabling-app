@@ -1,11 +1,12 @@
 # Core web framework used by the app (templates, routes, dev server)
 Flask>=2.2,<3.1
 
-# OR-Tools CP-SAT solver used for timetabling model (use latest)
-ortools
-# PuLP modeling interface and HiGHS MILP solver backend (experimental alternative)
+# PuLP modeling interface and HiGHS MILP solver backend (default solver stack)
 pulp
 highspy
+
+# Optional Google OR-Tools CP-SAT backend (install if you need CP-SAT features)
+ortools
 
 # Test runner used by the test suite in `tests/`
 pytest>=7.0,<9.0
