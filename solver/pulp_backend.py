@@ -756,17 +756,18 @@ def build_model(
         sid = student["id"]
         if sid in group_ids:
             continue
-        total_vars: List[pulp.LpVariable] = []
+        total_var_map: Dict[str, pulp.LpVariable] = {}
         subjects = json.loads(student["subjects"])
         for subject in subjects:
-            subject_candidates = [
-                var
+            subject_candidate_map: Dict[str, pulp.LpVariable] = {
+                var.name: var
                 for (s_id, t_id, subj, slot), var in vars_.items()
                 if s_id == sid and subj == subject
-            ]
+            }
             for (group_key, group_var) in member_to_group_vars.get(sid, []):
                 if group_key[2] == subject:
-                    subject_candidates.append(group_var)
+                    subject_candidate_map[group_var.name] = group_var
+            subject_candidates = list(subject_candidate_map.values())
             if subject_candidates:
                 if require_all_subjects:
                     indicator_required = registry.new_literal(
@@ -789,10 +790,11 @@ def build_model(
                         1,
                         big_m=len(subject_candidates) or 1,
                     )
-                total_vars.extend(subject_candidates)
+                for candidate in subject_candidates:
+                    total_var_map[candidate.name] = candidate
         for (_, group_var) in member_to_group_vars.get(sid, []):
-            if group_var not in total_vars:
-                total_vars.append(group_var)
+            total_var_map[group_var.name] = group_var
+        total_vars = list(total_var_map.values())
         if total_vars:
             min_lesson, max_lesson = student_limits.get(sid, (min_lessons, max_lessons))
             indicator_min = registry.new_literal(
