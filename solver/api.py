@@ -11,10 +11,8 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - imported for type checking only
-    from .ortools_backend import AssumptionInfo as _OrToolsAssumptionInfo
     from .ortools_backend import AssumptionRegistry as _OrToolsAssumptionRegistry
 else:
-    _OrToolsAssumptionInfo = None  # type: ignore
     _OrToolsAssumptionRegistry = None  # type: ignore
 
 
@@ -63,6 +61,22 @@ class SolverResult:
             self.core,
             self.progress,
         )
+
+
+@dataclass
+class AssumptionInfo:
+    """Backend-agnostic description of an assumption group.
+
+    The solver backends populate these records to surface the logical groups of
+    constraints that participated in an infeasibility.  The ``kind`` field
+    provides a stable identifier used by :mod:`app.py` to summarize conflicts,
+    while ``label`` and ``context`` contain human-readable metadata tailored to
+    the specific constraint.
+    """
+
+    kind: str
+    label: str
+    context: Dict[str, Any]
 
 
 _BACKEND_REGISTRY: Dict[str, str] = {}
@@ -313,11 +327,6 @@ register_backend("ortools", "solver.ortools_backend")
 register_backend("pulp", "solver.pulp_backend")
 
 _default_backend_module = get_backend()
-AssumptionInfo = getattr(
-    _default_backend_module,
-    "AssumptionInfo",
-    _OrToolsAssumptionInfo,
-)  # type: ignore[assignment]
 AssumptionRegistry = getattr(
     _default_backend_module,
     "AssumptionRegistry",
