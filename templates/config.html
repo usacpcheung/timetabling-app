@@ -274,6 +274,13 @@
             <label class="block">Solver time limit (seconds):
                 <input type="number" name="solver_time_limit" value="{{ config['solver_time_limit']|default(120, true) }}" min="1" class="border border-emerald-300 rounded-lg p-2.5 w-full">
             </label>
+            <label class="block">Solver backend:
+                <select name="solver_backend" class="border border-emerald-300 rounded-lg p-2.5 w-full">
+                    {% for backend in solver_backends %}
+                    <option value="{{ backend }}" {% if backend == config['solver_backend'] %}selected{% endif %}>{{ backend }}</option>
+                    {% endfor %}
+                </select>
+            </label>
         </fieldset>
     </div>
     <!-- Subjects -->
