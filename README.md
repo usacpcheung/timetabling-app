@@ -75,7 +75,7 @@ tools/                          # Maintenance scripts for snapshots, presets and
 
 ### Python environment
 
-1. Ensure Python 3.10+ is installed.
+1. Ensure Python 3.9–3.13 is installed.
 2. Create and activate a virtual environment:
 
    ```bash
