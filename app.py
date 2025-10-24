@@ -4246,9 +4246,19 @@ def attendance():
         JOIN students s ON al.student_id = s.id
         LEFT JOIN subjects sub ON al.subject_id = sub.id
         LEFT JOIN subjects_archive suba ON al.subject_id = suba.id
-        WHERE s.active=1
+        WHERE s.active = 1
     ''')
     active_rows = c.fetchall()
+    c.execute('''
+        SELECT al.student_id AS sid, s.name AS name,
+               COALESCE(sub.name, suba.name) AS subject, al.date
+        FROM attendance_log al
+        JOIN students s ON al.student_id = s.id
+        LEFT JOIN subjects sub ON al.subject_id = sub.id
+        LEFT JOIN subjects_archive suba ON al.subject_id = suba.id
+        WHERE s.active = 0
+    ''')
+    inactive_rows = c.fetchall()
     c.execute('''
         SELECT al.student_id AS sid,
                COALESCE(sa.name, al.student_name) AS name,
@@ -4258,7 +4268,7 @@ def attendance():
         LEFT JOIN subjects_archive suba ON al.subject_id = suba.id
         LEFT JOIN students_archive sa ON al.student_id = sa.id
         LEFT JOIN students s ON al.student_id = s.id
-        WHERE s.id IS NULL OR s.active=0
+        WHERE s.id IS NULL
     ''')
     deleted_rows = c.fetchall()
     conn.close()
@@ -4289,9 +4299,15 @@ def attendance():
         return data
 
     active_data = aggregate(active_rows)
+    inactive_data = aggregate(inactive_rows)
     deleted_data = aggregate(deleted_rows, include_dates=True)
 
-    return render_template('attendance.html', active_attendance=active_data, deleted_attendance=deleted_data)
+    return render_template(
+        'attendance.html',
+        active_attendance=active_data,
+        inactive_attendance=inactive_data,
+        deleted_attendance=deleted_data,
+    )
 
 
 @app.route('/manage_timetables')

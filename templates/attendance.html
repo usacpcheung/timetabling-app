@@ -88,6 +88,62 @@
         </table>
         </div>
 
+        {% if inactive_attendance %}
+        <h2 class="text-lg font-medium mb-2">Inactive Students</h2>
+        <div class="overflow-x-auto mb-6">
+        <table id="inactive-table">
+            <thead>
+                <tr>
+                    <th scope="col" class="px-4 py-2">
+                        <span class="flex items-center">
+                            Student
+                            <svg class="w-4 h-4 ms-1" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+                                <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m8 15 4 4 4-4m0-6-4-4-4 4"/>
+                            </svg>
+                        </span>
+                    </th>
+                    <th scope="col" class="px-4 py-2">
+                        <span class="flex items-center">
+                            Subject
+                            <svg class="w-4 h-4 ms-1" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+                                <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m8 15 4 4 4-4m0-6-4-4-4 4"/>
+                            </svg>
+                        </span>
+                    </th>
+                    <th scope="col" class="px-4 py-2">
+                        <span class="flex items-center">
+                            Lessons
+                            <svg class="w-4 h-4 ms-1" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+                                <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m8 15 4 4 4-4m0-6-4-4-4 4"/>
+                            </svg>
+                        </span>
+                    </th>
+                    <th scope="col" class="px-4 py-2">
+                        <span class="flex items-center">
+                            Percentage
+                            <svg class="w-4 h-4 ms-1" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24">
+                                <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m8 15 4 4 4-4m0-6-4-4-4 4"/>
+                            </svg>
+                        </span>
+                    </th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for sid, info in inactive_attendance.items() %}
+                    {% for subject, stats in info.subjects.items() %}
+                <tr>
+                    <td class="px-4 py-2">{{ info.name }}</td>
+                    <td class="px-4 py-2">{{ subject }}</td>
+                    <td class="px-4 py-2">{{ stats.count }}</td>
+                    <td class="px-4 py-2">{{ '%.2f'|format(stats.percentage) }}%</td>
+                </tr>
+                    {% endfor %}
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+        {% endif %}
+
         <h2 class="text-lg font-medium mb-2">Deleted Students</h2>
         <div class="overflow-x-auto mb-6">
         <table id="deleted-table">
