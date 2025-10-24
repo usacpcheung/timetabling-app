@@ -55,7 +55,8 @@ First run checklist
 Repository tour
 ---------------
 - `app.py` – the heart of the application. It defines database helpers, route handlers, preset tools, scheduling helpers, and backup utilities.
-- `cp_sat_timetable.py` – the Google OR-Tools CP-SAT model builder plus solver diagnostics.
+- `solver/` – backend-neutral solver API (`api.py`) plus the concrete PuLP/HiGHS default backend and the optional Google OR-Tools CP-SAT backend.
+- `cp_sat_timetable.py` – the Google OR-Tools CP-SAT model builder plus solver diagnostics retained for the optional backend.
 - `templates/` – Jinja2 HTML templates rendered by Flask.
 - `static/` – JavaScript helpers and compiled CSS used by the templates.
 - `data/` – writable folder containing `timetable.db` (SQLite database) and generated backups.
@@ -78,8 +79,8 @@ Backend fundamentals
 
 ### Scheduling pipeline
 1. `generate_schedule()` gathers configuration data from many tables (teachers, students, groups, locations, blocks, attendance stats, fixed assignments).
-2. It prepares Python structures expected by OR-Tools, then calls `build_model()` from `cp_sat_timetable.py`.
-3. `solve_and_print()` runs the CP-SAT solver with an optional time limit, collects log messages, and returns chosen assignments plus any conflicting assumptions.
+2. It prepares Python structures expected by the solver facade in `solver.api`, which in turn delegates to the selected backend (PuLP/HiGHS by default, or OR-Tools CP-SAT when explicitly requested).
+3. `solve_and_print()` (now backed by PuLP/HiGHS by default) runs the solver with an optional time limit, collects log messages, and returns chosen assignments plus any conflicting assumptions.
 4. Successful results are saved to the `timetable` table. Attendance tables, worksheet trackers and cached “missing lesson” summaries are updated right after the solver finishes.
 5. `get_timetable_data()` assembles the grid displayed in the UI, supporting both teacher and location views while enriching rows with archive information.
 

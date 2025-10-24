@@ -5,9 +5,9 @@ stored in a local SQLite database which is initialized with some sample values
 on first run.
 The comments throughout this file explain each step in detail so beginning programmers can follow the flow.  Users interact with the app via standard web forms to configure
 teachers, students and various scheduling parameters.  When a timetable is
-requested, the configuration is passed to the CP-SAT model defined in
-``cp_sat_timetable.py`` and the resulting schedule is saved back to the
-database.
+requested, the configuration is passed through the backend-neutral solver API
+(PuLP/HiGHS by default, with an optional OR-Tools CP-SAT backend) and the
+resulting schedule is saved back to the database.
 """
 
 from flask import Flask, render_template, request, redirect, url_for, flash, send_file
@@ -23,7 +23,7 @@ from datetime import datetime
 from collections import OrderedDict
 from werkzeug.utils import secure_filename
 
-from cp_sat_timetable import build_model, solve_and_print, AssumptionInfo
+from solver.api import AssumptionInfo, SolverStatus, solve_schedule
 
 app = Flask(__name__)
 app.secret_key = 'dev'
@@ -37,7 +37,7 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 DB_PATH = os.path.join(DATA_DIR, "timetable.db")
 
-CURRENT_PRESET_VERSION = 2
+CURRENT_PRESET_VERSION = 3
 MAX_PRESETS = 10  # maximum number of configuration presets to keep
 DEFAULT_CONSECUTIVE_WEIGHT = 3
 
@@ -343,7 +343,8 @@ def init_db():
             balance_teacher_load INTEGER,
             balance_weight INTEGER,
             well_attend_weight REAL,
-            solver_time_limit INTEGER DEFAULT 120
+            solver_time_limit INTEGER DEFAULT 120,
+            solver_backend TEXT DEFAULT 'ortools'
         )''')
     else:
         if not column_exists('config', 'slot_start_times'):
@@ -366,6 +367,9 @@ def init_db():
             c.execute('ALTER TABLE config ADD COLUMN well_attend_weight REAL DEFAULT 1')
         if not column_exists('config', 'solver_time_limit'):
             c.execute('ALTER TABLE config ADD COLUMN solver_time_limit INTEGER DEFAULT 120')
+        if not column_exists('config', 'solver_backend'):
+            c.execute("ALTER TABLE config ADD COLUMN solver_backend TEXT DEFAULT 'ortools'")
+            c.execute("UPDATE config SET solver_backend='ortools' WHERE solver_backend IS NULL OR TRIM(solver_backend)=''")
 
     if not table_exists('teachers'):
         c.execute('''CREATE TABLE teachers (
@@ -822,8 +826,8 @@ def init_db():
             prefer_consecutive, allow_consecutive, consecutive_weight,
             require_all_subjects, use_attendance_priority, attendance_weight, group_weight,
             allow_multi_teacher, balance_teacher_load, balance_weight,
-            well_attend_weight, solver_time_limit
-        ) VALUES (1, 8, 30, ?, 1, 4, 1, 8, 0, 2, 0, 1, 3, 1, 0, 10, 2.0, 1, 0, 1, 1, 120)''',
+            well_attend_weight, solver_time_limit, solver_backend
+        ) VALUES (1, 8, 30, ?, 1, 4, 1, 8, 0, 2, 0, 1, 3, 1, 0, 10, 2.0, 1, 0, 1, 1, 120, 'ortools')''',
                   (json.dumps(times),))
         subjects = [
             ('Math', 0),
@@ -881,6 +885,7 @@ def migrate_preset(preset):
     data = preset.get('data', {})
     for row in data.get('config', []):
         row.setdefault('solver_time_limit', 120)
+        row.setdefault('solver_backend', 'ortools')
     return preset
 
 
@@ -1484,6 +1489,14 @@ def config():
     """
     conn = get_db()
     c = conn.cursor()
+    from solver.api import available_backends
+
+    backend_choices = list(dict.fromkeys(available_backends()))
+    backend_row = c.execute('SELECT solver_backend FROM config WHERE id=1').fetchone()
+    current_backend = _get_row_value(backend_row, 'solver_backend', 'ortools')
+    if current_backend and current_backend not in backend_choices:
+        backend_choices.append(current_backend)
+    valid_backends = set(backend_choices)
     if request.method == 'POST':
         has_error = False
         assign_ids_present = set()
@@ -1569,9 +1582,22 @@ def config():
             return redirect(url_for('config'))
         repeat_defaults = c.execute(
             'SELECT max_repeats, prefer_consecutive, allow_consecutive, consecutive_weight, '
-            'attendance_weight, well_attend_weight, group_weight, balance_weight '
+            'attendance_weight, well_attend_weight, group_weight, balance_weight, solver_backend '
             'FROM config WHERE id=1'
         ).fetchone()
+        submitted_backend = (request.form.get('solver_backend') or '').strip()
+        stored_backend = _get_row_value(repeat_defaults, 'solver_backend', current_backend)
+        solver_backend = stored_backend or 'ortools'
+        if submitted_backend:
+            if submitted_backend not in valid_backends:
+                allowed_label = ', '.join(backend_choices) or 'none'
+                flash(
+                    f"Unknown solver backend '{submitted_backend}'. Choose from: {allowed_label}.",
+                    'error',
+                )
+                has_error = True
+            else:
+                solver_backend = submitted_backend
         allow_repeats = 1 if 'allow_repeats' in request.form else 0
         max_repeats_raw = request.form.get('max_repeats')
         max_repeats_posted = max_repeats_raw is not None and max_repeats_raw.strip() != ''
@@ -1732,19 +1758,39 @@ def config():
             if max_repeats < 2:
                 flash('Max repeats must be at least 2', 'error')
                 has_error = True
-        c.execute("""UPDATE config SET slots_per_day=?, slot_duration=?, slot_start_times=?,
+        c.execute(
+            """UPDATE config SET slots_per_day=?, slot_duration=?, slot_start_times=?,
                      min_lessons=?, max_lessons=?, teacher_min_lessons=?, teacher_max_lessons=?,
                      allow_repeats=?, max_repeats=?,
                      prefer_consecutive=?, allow_consecutive=?, consecutive_weight=?,
                      require_all_subjects=?, use_attendance_priority=?, attendance_weight=?,
-                     group_weight=?, well_attend_weight=?, allow_multi_teacher=?, balance_teacher_load=?, balance_weight=?, solver_time_limit=?
+                     group_weight=?, well_attend_weight=?, allow_multi_teacher=?, balance_teacher_load=?, balance_weight=?, solver_time_limit=?, solver_backend=?
                      WHERE id=1""",
-                  (slots_per_day, slot_duration, json.dumps(start_times), min_lessons,
-                   max_lessons, t_min_lessons, t_max_lessons,
-                   allow_repeats, max_repeats, prefer_consecutive,
-                   allow_consecutive, consecutive_weight, require_all_subjects,
-                   use_attendance_priority, attendance_weight, group_weight, well_attend_weight,
-                   allow_multi_teacher, balance_teacher_load, balance_weight, solver_time_limit))
+            (
+                slots_per_day,
+                slot_duration,
+                json.dumps(start_times),
+                min_lessons,
+                max_lessons,
+                t_min_lessons,
+                t_max_lessons,
+                allow_repeats,
+                max_repeats,
+                prefer_consecutive,
+                allow_consecutive,
+                consecutive_weight,
+                require_all_subjects,
+                use_attendance_priority,
+                attendance_weight,
+                group_weight,
+                well_attend_weight,
+                allow_multi_teacher,
+                balance_teacher_load,
+                balance_weight,
+                solver_time_limit,
+                solver_backend,
+            ),
+        )
         # update subjects
         subj_ids = request.form.getlist('subject_id')
         deletes_sub = set(request.form.getlist('subject_delete'))
@@ -2756,9 +2802,15 @@ def config():
 
     # load config
     c.execute('SELECT * FROM config WHERE id=1')
-    cfg = c.fetchone()
+    cfg_row = c.fetchone()
+    if cfg_row is None:
+        cfg = {}
+    else:
+        cfg = dict(cfg_row)
+    cfg.setdefault('solver_backend', current_backend)
+    slot_times_raw = cfg.get('slot_start_times')
     try:
-        slot_times = json.loads(cfg['slot_start_times']) if cfg['slot_start_times'] else []
+        slot_times = json.loads(slot_times_raw) if slot_times_raw else []
     except Exception:
         slot_times = []
     c.execute('SELECT * FROM teachers')
@@ -2854,6 +2906,7 @@ def config():
                            subject_map=subj_map,
                            group_loc_map=group_loc_map,
                            presets=presets,
+                           solver_backends=backend_choices,
                            preset_sections=CONFIG_SECTION_LABELS,
                            preset_section_dependencies=CONFIG_SECTION_DEPENDENCIES,
                            preset_section_notes=CONFIG_SECTION_NOTES)
@@ -3593,6 +3646,7 @@ def generate_schedule(target_date=None):
     teacher_min = cfg['teacher_min_lessons']
     teacher_max = cfg['teacher_max_lessons']
     solver_time_limit = cfg['solver_time_limit']
+    solver_backend = _get_row_value(cfg, 'solver_backend', 'ortools')
 
     c.execute('SELECT * FROM teachers')
     teacher_rows = c.fetchall()
@@ -3794,14 +3848,26 @@ def generate_schedule(target_date=None):
     for gid, locs in group_loc_map.items():
         loc_restrict[offset + gid] = locs
 
-    model, vars_, loc_vars, assumption_registry = build_model(
-        full_students, teachers, slots, min_lessons, max_lessons,
-        allow_repeats=allow_repeats, max_repeats=max_repeats,
-        prefer_consecutive=prefer_consecutive, allow_consecutive=allow_consecutive,
+    def progress_cb(msg):
+        app.logger.info(msg)
+
+    result = solve_schedule(
+        full_students,
+        teachers,
+        slots,
+        min_lessons,
+        max_lessons,
+        allow_repeats=allow_repeats,
+        max_repeats=max_repeats,
+        prefer_consecutive=prefer_consecutive,
+        allow_consecutive=allow_consecutive,
         consecutive_weight=consecutive_weight,
-        unavailable=unavailable, fixed=assignments_fixed,
-        teacher_min_lessons=teacher_min, teacher_max_lessons=teacher_max,
-        add_assumptions=True, group_members=group_map_offset,
+        unavailable=unavailable,
+        fixed=assignments_fixed,
+        teacher_min_lessons=teacher_min,
+        teacher_max_lessons=teacher_max,
+        add_assumptions=True,
+        group_members=group_map_offset,
         require_all_subjects=require_all_subjects,
         subject_weights=subject_weights,
         group_weight=group_weight,
@@ -3816,42 +3882,42 @@ def generate_schedule(target_date=None):
         locations=locations,
         location_restrict=loc_restrict,
         subject_lookup=subject_lookup,
-        slot_labels=slot_label_map)
-
-    progress_messages = []
-
-    def progress_cb(msg):
-        progress_messages.append(msg)
-        app.logger.info(msg)
-
-    status, assignments, core, progress = solve_and_print(
-        model,
-        vars_,
-        loc_vars,
-        assumption_registry,
+        slot_labels=slot_label_map,
         time_limit=solver_time_limit,
         progress_callback=progress_cb,
+        backend=solver_backend,
     )
 
-    from ortools.sat.python import cp_model
-    if status == cp_model.OPTIMAL:
+    if result.status == SolverStatus.OPTIMAL:
         flash('Optimal timetable found.', 'success')
-    elif status == cp_model.FEASIBLE:
+    elif result.status == SolverStatus.FEASIBLE:
         flash('Feasible timetable found before time limit.', 'info')
 
-    for msg in progress:
+    for msg in result.progress:
         flash(msg, 'info')
 
     # Insert solver results into DB
+    assignments = result.assignments
+    core = result.core
     if assignments:
         group_lessons = set()
         filtered = []
-        for sid, tid, subj, slot, loc in assignments:
+        for assignment in assignments:
+            sid = assignment.student_id
+            tid = assignment.teacher_id
+            subj = assignment.subject_id
+            slot = assignment.slot
+            loc = assignment.location_id
             if sid >= offset:
                 gid = sid - offset
                 group_lessons.add((gid, tid, subj, slot, loc))
                 filtered.append((None, gid, tid, subj, slot, loc))
-        for sid, tid, subj, slot, loc in assignments:
+        for assignment in assignments:
+            sid = assignment.student_id
+            tid = assignment.teacher_id
+            subj = assignment.subject_id
+            slot = assignment.slot
+            loc = assignment.location_id
             if sid >= offset:
                 continue
             skip = False
@@ -3879,7 +3945,7 @@ def generate_schedule(target_date=None):
             c.executemany('INSERT INTO attendance_log (student_id, student_name, subject_id, date) VALUES (?, ?, ?, ?)',
                           attendance_rows)
     else:
-        if status == cp_model.INFEASIBLE:
+        if result.status == SolverStatus.INFEASIBLE:
             flash('No feasible timetable could be generated.', 'error')
             for summary in summarize_unsat_core(core):
                 if summary.get('aggregated'):
@@ -4180,9 +4246,19 @@ def attendance():
         JOIN students s ON al.student_id = s.id
         LEFT JOIN subjects sub ON al.subject_id = sub.id
         LEFT JOIN subjects_archive suba ON al.subject_id = suba.id
-        WHERE s.active=1
+        WHERE s.active = 1
     ''')
     active_rows = c.fetchall()
+    c.execute('''
+        SELECT al.student_id AS sid, s.name AS name,
+               COALESCE(sub.name, suba.name) AS subject, al.date
+        FROM attendance_log al
+        JOIN students s ON al.student_id = s.id
+        LEFT JOIN subjects sub ON al.subject_id = sub.id
+        LEFT JOIN subjects_archive suba ON al.subject_id = suba.id
+        WHERE s.active = 0
+    ''')
+    inactive_rows = c.fetchall()
     c.execute('''
         SELECT al.student_id AS sid,
                COALESCE(sa.name, al.student_name) AS name,
@@ -4192,7 +4268,7 @@ def attendance():
         LEFT JOIN subjects_archive suba ON al.subject_id = suba.id
         LEFT JOIN students_archive sa ON al.student_id = sa.id
         LEFT JOIN students s ON al.student_id = s.id
-        WHERE s.id IS NULL OR s.active=0
+        WHERE s.id IS NULL
     ''')
     deleted_rows = c.fetchall()
     conn.close()
@@ -4223,9 +4299,15 @@ def attendance():
         return data
 
     active_data = aggregate(active_rows)
+    inactive_data = aggregate(inactive_rows)
     deleted_data = aggregate(deleted_rows, include_dates=True)
 
-    return render_template('attendance.html', active_attendance=active_data, deleted_attendance=deleted_data)
+    return render_template(
+        'attendance.html',
+        active_attendance=active_data,
+        inactive_attendance=inactive_data,
+        deleted_attendance=deleted_data,
+    )
 
 
 @app.route('/manage_timetables')

@@ -1,8 +1,15 @@
+# Supported Python versions: 3.9 through 3.13 inclusive. Block newer versions explicitly.
+typing-extensions>=999 ; python_version >= "3.14"
+
 # Core web framework used by the app (templates, routes, dev server)
 Flask>=2.2,<3.1
 
-# OR-Tools CP-SAT solver used for timetabling model (use latest)
+# Google OR-Tools CP-SAT solver backend (default solver stack)
 ortools
+
+# Optional PuLP modeling interface and HiGHS MILP solver backend
+pulp
+highspy
 
 # Test runner used by the test suite in `tests/`
 pytest>=7.0,<9.0
