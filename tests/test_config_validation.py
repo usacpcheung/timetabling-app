@@ -58,6 +58,7 @@ def _valid_config_form(row):
         ('well_attend_weight', str(row['well_attend_weight'])),
         ('balance_weight', str(row['balance_weight'])),
         ('solver_time_limit', str(row['solver_time_limit'])),
+        ('solver_backend', row.get('solver_backend', 'pulp')),
     ])
     if row['allow_repeats']:
         data.extend([
@@ -1046,6 +1047,59 @@ def test_student_validation_warns_when_all_teachers_blocked(tmp_path):
 
     updated_config = _config_row(app.DB_PATH)
     assert updated_config['solver_time_limit'] == 135
+
+
+def test_config_updates_solver_backend(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    config_row = _config_row(app.DB_PATH)
+    conn.close()
+
+    data = _valid_config_form(config_row)
+    data.setlist('solver_backend', ['ortools'])
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert (
+        'success',
+        'Configuration saved successfully.',
+    ) in flashes
+
+    updated = _config_row(app.DB_PATH)
+    assert updated['solver_backend'] == 'ortools'
+
+
+def test_config_rejects_unknown_solver_backend(tmp_path):
+    import app
+
+    conn = setup_db(tmp_path)
+    original = _config_row(app.DB_PATH)
+    conn.close()
+
+    data = _valid_config_form(original)
+    data.setlist('solver_backend', ['unknown'])
+
+    with app.app.test_request_context('/config', method='POST', data=data):
+        response = app.config()
+        flashes = get_flashed_messages(with_categories=True)
+
+    assert response.status_code == 302
+    assert any(
+        category == 'error'
+        and "Unknown solver backend 'unknown'." in message
+        and 'pulp' in message
+        and 'ortools' in message
+        for category, message in flashes
+    )
+    assert (
+        'error',
+        'Configuration not saved; changes have been rolled back.',
+    ) in flashes
+    assert _config_row(app.DB_PATH)['solver_backend'] == original['solver_backend']
 
 
 def test_batch_subject_removal_auto_deletes_group(tmp_path):
@@ -2195,6 +2249,34 @@ def test_reject_student_individual_min_greater_than_max(tmp_path):
 
     assert updated['min_lessons'] == student['min_lessons']
     assert updated['max_lessons'] == student['max_lessons']
+
+
+def test_generate_schedule_uses_configured_backend(tmp_path, monkeypatch):
+    import app
+
+    conn = setup_db(tmp_path)
+    conn.execute('UPDATE config SET solver_backend=? WHERE id=1', ('ortools',))
+    conn.commit()
+    conn.close()
+
+    captured = {}
+
+    def fake_solve_schedule(full_students, teachers, *args, **kwargs):
+        captured['backend'] = kwargs.get('backend')
+        return SolverResult(
+            status=SolverStatus.OPTIMAL,
+            assignments=[],
+            core=[],
+            progress=[],
+            raw_status=SolverStatus.OPTIMAL,
+        )
+
+    monkeypatch.setattr(app, 'solve_schedule', fake_solve_schedule)
+
+    with app.app.test_request_context('/generate'):
+        app.generate_schedule(target_date='2024-01-03')
+
+    assert captured['backend'] == 'ortools'
 
 
 def test_teacher_without_lessons_flag_is_optional(tmp_path, monkeypatch):

@@ -75,7 +75,7 @@ tools/                          # Maintenance scripts for snapshots, presets and
 
 ### Python environment
 
-1. Ensure Python 3.10+ is installed.
+1. Ensure Python 3.9–3.13 is installed.
 2. Create and activate a virtual environment:
 
    ```bash
@@ -145,6 +145,7 @@ Visit `/config` after launching the server to manage all scheduling inputs. The 
 - Control repeat behaviour: allow/disallow repeats, cap occurrences, choose whether consecutive slots are permitted or preferred, and tune the weight applied to consecutive runs.
 - Decide whether the solver must place every required subject for every student and whether attendance-aware weighting should boost underscheduled subjects.
 - Adjust additional solver weights such as group biasing, teacher load balancing and the solver time limit (seconds).
+- Select the **solver backend** to match your setup: PuLP/HiGHS is bundled and ideal for lightweight experimentation, while OR-Tools CP-SAT shines on larger, highly-constrained instances when Google OR-Tools is installed.
 - Allow or forbid a student taking the same subject with multiple teachers globally or per student.
 
 ### Teachers and availability
