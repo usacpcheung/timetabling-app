@@ -13,6 +13,7 @@ from solver.api import SolverStatus, build_model, solve_model
 
 
 ORTOOLS_AVAILABLE = importlib.util.find_spec("ortools") is not None
+PULP_AVAILABLE = importlib.util.find_spec("pulp") is not None
 
 
 def _make_row(identifier: int, subjects: Iterable[int], name: str | None = None) -> Dict[str, object]:
@@ -32,7 +33,13 @@ def _make_row(identifier: int, subjects: Iterable[int], name: str | None = None)
                 reason="OR-Tools backend is optional",
             ),
         ),
-        "pulp",
+        pytest.param(
+            "pulp",
+            marks=pytest.mark.skipif(
+                not PULP_AVAILABLE,
+                reason="PuLP backend is optional",
+            ),
+        ),
     ],
 )
 def test_unsat_core_summary_matches_between_backends(backend: str) -> None:

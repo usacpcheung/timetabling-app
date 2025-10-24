@@ -11,7 +11,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - imported for type checking only
-    from .pulp_backend import AssumptionRegistry as _DefaultAssumptionRegistry
+    from .ortools_backend import AssumptionRegistry as _DefaultAssumptionRegistry
 else:
     _DefaultAssumptionRegistry = None  # type: ignore
 
@@ -80,7 +80,7 @@ class AssumptionInfo:
 
 
 _BACKEND_REGISTRY: Dict[str, str] = {}
-_DEFAULT_BACKEND = "pulp"
+_DEFAULT_BACKEND = "ortools"
 
 
 def register_backend(identifier: str, module_path: str) -> None:

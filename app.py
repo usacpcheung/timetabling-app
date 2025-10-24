@@ -344,7 +344,7 @@ def init_db():
             balance_weight INTEGER,
             well_attend_weight REAL,
             solver_time_limit INTEGER DEFAULT 120,
-            solver_backend TEXT DEFAULT 'pulp'
+            solver_backend TEXT DEFAULT 'ortools'
         )''')
     else:
         if not column_exists('config', 'slot_start_times'):
@@ -368,8 +368,8 @@ def init_db():
         if not column_exists('config', 'solver_time_limit'):
             c.execute('ALTER TABLE config ADD COLUMN solver_time_limit INTEGER DEFAULT 120')
         if not column_exists('config', 'solver_backend'):
-            c.execute("ALTER TABLE config ADD COLUMN solver_backend TEXT DEFAULT 'pulp'")
-            c.execute("UPDATE config SET solver_backend='pulp' WHERE solver_backend IS NULL OR TRIM(solver_backend)=''")
+            c.execute("ALTER TABLE config ADD COLUMN solver_backend TEXT DEFAULT 'ortools'")
+            c.execute("UPDATE config SET solver_backend='ortools' WHERE solver_backend IS NULL OR TRIM(solver_backend)=''")
 
     if not table_exists('teachers'):
         c.execute('''CREATE TABLE teachers (
@@ -827,7 +827,7 @@ def init_db():
             require_all_subjects, use_attendance_priority, attendance_weight, group_weight,
             allow_multi_teacher, balance_teacher_load, balance_weight,
             well_attend_weight, solver_time_limit, solver_backend
-        ) VALUES (1, 8, 30, ?, 1, 4, 1, 8, 0, 2, 0, 1, 3, 1, 0, 10, 2.0, 1, 0, 1, 1, 120, 'pulp')''',
+        ) VALUES (1, 8, 30, ?, 1, 4, 1, 8, 0, 2, 0, 1, 3, 1, 0, 10, 2.0, 1, 0, 1, 1, 120, 'ortools')''',
                   (json.dumps(times),))
         subjects = [
             ('Math', 0),
@@ -885,7 +885,7 @@ def migrate_preset(preset):
     data = preset.get('data', {})
     for row in data.get('config', []):
         row.setdefault('solver_time_limit', 120)
-        row.setdefault('solver_backend', 'pulp')
+        row.setdefault('solver_backend', 'ortools')
     return preset
 
 
@@ -1493,7 +1493,7 @@ def config():
 
     backend_choices = list(dict.fromkeys(available_backends()))
     backend_row = c.execute('SELECT solver_backend FROM config WHERE id=1').fetchone()
-    current_backend = _get_row_value(backend_row, 'solver_backend', 'pulp')
+    current_backend = _get_row_value(backend_row, 'solver_backend', 'ortools')
     if current_backend and current_backend not in backend_choices:
         backend_choices.append(current_backend)
     valid_backends = set(backend_choices)
@@ -1587,7 +1587,7 @@ def config():
         ).fetchone()
         submitted_backend = (request.form.get('solver_backend') or '').strip()
         stored_backend = _get_row_value(repeat_defaults, 'solver_backend', current_backend)
-        solver_backend = stored_backend or 'pulp'
+        solver_backend = stored_backend or 'ortools'
         if submitted_backend:
             if submitted_backend not in valid_backends:
                 allowed_label = ', '.join(backend_choices) or 'none'
@@ -3646,7 +3646,7 @@ def generate_schedule(target_date=None):
     teacher_min = cfg['teacher_min_lessons']
     teacher_max = cfg['teacher_max_lessons']
     solver_time_limit = cfg['solver_time_limit']
-    solver_backend = _get_row_value(cfg, 'solver_backend', 'pulp')
+    solver_backend = _get_row_value(cfg, 'solver_backend', 'ortools')
 
     c.execute('SELECT * FROM teachers')
     teacher_rows = c.fetchall()

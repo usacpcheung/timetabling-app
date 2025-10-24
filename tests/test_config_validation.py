@@ -58,7 +58,7 @@ def _valid_config_form(row):
         ('well_attend_weight', str(row['well_attend_weight'])),
         ('balance_weight', str(row['balance_weight'])),
         ('solver_time_limit', str(row['solver_time_limit'])),
-        ('solver_backend', row.get('solver_backend', 'pulp')),
+        ('solver_backend', row.get('solver_backend', 'ortools')),
     ])
     if row['allow_repeats']:
         data.extend([
@@ -1091,8 +1091,8 @@ def test_config_rejects_unknown_solver_backend(tmp_path):
     assert any(
         category == 'error'
         and "Unknown solver backend 'unknown'." in message
-        and 'pulp' in message
         and 'ortools' in message
+        and 'pulp' in message
         for category, message in flashes
     )
     assert (
