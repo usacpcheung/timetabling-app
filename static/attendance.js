@@ -10,9 +10,18 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  const table2 = document.getElementById("deleted-table");
+  const table2 = document.getElementById("inactive-table");
   if (table2 && window.simpleDatatables) {
-    new simpleDatatables.DataTable(table2, {   
+    new simpleDatatables.DataTable(table2, {
+      searchable: true,
+      perPage: 10,
+      perPageSelect: [5, 10, 15, 20]
+    });
+  }
+
+  const table3 = document.getElementById("deleted-table");
+  if (table3 && window.simpleDatatables) {
+    new simpleDatatables.DataTable(table3, {
       searchable: true,
       perPage: 10,
       perPageSelect: [5, 10, 15, 20]
