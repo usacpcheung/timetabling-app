@@ -922,6 +922,31 @@ def solve(
     status_str = pulp.LpStatus.get(model.status, "Undefined")
     status = _STATUS_MAP.get(status_str, SolverStatus.UNKNOWN)
 
+    def _is_integral(var: pulp.LpVariable) -> bool:
+        value = pulp.value(var)
+        if value is None:
+            return False
+        cat = getattr(var, "cat", None)
+        if cat in (pulp.LpContinuous, "Continuous"):
+            return True
+        cat_name = str(cat).lower() if cat is not None else ""
+        if cat in (pulp.LpBinary, pulp.LpInteger) or cat_name in {"binary", "integer"}:
+            return abs(value - round(value)) <= 1e-5
+        return abs(value - round(value)) <= 1e-5
+
+    def _has_integral_solution() -> bool:
+        for var in vars_.values():
+            if not _is_integral(var):
+                return False
+        for var in loc_vars.values():
+            if not _is_integral(var):
+                return False
+        if assumption_registry and getattr(assumption_registry, "enabled", False):
+            for record in assumption_registry.records():
+                if not _is_integral(record.indicator):
+                    return False
+        return True
+
     time_limited_solution = False
     if status_str in ("Not Solved", "Undefined"):
         def _has_concrete_value() -> bool:
@@ -937,7 +962,7 @@ def solve(
                         return True
             return False
 
-        if _has_concrete_value():
+        if _has_concrete_value() and _has_integral_solution():
             time_limited_solution = True
             status = SolverStatus.FEASIBLE
             status_str = f"{status_str} (time limit reached)"
