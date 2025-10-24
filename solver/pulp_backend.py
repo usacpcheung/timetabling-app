@@ -922,6 +922,26 @@ def solve(
     status_str = pulp.LpStatus.get(model.status, "Undefined")
     status = _STATUS_MAP.get(status_str, SolverStatus.UNKNOWN)
 
+    time_limited_solution = False
+    if status_str in ("Not Solved", "Undefined"):
+        def _has_concrete_value() -> bool:
+            for var in vars_.values():
+                if pulp.value(var) is not None:
+                    return True
+            for var in loc_vars.values():
+                if pulp.value(var) is not None:
+                    return True
+            if assumption_registry and getattr(assumption_registry, "enabled", False):
+                for record in assumption_registry.records():
+                    if pulp.value(record.indicator) is not None:
+                        return True
+            return False
+
+        if _has_concrete_value():
+            time_limited_solution = True
+            status = SolverStatus.FEASIBLE
+            status_str = f"{status_str} (time limit reached)"
+
     core_infos: List[AssumptionInfo] = []
     if assumption_registry and getattr(assumption_registry, "enabled", False):
         records = assumption_registry.records()
@@ -969,6 +989,8 @@ def solve(
         if objective_value is None:
             objective_value = 0.0
         message = f"HiGHS solution: status={status_str}, objective={objective_value:.2f}"
+        if time_limited_solution:
+            message += " (terminated early by time limit)"
         progress.append(message)
         if progress_callback is not None:
             progress_callback(message)
