@@ -16,11 +16,11 @@ def _get_backend(identifier: str):
         pytest.skip(f"Backend '{identifier}' could not be imported: {exc}")
 
 
-def test_default_backend_is_pulp():
-    """The default backend should resolve to the PuLP implementation."""
+def test_default_backend_is_ortools():
+    """The default backend should resolve to the OR-Tools implementation."""
 
     backend = api.get_backend()
-    assert backend.__name__ == "solver.pulp_backend"
+    assert backend.__name__ == "solver.ortools_backend"
 
 
 def test_pulp_backend_can_be_resolved():
