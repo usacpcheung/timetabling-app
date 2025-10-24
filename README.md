@@ -1,6 +1,6 @@
 # Timetabling Optimization App
 
-A local-first, browser-based school timetabling application built with **Flask**, **SQLite** and a flexible solver layer that defaults to **PuLP/HiGHS** (with an optional Google **OR-Tools CP-SAT** backend). Manage teachers, students, groups, locations and solver preferences from a single interface, then generate and fine-tune optimized schedules without leaving the browser.
+A local-first, browser-based school timetabling application built with **Flask**, **SQLite** and a flexible solver layer that defaults to Google **OR-Tools CP-SAT** (with an optional **PuLP/HiGHS** MILP backend). Manage teachers, students, groups, locations and solver preferences from a single interface, then generate and fine-tune optimized schedules without leaving the browser.
 
 ## Table of contents
 
@@ -26,14 +26,14 @@ A local-first, browser-based school timetabling application built with **Flask**
 
 ## Overview
 
-The application focuses on a local, privacy-friendly workflow. All data lives in a writable `data/` directory beside the codebase, and the bundled SQLite database is created on first launch with a small demo scenario so you can immediately experiment with constraints and solver behaviour. The UI is built with Tailwind CSS and Flowbite components, while the solver logic lives behind a backend-neutral API that currently ships with PuLP/HiGHS by default and an optional Google OR-Tools CP-SAT implementation.
+The application focuses on a local, privacy-friendly workflow. All data lives in a writable `data/` directory beside the codebase, and the bundled SQLite database is created on first launch with a small demo scenario so you can immediately experiment with constraints and solver behaviour. The UI is built with Tailwind CSS and Flowbite components, while the solver logic lives behind a backend-neutral API that currently ships with Google OR-Tools CP-SAT by default and an optional PuLP/HiGHS MILP implementation.
 
 ## Key features
 
 - Configure teachers, students, subjects, groups and locations from a single configuration page, including availability, fixed lessons and per-student restrictions.
 - Capture nuanced student rules such as teacher blocks, repeat limits, slot unavailability and permitted locations.
 - Apply batch teacher and student actions to adjust subject assignments, lesson limits, availability, blocked slots, subject membership, teacher blocks and allowed locations across many records while preserving their existing settings.
-- Generate timetables with a PuLP/HiGHS mixed-integer model by default, balancing teacher workloads, honoring attendance priorities, respecting location limits and applying a configurable solver time limit. Switch to the OR-Tools CP-SAT backend when you need its advanced constraint programming features.
+- Generate timetables with the Google OR-Tools CP-SAT solver by default, balancing teacher workloads, honoring attendance priorities, respecting location limits and applying a configurable solver time limit. Switch to the PuLP/HiGHS mixed-integer backend when you prefer its formulation or need to operate without installing OR-Tools.
 - Switch between teacher and location views, highlight unmet subject requirements, and inspect lesson counts and group membership snapshots for each schedule.
 - Edit saved timetables, assign worksheets, or remove lessons while attendance logs stay in sync.
 - Track attendance history for active and archived students with automatic updates from every timetable.
@@ -43,13 +43,13 @@ The application focuses on a local, privacy-friendly workflow. All data lives in
 
 ```
 app.py                          # Flask routes, data access, presets and backup utilities
-cp_sat_timetable.py             # OR-Tools model builder, diagnostics and solver helpers (optional backend)
+cp_sat_timetable.py             # OR-Tools model builder, diagnostics and solver helpers
 data/                           # Writable directory containing the SQLite database and backups
 CODE_GUIDE.txt                  # Walkthrough of the code for newcomers
 solver/                        # Backend-neutral solver API and concrete implementations
     api.py                     # Facade used by the web app to build/solve timetables
-    pulp_backend.py            # Default PuLP/HiGHS MILP backend
-    ortools_backend.py         # Optional Google OR-Tools CP-SAT backend
+    pulp_backend.py            # Optional PuLP/HiGHS MILP backend
+    ortools_backend.py         # Default Google OR-Tools CP-SAT backend
 static/                         # Front-end scripts and styles
     attendance.js               # Attendance tables and filtering helpers
     config.js                   # Dynamic behaviour for the configuration form
@@ -89,7 +89,7 @@ tools/                          # Maintenance scripts for snapshots, presets and
    pip install -r requirements.txt
    ```
 
-   This installs Flask along with the default PuLP/HiGHS solver stack. Install `ortools` separately if you plan to run the optional CP-SAT backend.
+   This installs Flask along with the default OR-Tools CP-SAT solver stack. Install `pulp` separately if you plan to run the optional PuLP/HiGHS backend.
 
 ### Launch the development server
 
@@ -120,8 +120,8 @@ During active development, run `npm run watch:css` to keep the generated CSS (`s
 ## Architecture at a glance
 
 - `app.py` hosts the Flask application: route handlers, configuration forms, validation helpers, preset management and backup utilities live here.
-- `solver/api.py` exposes a backend-neutral facade used by the app. It defaults to the PuLP/HiGHS mixed-integer formulation (`solver/pulp_backend.py`) while still supporting the legacy Google OR-Tools CP-SAT implementation (`solver/ortools_backend.py`).
-- `cp_sat_timetable.py` retains the OR-Tools CP-SAT model construction helpers used by the optional backend.
+- `solver/api.py` exposes a backend-neutral facade used by the app. It defaults to the Google OR-Tools CP-SAT implementation (`solver/ortools_backend.py`) while still supporting the optional PuLP/HiGHS mixed-integer formulation (`solver/pulp_backend.py`).
+- `cp_sat_timetable.py` retains the OR-Tools CP-SAT model construction helpers used by the default backend.
 - Templates under `templates/` render the UI, with supporting JavaScript housed in `static/` for dynamic forms, timetable manipulation and Flowbite tweaks.
 - A lightweight test suite in `tests/` exercises critical validation logic used when configuring teachers, students and fixed assignments.
 
@@ -145,7 +145,7 @@ Visit `/config` after launching the server to manage all scheduling inputs. The 
 - Control repeat behaviour: allow/disallow repeats, cap occurrences, choose whether consecutive slots are permitted or preferred, and tune the weight applied to consecutive runs.
 - Decide whether the solver must place every required subject for every student and whether attendance-aware weighting should boost underscheduled subjects.
 - Adjust additional solver weights such as group biasing, teacher load balancing and the solver time limit (seconds).
-- Select the **solver backend** to match your setup: PuLP/HiGHS is bundled and ideal for lightweight experimentation, while OR-Tools CP-SAT shines on larger, highly-constrained instances when Google OR-Tools is installed.
+- Select the **solver backend** to match your setup: OR-Tools CP-SAT is the default for large, highly-constrained instances, while PuLP/HiGHS remains available if you prefer its MILP formulation or need to avoid the OR-Tools dependency.
 - Allow or forbid a student taking the same subject with multiple teachers globally or per student.
 
 ### Teachers and availability

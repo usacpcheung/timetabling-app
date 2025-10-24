@@ -7,18 +7,18 @@ cd /d "%~dp0"
 echo.
 echo === Timetabling App Launcher ===
 
-REM Validate Python 3.9-3.13 availability
+REM Validate Python 3.11-3.13 availability
 set "PYCMD="
 set "PYDISPLAY="
-call :try_python "python"
-if not defined PYCMD call :try_python "py -3.13"
+call :try_python "py -3.13"
 if not defined PYCMD call :try_python "py -3.12"
-if not defined PYCMD call :try_python "py -3"
+if not defined PYCMD call :try_python "py -3.11"
+if not defined PYCMD call :try_python "python"
 
 if not defined PYCMD (
   echo.
-  echo [ERROR] Python 3.9^–3.13 is required but was not found on PATH.
-  echo Please install a supported version from https://www.python.org/downloads/ and re-run.
+  echo [ERROR] Python 3.11^–3.13 is required but was not found on PATH.
+  echo Please install Python 3.13 from https://www.python.org/downloads/ and re-run.
   pause
   exit /b 1
 )
@@ -97,7 +97,7 @@ if not defined PYTMP_MINOR exit /b 1
 
 set /a PYTMP_MINOR_NUM=PYTMP_MINOR >nul 2>&1
 if errorlevel 1 exit /b 1
-if !PYTMP_MINOR_NUM! LSS 9 exit /b 1
+if !PYTMP_MINOR_NUM! LSS 11 exit /b 1
 if !PYTMP_MINOR_NUM! GTR 13 exit /b 1
 
 set "PYCMD=%CAND%"
