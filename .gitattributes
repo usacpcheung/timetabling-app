@@ -1,0 +1,3 @@
+*.bat text eol=crlf
+
+run_app.bat -text
