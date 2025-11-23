@@ -63,10 +63,10 @@ if errorlevel 1 (
 REM Use the venv's interpreter for subsequent python invocations
 set "PYCMD=%VENV_PATH%\Scripts\python.exe"
 
-REM Install/upgrade dependencies
-echo Installing dependencies from requirements.txt ...
-%PYCMD% -m pip install --upgrade pip >nul 2>&1
-%PYCMD% -m pip install -r requirements.txt
+  REM Install/upgrade dependencies
+  echo Installing dependencies from requirements.txt ...
+  "%PYCMD%" -m pip install --upgrade pip >nul 2>&1
+  "%PYCMD%" -m pip install -r requirements.txt
 if errorlevel 1 (
   echo.
   echo [ERROR] Dependency installation failed.
@@ -75,10 +75,10 @@ if errorlevel 1 (
   exit /b 1
 )
 
-REM Initialize DB and start the Flask app
-echo Launching the app...
-echo Open your browser to http://127.0.0.1:5000/
-%PYCMD% app.py
+  REM Initialize DB and start the Flask app
+  echo Launching the app...
+  echo Open your browser to http://127.0.0.1:5000/
+  "%PYCMD%" app.py
 
 echo.
 echo App exited. Press any key to close.
