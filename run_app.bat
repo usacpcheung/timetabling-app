@@ -62,24 +62,24 @@ if errorlevel 1 (
 
 REM Use the venv's interpreter for subsequent python invocations
 set "PYCMD=%VENV_PATH%\Scripts\python.exe"
-set "PYCMD_QUOTED="%PYCMD%""
+set "PYCMD_VENV=%PYCMD%"
 
-  REM Install/upgrade dependencies
-  echo Installing dependencies from requirements.txt ...
-  %PYCMD_QUOTED% -m pip install --upgrade pip >nul 2>&1
-  %PYCMD_QUOTED% -m pip install -r requirements.txt
+REM Install/upgrade dependencies
+echo Installing dependencies from requirements.txt ...
+"%PYCMD_VENV%" -m pip install --upgrade pip >nul 2>&1
+"%PYCMD_VENV%" -m pip install -r requirements.txt
 if errorlevel 1 (
   echo.
   echo [ERROR] Dependency installation failed.
-  echo You can try running: %PYCMD_QUOTED% -m pip install -r requirements.txt
+  echo You can try running: "%PYCMD_VENV%" -m pip install -r requirements.txt
   pause
   exit /b 1
 )
 
-  REM Initialize DB and start the Flask app
-  echo Launching the app...
-  echo Open your browser to http://127.0.0.1:5000/
-  %PYCMD_QUOTED% app.py
+REM Initialize DB and start the Flask app
+echo Launching the app...
+echo Open your browser to http://127.0.0.1:5000/
+"%PYCMD_VENV%" app.py
 
 echo.
 echo App exited. Press any key to close.
@@ -118,34 +118,6 @@ if !PYTMP_MINOR_NUM! GTR 13 exit /b 1
 set "PYCMD=%CAND%"
 set "PYDISPLAY=!PYTMP_OUT!"
 exit /b 0
-
-echo Installing dependencies from requirements.txt ...
-%PYCMD% -m pip install --upgrade pip >nul 2>&1
-%PYCMD% -m pip install -r requirements.txt
-if errorlevel 1 (
-  echo.
-  echo [ERROR] Dependency installation failed.
-  echo You can try running: %PYCMD% -m pip install -r requirements.txt
-  pause
-  exit /b 1
-)
-
-REM Initialize DB and start the Flask app
-echo Launching the app...
-echo Open your browser to http://127.0.0.1:5000/
-%PYCMD% app.py
-
-echo.
-echo App exited. Press any key to close.
-pause
-
-goto :eof
-
-:try_python
-set "CAND=%~1"
-set "PYTMP_OUT="
-for /f "tokens=1,2" %%a in ('cmd /c %CAND% --version 2^>nul') do (
-  if /i "%%a"=="Python" (
     set "PYTMP_OUT=%%b"
   )
 )
