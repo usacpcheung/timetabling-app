@@ -62,7 +62,7 @@ if errorlevel 1 (
 
 REM Use the venv's interpreter for subsequent python invocations
 set "PYCMD=%VENV_PATH%\Scripts\python.exe"
-set "PYCMD_QUOTED=\"%PYCMD%\""
+set "PYCMD_QUOTED="%PYCMD%""
 
   REM Install/upgrade dependencies
   echo Installing dependencies from requirements.txt ...
