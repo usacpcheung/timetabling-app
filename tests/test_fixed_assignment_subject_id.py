@@ -5,7 +5,7 @@ import json
 # Ensure the application package can be imported when tests are executed
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from cp_sat_timetable import build_model, solve_and_print
+from solver.api import build_model, solve_model
 
 
 def test_fixed_assignment_handles_subject_id():
@@ -17,8 +17,8 @@ def test_fixed_assignment_handles_subject_id():
     model, vars_, loc_vars, _ = build_model(
         students, teachers, slots=1, min_lessons=0, max_lessons=1, fixed=fixed
     )
-    status, assignments, _, progress = solve_and_print(model, vars_, loc_vars)
+    result = solve_model(model, vars_, loc_vars)
 
     # The fixed assignment should appear in the solver output
-    assert (1, 1, 1, 0, None) in assignments
-    assert isinstance(progress, list)
+    assert (1, 1, 1, 0, None) in [assignment.as_tuple() for assignment in result.assignments]
+    assert isinstance(result.progress, list)
